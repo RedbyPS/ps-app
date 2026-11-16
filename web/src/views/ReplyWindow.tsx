@@ -233,7 +233,8 @@ function Panel({ open, prefs, status, queue }: { open: Open; prefs: Prefs; statu
           {ctx ? <>
             <div className="rw-fields">
               <div className="rw-row"><span className="rw-k">From</span>
-                <span className="rw-v"><b>{ctx.account}</b><span className={`rw-via rw-${ctx.via}`}>{viaName(ctx.via)}</span></span>
+                <span className="rw-v"><b>{ctx.via === "gmail" && ctx.replyFrom ? ctx.replyFrom : ctx.account}</b><span className={`rw-via rw-${ctx.via}`}>{viaName(ctx.via)}</span>
+                  {ctx.via === "gmail" && ctx.replyFrom && <span className="rw-via" data-tip="Sent from the address the email came to" data-tip-line={`This Gmail alias is set up in ${ctx.account}. If Gmail will not send from it, PS stops and tells you, it never switches address.`}>{`through ${ctx.account}`}</span>}</span>
                 {ready ? <span className="rw-ok">Ready to send</span>
                   : <button className="rw-btn rw-connect" onClick={() => post({ type: "reply:connect", via: ctx.via, account: ctx.account })}
                       data-tip={ctx.via === "gmail" ? "Connect Gmail for sending" : "Add your Instantly API key"}

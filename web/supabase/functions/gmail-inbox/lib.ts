@@ -119,8 +119,50 @@ export function bodyOpening(m: GmailMessage): string {
   return t.replace(/\s+/g, " ").trim().slice(0, OPENING_MAX);
 }
 
-/** What gets sealed for one inbound message: headers, Gmail's snippet and the opening (above). */
-export function inboundPayload(account: string, m: GmailMessage) {
+const hdrAll = (m: GmailMessage, name: string): string[] =>
+  (m.payload?.headers || []).filter((h) => h.name.toLowerCase() === name.toLowerCase()).map((h) => h.value);
+const addrsIn = (v: string): string[] => (v.match(/[^\s<>",;:()]+@[^\s<>",;:()]+/g) || []).map((a) => a.toLowerCase().replace(/[.]+$/, ""));
+
+/** The verified send-as addresses of an account, from Gmail's users.settings.sendAs.list answer (lower case, the
+ *  account's own address left out). Only "accepted" ones: a pending address cannot send yet. */
+export function verifiedAliases(account: string, list: unknown): string[] {
+  const rows = (list as { sendAs?: { sendAsEmail?: string; verificationStatus?: string; isPrimary?: boolean }[] } | null)?.sendAs;
+  if (!Array.isArray(rows)) return [];
+  const own = account.toLowerCase();
+  const out = new Set<string>();
+  for (const r of rows) {
+    const a = typeof r?.sendAsEmail === "string" ? r.sendAsEmail.trim().toLowerCase() : "";
+    if (a && a !== own && !r.isPrimary && r.verificationStatus === "accepted" && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(a)) out.add(a);
+  }
+  return [...out];
+}
+
+/** The verified alias an email was addressed to, or null (it came to the account's own address, or none matches).
+ *  Trust order: Delivered-To (the mailbox that took it in), then To, then Cc. In To and Cc a header that also holds
+ *  the account's own address counts as addressed to the account, so the reply stays From the account. */
+export function replyFromOf(account: string, aliases: string[], m: GmailMessage): string | null {
+  if (!aliases.length) return null;
+  const own = account.toLowerCase();
+  const set = new Set(aliases.map((a) => a.toLowerCase()));
+  for (const v of hdrAll(m, "Delivered-To")) {
+    const hit = addrsIn(v).find((a) => set.has(a));
+    if (hit) return hit;
+  }
+  for (const name of ["To", "Cc"]) {
+    for (const v of hdrAll(m, name)) {
+      const all = addrsIn(v);
+      if (all.includes(own)) return null;
+      const hit = all.find((a) => set.has(a));
+      if (hit) return hit;
+    }
+  }
+  return null;
+}
+
+/** What gets sealed for one inbound message: headers, Gmail's snippet and the opening (above).
+ *  `replyFrom`: the verified send-as address it was addressed to, only when that is not the account itself. */
+export function inboundPayload(account: string, m: GmailMessage, aliases: string[] = []) {
+  const replyFrom = replyFromOf(account, aliases, m);
   return {
     kind: "gmail",
     account,
@@ -134,6 +176,7 @@ export function inboundPayload(account: string, m: GmailMessage) {
     snippet: cut(decodeEntities(m.snippet || ""), 400),
     opening: bodyOpening(m) || null,
     msgId: cut(hdr(m, "Message-ID") || hdr(m, "Message-Id"), 400),
+    ...(replyFrom ? { replyFrom } : {}),
   };
 }
 

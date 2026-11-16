@@ -218,4 +218,44 @@ await ok("seal from the function, open in the vault", async () => {
   await assert.rejects(C.openSealed(await C.importInboxPrivate(other.privatePkcs8), sealed), "another key cannot open it");
 });
 
+// ---------- send-as address: the email's own alias, kept for the reply ----------
+const hd = (...h: [string, string][]): L.GmailMessage => ({ id: "m", threadId: "t", payload: { headers: h.map(([name, value]) => ({ name, value })) } });
+await ok("verifiedAliases: only accepted, not the account itself, not primary, lower case", () => {
+  const list = { sendAs: [
+    { sendAsEmail: "Owner@Example.com", isPrimary: true, verificationStatus: "accepted" },
+    { sendAsEmail: "Work@Example.com", verificationStatus: "accepted" },
+    { sendAsEmail: "later@example.com", verificationStatus: "pending" },
+    { sendAsEmail: "owner@example.com", verificationStatus: "accepted" },
+    { sendAsEmail: "not an email", verificationStatus: "accepted" },
+  ] };
+  assert.deepEqual(L.verifiedAliases("owner@example.com", list), ["work@example.com"]);
+  assert.deepEqual(L.verifiedAliases("owner@example.com", {}), []);
+  assert.deepEqual(L.verifiedAliases("owner@example.com", null), []);
+});
+await ok("replyFromOf: Delivered-To first, then To, then Cc, case insensitive", () => {
+  const al = ["work@example.com", "shop@example.com"];
+  assert.equal(L.replyFromOf("owner@example.com", al, hd(["Delivered-To", "owner@example.com"], ["Delivered-To", "Work@Example.com"], ["To", "shop@example.com"])), "work@example.com");
+  assert.equal(L.replyFromOf("owner@example.com", al, hd(["Delivered-To", "owner@example.com"], ["To", "Jane <jane@northwind.example>, SHOP@example.com"])), "shop@example.com");
+  assert.equal(L.replyFromOf("owner@example.com", al, hd(["To", "list@northwind.example"], ["Cc", "Work@example.com"])), "work@example.com");
+});
+await ok("replyFromOf: nothing for the account's own mail, no aliases, no match, or an address inside another one", () => {
+  const al = ["work@example.com"];
+  assert.equal(L.replyFromOf("owner@example.com", al, hd(["To", "owner@example.com"])), null);
+  assert.equal(L.replyFromOf("owner@example.com", al, hd(["To", "owner@example.com, work@example.com"])), null, "addressed to the account too: stay on the account");
+  assert.equal(L.replyFromOf("owner@example.com", [], hd(["To", "work@example.com"])), null);
+  assert.equal(L.replyFromOf("owner@example.com", al, hd(["To", "xwork@example.com"])), null, "a longer address is not the alias");
+  assert.equal(L.replyFromOf("owner@example.com", al, hd(["Subject", "work@example.com"])), null, "only the address headers count");
+});
+await ok("the sealed payload carries replyFrom only for an alias; old payloads and the browser side still work", () => {
+  const m = hd(["From", "Jane <jane@northwind.example>"], ["To", "work@example.com"], ["Subject", "Hi"]);
+  assert.equal((L.inboundPayload("owner@example.com", m, ["work@example.com"]) as { replyFrom?: string }).replyFrom, "work@example.com");
+  assert.equal("replyFrom" in L.inboundPayload("owner@example.com", m), false, "no aliases known: no field");
+  assert.equal("replyFrom" in L.inboundPayload("owner@example.com", hd(["To", "owner@example.com"]), ["work@example.com"]), false);
+  const r = M.applyInbound(undefined, msg("m1", "2026-10-14T22:27:00.000Z", { replyFrom: "Work@Example.com" }), "tp")!;
+  assert.equal(r.replyFrom, "work@example.com");
+  assert.equal(M.applyInbound(undefined, msg("m2", "2026-10-14T22:27:00.000Z"), "tp")!.replyFrom, null, "an old payload: From the account");
+  assert.equal(M.cleanReplyFrom("Bcc: x@y.example", "a@b.example"), null);
+  assert.equal(M.cleanReplyFrom("a@b.example", "A@B.example"), null, "the account itself is no alias");
+});
+
 console.log(`mail tests: ${n} passed`);

@@ -170,6 +170,35 @@ var got4: SendResult?
 GmailSender(http: fakeG4) { _, d in d(.failure(MailTokenError(text: "Sign in again", retry: false))) }.send(j!) { got4 = $0 }
 check("gmail-no-sign-in-no-request", got4 == .failed("Sign in again", retry: false) && fakeG4.asked.isEmpty)
 
+// MARK: send-as address (From the address the email came to)
+let ja = OutJob.from(page(["replyFrom": "Work@Example.com"]), undo: false, now: now)!
+check("alias-kept-lower", ja.replyFrom == "work@example.com" && ja.fromAddress == "work@example.com")
+check("alias-same-as-account-is-none", OutJob.from(page(["replyFrom": "studio@example.com"]), undo: false, now: now)?.replyFrom == nil)
+check("alias-junk-is-none", OutJob.from(page(["replyFrom": "x@y.example\r\nBcc: e@x.example"]), undo: false, now: now)?.replyFrom == nil)
+check("alias-not-an-address-is-none", OutJob.from(page(["replyFrom": "not an email"]), undo: false, now: now)?.fromAddress == "studio@example.com")
+check("alias-instantly-ignored", OutJob.from(page(["via": "instantly", "emailId": "e1", "replyFrom": "work@example.com"]), undo: false, now: now)?.replyFrom == nil)
+check("alias-old-job-decodes", (try? JSONDecoder().decode(OutJob.self, from: JSONEncoder().encode(j!)))?.fromAddress == "studio@example.com")
+check("alias-codable", (try? JSONDecoder().decode(OutJob.self, from: JSONEncoder().encode(ja)))?.replyFrom == "work@example.com")
+let fakeA = FakeHTTP()
+fakeA.answers = [(200, json(["messages": [["payload": ["headers": [["name": "Message-ID", "value": "<m9@northwind.example>"], ["name": "From", "value": "Jane <jane@northwind.example>"]]]]]]), nil), (200, json(["id": "sentA"]), nil)]
+var gotA: SendResult?
+GmailSender(http: fakeA, fromName: { _ in "Sam Studio" }) { _, d in d(.success("t")) }.send(ja) { gotA = $0 }
+let rawA = unb64url(body(fakeA.asked[1])["raw"] as? String ?? "")
+check("alias-from-header", gotA == .sent("sentA") && rawA.contains("From: \"Sam Studio\" <work@example.com>") && !rawA.contains("studio@example.com"))
+// Gmail refuses the alias (400): never re-sent From the account (a client reply must come from the address they wrote to).
+let fakeB = FakeHTTP()
+fakeB.answers = [(200, json(["messages": []]), nil), (400, nil, nil), (200, json(["id": "sentB"]), nil)]
+var gotB: SendResult?
+GmailSender(http: fakeB) { _, d in d(.success("t")) }.send(ja) { gotB = $0 }
+if case .failed(let m, let r)? = gotB { check("alias-400-stops-no-account-resend", fakeB.asked.count == 2 && !r && m.contains("Send mail as") && m.contains(ja.fromAddress), m) } else { check("alias-400-stops-no-account-resend", false, "\(String(describing: gotB))") }
+let fakeD = FakeHTTP(); fakeD.answers = [(200, json(["messages": []]), nil), (400, nil, nil)]
+var gotD: SendResult?
+GmailSender(http: fakeD) { _, d in d(.success("t")) }.send(j!) { gotD = $0 }
+check("no-alias-400-no-second-try", gotD == .failed("Gmail refused this email.", retry: false) && fakeD.asked.count == 2)
+// Threading: the developer's own earlier reply from the alias is not the email answered.
+let pk = MailThreading.pick([["message-id": "<a@n.example>", "from": "Jane <jane@northwind.example>"], ["message-id": "<b@e.example>", "from": "Sam <work@example.com>"]], own: "studio@example.com", alsoOwn: "work@example.com")
+check("pick-skips-own-alias-reply", pk.inReplyTo == "<a@n.example>")
+
 // MARK: Instantly against a fake
 let lead = OutJob.from(page(["id": "l1", "cardId": "n:email-9", "via": "instantly", "account": "ann@outreach.example", "threadId": NSNull(), "emailId": "email-9"]), undo: false, now: now)!
 let fakeI = FakeHTTP(); fakeI.answers = [(200, json(["id": "r-1"]), nil)]

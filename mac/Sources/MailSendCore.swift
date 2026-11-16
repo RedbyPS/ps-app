@@ -31,6 +31,16 @@ struct OutJob: Codable, Equatable {
   var tries: Int = 0
   var error: String?
   var doneAt: Double?
+  /// Gmail: a send-as address of `account` to put in From (the email came to it). Nil: From the account.
+  var replyFrom: String? = nil
+
+  /// The address in From: the send-as address when the page gave a plain valid one, else the account.
+  var fromAddress: String { OutJob.cleanReplyFrom(replyFrom, account: account) ?? account }
+  /// A plain valid address that is not the account itself, lower case; anything else is nil.
+  static func cleanReplyFrom(_ v: String?, account: String) -> String? {
+    guard let a = v?.trimmingCharacters(in: .whitespaces).lowercased(), a.count <= 254, MailMime.validEmail(a), a != account.lowercased() else { return nil }
+    return a
+  }
 
   /// Checks a job the page handed over. Nil when anything is off (it crossed from a web page).
   static func from(_ o: [String: Any], undo: Bool, now: Double) -> OutJob? {
@@ -50,7 +60,8 @@ struct OutJob: Codable, Equatable {
     let draft = (o["draft"]).flatMap { try? JSONSerialization.data(withJSONObject: $0) }.flatMap { String(data: $0, encoding: .utf8) } ?? "{}"
     return OutJob(id: id, cardId: cardId, via: via, account: account, to: to, toName: s("toName", 120).map { MailMime.oneLine($0) },
                   subject: MailMime.oneLine(subject), text: text, html: html, threadId: threadId, emailId: emailId,
-                  sendAt: max(now, sendAt), createdAt: now, draft: draft.count <= 400_000 ? draft : "{}", undo: undo)
+                  sendAt: max(now, sendAt), createdAt: now, draft: draft.count <= 400_000 ? draft : "{}", undo: undo,
+                  replyFrom: via == "gmail" ? cleanReplyFrom(s("replyFrom", 254), account: account) : nil)
   }
 
   /// What the page shows in the pill and the queue (never the words of the reply).
@@ -240,9 +251,9 @@ enum MailThreading {
   /// the newest one NOT from the sending account (their email, not the developer's own last reply). Its Message-ID becomes
   /// In-Reply-To, and its References plus that id become References, so the reply sits in the same thread for
   /// them too. Reply-To, when they set one, is where the reply should go.
-  static func pick(_ messages: [[String: String]], own: String) -> (inReplyTo: String?, references: String?, replyTo: String?) {
-    let me = own.lowercased()
-    let theirs = messages.last { !($0["from"] ?? "").lowercased().contains(me) } ?? messages.last
+  static func pick(_ messages: [[String: String]], own: String, alsoOwn: String? = nil) -> (inReplyTo: String?, references: String?, replyTo: String?) {
+    let mine = [own.lowercased()] + (alsoOwn.map { [$0.lowercased()] } ?? [])   // the account and its send-as address
+    let theirs = messages.last { m in !mine.contains { (m["from"] ?? "").lowercased().contains($0) } } ?? messages.last
     guard let m = theirs, let id = m["message-id"].map(MailMime.oneLine), id.hasPrefix("<"), id.hasSuffix(">") else { return (nil, nil, nil) }
     let refs = (m["references"].map(MailMime.oneLine) ?? "").split(separator: " ").map(String.init).filter { $0.hasPrefix("<") && $0.hasSuffix(">") }
     var all = refs.filter { $0 != id } + [id]
@@ -309,21 +320,29 @@ final class GmailSender {
             done(.failed(st == 404 ? "Gmail cannot find this thread in \(j.account)." : st == 401 || st == 403 ? "Gmail said no (sign in again in Settings, Reply from PS app)." : "Gmail did not answer (\(st)).",
                          retry: st >= 500 || st == 429)); return
           }
-          let th = MailThreading.pick(MailThreading.headers(fromThread: json), own: j.account)
-          let mime = MailMime.build(from: j.account, fromName: fromName(j.account), to: j.to, toName: j.toName, subject: j.subject, text: j.text, html: j.html,
-                                    inReplyTo: th.inReplyTo, references: th.references, date: now(), boundary: "ps-\(j.id.prefix(24))")
-          guard let payload = try? JSONSerialization.data(withJSONObject: ["raw": MailMime.base64url(Data(mime.utf8)), "threadId": tid]) else { done(.failed("PS app could not build the email.", retry: false)); return }
-          var s = URLRequest(url: MailEndpoints.gmailSend); s.httpMethod = "POST"; s.httpBody = payload
-          s.setValue("Bearer \(tok)", forHTTPHeaderField: "Authorization"); s.setValue("application/json", forHTTPHeaderField: "Content-Type")
-          http.send(s) { st2, body2, err2 in
-            if let err2 { done(.failed(err2, retry: Self.unsentNetworkError(err2))); return }
-            if (200..<300).contains(st2) {
-              let id = (body2.flatMap { try? JSONSerialization.jsonObject(with: $0) } as? [String: Any])?["id"] as? String
-              done(.sent(id)); return
+          let th = MailThreading.pick(MailThreading.headers(fromThread: json), own: j.account, alsoOwn: j.replyFrom)
+          // Google's docs do not say what Gmail does with a From that is not a verified send-as address of the signed in
+          // account (it may rewrite it to the account's own address, or refuse with 400). A 400 with a send-as From is NOT
+          // retried From the account: a reply to a client must come from the address they wrote to (the developer, 16 Nov
+          // 2026), so it stops and says how to fix it (a 400 means nothing was sent).
+          func attempt(_ from: String) {
+            let mime = MailMime.build(from: from, fromName: fromName(j.account), to: j.to, toName: j.toName, subject: j.subject, text: j.text, html: j.html,
+                                      inReplyTo: th.inReplyTo, references: th.references, date: now(), boundary: "ps-\(j.id.prefix(24))")
+            guard let payload = try? JSONSerialization.data(withJSONObject: ["raw": MailMime.base64url(Data(mime.utf8)), "threadId": tid]) else { done(.failed("PS app could not build the email.", retry: false)); return }
+            var s = URLRequest(url: MailEndpoints.gmailSend); s.httpMethod = "POST"; s.httpBody = payload
+            s.setValue("Bearer \(tok)", forHTTPHeaderField: "Authorization"); s.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            http.send(s) { st2, body2, err2 in
+              if let err2 { done(.failed(err2, retry: Self.unsentNetworkError(err2))); return }
+              if (200..<300).contains(st2) {
+                let id = (body2.flatMap { try? JSONSerialization.jsonObject(with: $0) } as? [String: Any])?["id"] as? String
+                done(.sent(id)); return
+              }
+              if st2 == 400 && from != j.account { done(.failed("Gmail would not send from \(from). Add it in Gmail, Settings, Accounts and Import, Send mail as, then try again.", retry: false)); return }
+              done(.failed(st2 == 401 || st2 == 403 ? "Gmail said no (sign in again in Settings, Reply from PS app)." : st2 == 400 ? "Gmail refused this email." : "Gmail did not take it (\(st2)).",
+                           retry: st2 >= 500 || st2 == 429))
             }
-            done(.failed(st2 == 401 || st2 == 403 ? "Gmail said no (sign in again in Settings, Reply from PS app)." : st2 == 400 ? "Gmail refused this email." : "Gmail did not take it (\(st2)).",
-                         retry: st2 >= 500 || st2 == 429))
           }
+          attempt(j.fromAddress)
         }
       }
     }

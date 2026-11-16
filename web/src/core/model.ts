@@ -343,6 +343,7 @@ export interface Reply {
   subject: string;
   snippet: string;               // Gmail's short preview
   opening?: string | null;       // the first few sentences of the body (no quotes, no signature)
+  replyFrom?: string | null;     // the send-as address of the account the latest email was addressed to (a reply goes From it)
   date: string;                  // latest message from them
   count: number;
   handled: boolean;

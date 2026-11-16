@@ -10,7 +10,7 @@
 // schedule times, and the job handed to the Mac (ps-mac MailSend.swift sends it from the right account in the same
 // thread; the tokens and the Instantly key live only in the Mac's Keychain, never here or in the vault).
 import type { ClientRec, Reply } from "./model";
-import { FREE_DOMAINS, domainOf, firstName, parseMatchEntry, replierName } from "./mail.ts";
+import { cleanReplyFrom, FREE_DOMAINS, domainOf, firstName, parseMatchEntry, replierName } from "./mail.ts";
 
 /** A quick reply. `clients` empty or unset: General, offered for every email. Otherwise only for those clients. */
 export interface SavedResponse { id: string; name: string; text: string; clients?: string[] }
@@ -37,7 +37,9 @@ export type Via = "gmail" | "instantly";
 export interface ReplyCtx {
   cardId: string;
   via: Via;
-  account: string;            // From: the address the email came to
+  account: string;            // the Gmail account (or Instantly inbox) the email came to: its sign in sends, its signature is used
+  /** Gmail only: the verified send-as address the email was addressed to, when it is not the account. The reply goes From it. */
+  replyFrom?: string | null;
   to: string;
   toName: string | null;
   first: string;              // for {first name}
@@ -55,6 +57,8 @@ export interface ReplyJob {
   cardId: string;
   via: Via;
   account: string;
+  /** Gmail: the send-as address to put in From instead of the account (the Mac checks it again). Absent: From the account. */
+  replyFrom?: string | null;
   to: string;
   toName: string | null;
   subject: string;
@@ -150,7 +154,7 @@ export function ctxFromGmail(cardId: string, r: Reply, c: ClientRec | undefined)
   const full = oneLine(r.fromName || "", 120).replace(/^["']|["']$/g, "") || c?.contactName || first;
   const company = c && c.name && c.name.toLowerCase() !== first.toLowerCase() ? c.name : domainCompany(r.from);
   return {
-    cardId, via: "gmail", account: r.account.toLowerCase(), to: r.from.trim(), toName: r.fromName ? oneLine(r.fromName, 120) : null,
+    cardId, via: "gmail", account: r.account.toLowerCase(), replyFrom: cleanReplyFrom(r.replyFrom, r.account), to: r.from.trim(), toName: r.fromName ? oneLine(r.fromName, 120) : null,
     first: firstName(first) || first, name: full, company, subject: r.subject || "", threadId: r.threadId, emailId: null, clientIds: r.clientId ? [r.clientId] : [],
     quote: { at: r.date, who: r.fromName ? `${oneLine(r.fromName, 120)} <${r.from}>` : r.from, text: r.opening || r.snippet || "" },
   };
@@ -396,7 +400,7 @@ export function makeJob(ctx: ReplyCtx, d: { message: string; sig: string; quote:
   if (ctx.via === "gmail" && !ctx.threadId) throw new Error("PS app does not know which Gmail thread this is in.");
   const { text, html } = buildBodies(d.message, d.sig, d.quote ? ctx.quote : null);
   return {
-    id, cardId: ctx.cardId, via: ctx.via, account: ctx.account, to, toName: to === ctx.to ? ctx.toName : null,
+    id, cardId: ctx.cardId, via: ctx.via, account: ctx.account, ...(ctx.via === "gmail" && cleanReplyFrom(ctx.replyFrom, ctx.account) ? { replyFrom: cleanReplyFrom(ctx.replyFrom, ctx.account) } : {}), to, toName: to === ctx.to ? ctx.toName : null,
     subject: reSubject(d.subject ?? ctx.subject), text, html, threadId: ctx.threadId, emailId: ctx.emailId,
     sendAt: Math.max(now, Math.round(sendAt)), createdAt: now,
     draft: { message: d.message.slice(0, LIMITS.message), sig: d.sig.slice(0, LIMITS.sig), quote: d.quote, ctx: { ...ctx, to } },

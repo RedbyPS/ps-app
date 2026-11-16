@@ -13,7 +13,7 @@
 import { createClient } from "npm:@supabase/supabase-js@2.49.4";
 import {
   type Account, type GmailMessage, afterSec, errText, isSlowDown, inboundPayload, inboundQuery, mergeAccounts,
-  parseAccounts, safeEqual, seal, sentPayload, sentQuery, sha256hex,
+  parseAccounts, safeEqual, seal, sentPayload, sentQuery, sha256hex, verifiedAliases,
 } from "./lib.ts";
 
 const admin = createClient(
@@ -77,6 +77,19 @@ async function gget<T>(token: string, path: string): Promise<T> {
   }
 }
 
+// The verified send-as addresses per account (users.settings.sendAs.list, allowed with gmail.readonly), read once per
+// warm instance for 10 minutes: one cheap call, and only when there is new mail to label. A failure means "no aliases",
+// never a failed poll (the reply then goes From the account, as before).
+const aliasCache = new Map<string, { v: string[]; at: number }>();
+async function aliasesOf(a: Account, token: string): Promise<string[]> {
+  const hit = aliasCache.get(a.email);
+  if (hit && Date.now() - hit.at < 10 * 60_000) return hit.v;
+  let v: string[] = hit?.v ?? [];
+  try { v = verifiedAliases(a.email, await gget<unknown>(token, "/settings/sendAs")); } catch { /* keep the last list */ }
+  aliasCache.set(a.email, { v, at: Date.now() });
+  return v;
+}
+
 async function listIds(token: string, q: string): Promise<{ id: string; threadId: string }[]> {
   const out: { id: string; threadId: string }[] = [];
   let page: string | undefined;
@@ -130,13 +143,14 @@ async function pollAccount(a: Account, pub: string, cursorMs: number | null, run
     if (stopped) return null;
     try { return await gget<M>(token, path); } catch (e) { if (isSlowDown(e)) { stopped = true; return null; } throw e; }
   };
+  const aliases = takeIn.length ? await aliasesOf(a, token) : [];
   await pool(takeIn, 4, async (m) => {
     // "full" for the opening of the body (lib.ts bodyOpening); the rest of it is never kept.
     const msg = await read<GmailMessage>(`/messages/${m.id}?format=full`);
     if (!msg) return;
     hashes.push(m.h);
     if (msg.labelIds?.includes("SENT") || msg.labelIds?.includes("DRAFT")) return; // from you after all
-    rows.push({ source: "gmail", sealed: await seal(pub, inboundPayload(a.email, msg)) });
+    rows.push({ source: "gmail", sealed: await seal(pub, inboundPayload(a.email, msg, aliases)) });
   });
   await pool(takeSent, 4, async (m) => {
     const msg = await read<GmailMessage>(`/messages/${m.id}?format=minimal`);
