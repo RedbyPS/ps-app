@@ -3640,7 +3640,8 @@ function ClientMail({ s, mail }: { s: ReturnType<typeof useVault>; mail: boolean
           <span className="tm-mail-p">{MAIL_EMPTY_WORDS.connect}</span>
           <span className="tm-mail-a">
             <button type="button" className="tm-meet-j tm-mail-reply" onClick={() => { sfx.click(); openSettings("notify", { jump: "client-emails" }); }}>{MAIL_EMPTY_WORDS.button}</button>
-            <CopyForAiButton className="tm-meet-j tm-mail-copy" />
+            <CopyForAiButton className="tm-meet-j tm-mail-copy" mode="guide" />
+            <CopyForAiButton className="tm-meet-j tm-mail-copy" mode="clicks" />
           </span>
         </div>
       ) : shows === "pick" ? (
