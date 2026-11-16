@@ -8,17 +8,21 @@ export const MAIL_EMPTY_WORDS = {
   connect: "Connect your Gmail to see your clients' emails here.",
   button: "Connect Gmail",
   none: "No new client emails.",
+  pick: "Gmail is connected. Pick whose emails show here.",
+  pickButton: "Choose senders",
 } as const;
 
 /** true: at least one Gmail account is connected; false: none (or the check failed); null: not known yet. */
 export type GmailKnown = boolean | null;
 
-/** What the panel shows: the emails, the Connect Gmail prompt, the quiet "nothing new" line, or nothing for the moment
- *  it takes to ask (so the prompt never flashes up for someone who is connected). `seen`: this vault already holds a
- *  client email or an Instantly reply, which proves something is connected without asking. */
-export function mailPanelShows(o: { rows: number; replied: number; gmail: GmailKnown; seen: boolean }): "list" | "connect" | "none" | "wait" {
+/** What the panel shows: the emails, the Connect Gmail prompt, "Gmail is connected, pick whose emails show" (nobody is a client
+ *  or on the Always notify me list), the quiet "nothing new" line, or nothing for the moment it takes to ask (so the prompt never
+ *  flashes up for someone who is connected). `gmail` is true as soon as the status check lists an account OR any Gmail mail
+ *  already arrived (core/gmailtruth.ts). `seen`: the vault holds an Instantly reply. `picked`: someone is a client or on the list. */
+export function mailPanelShows(o: { rows: number; replied: number; gmail: GmailKnown; seen: boolean; picked?: boolean }): "list" | "connect" | "pick" | "none" | "wait" {
   if (o.rows > 0 || o.replied > 0) return "list";
-  if (o.seen || o.gmail === true) return "none";
+  if (o.gmail === true) return o.picked === false ? "pick" : "none";
+  if (o.seen) return "none";
   return o.gmail === false ? "connect" : "wait";
 }
 

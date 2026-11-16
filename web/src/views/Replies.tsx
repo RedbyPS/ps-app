@@ -1,12 +1,13 @@
 // Client replies from the developer's Gmail accounts: the Today card, the client page section,
 // the "match these addresses" field and the Gmail section in Settings.
 // Read only: the vault opens Gmail threads in Gmail and never sends anything.
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { ClientRec, Doc, Reply } from "../core/model";
 import { accountLabel, cleanMatchList, gmailThreadLink, replierName } from "../core/mail";
 import { openReplies, replies } from "../core/select";
 import { setReplyHandled, updateClient } from "../core/actions";
 import { sb } from "../core/vault";
+import { gmailView, seenAccounts } from "../core/gmailtruth";
 import { Field, Icon, toast, useVault } from "../ui/kit";
 import { relTime } from "./Todo";
 import "./replies.css";
@@ -129,19 +130,22 @@ export function MatchField({ client }: { client: Doc<ClientRec> }) {
   );
 }
 
-interface GmailStatus { account: string; last_ok: string | null; last_error: string | null; readonly: boolean | null }
-
 /** Settings: which Gmail accounts are connected, and who can pop up (MailPeople: lists and Who emails me). */
 export function GmailSettings({ embedded = false }: { embedded?: boolean } = {}) {
   const s = useVault();
-  const [status, setStatus] = useState<GmailStatus[] | null>(null);
+  const [rows, setRows] = useState<unknown>(null);
+  const [asked, setAsked] = useState(false);
+  const [error, setError] = useState<unknown>(null);
   useEffect(() => {
     let live = true;
-    const load = () => void sb.rpc("gmail_status").then(({ data }) => { if (live) setStatus((data as GmailStatus[]) || []); });
+    // The reason a status check fails is shown, never swallowed (V1.63): "not connected" is only said when nothing says otherwise.
+    const load = () => void sb.rpc("gmail_status").then(({ data, error: e }) => { if (live) { if (!e) setRows(data); setError(e ? e.message || "error" : null); setAsked(true); } },
+      (e: unknown) => { if (live) { setError(String((e as Error)?.message || e) || "error"); setAsked(true); } });
     load();
     const t = window.setInterval(load, 60_000);
     return () => { live = false; clearInterval(t); };
   }, []);
+  const view = useMemo(() => gmailView({ rows, asked, error, seen: seenAccounts(s.docs.values()) }), [rows, asked, error, s]);
   const Shell = embedded ? "div" : "section";
   return (
     <Shell className={embedded ? "stack" : "panel stack"} aria-labelledby="gm-h">
@@ -149,11 +153,26 @@ export function GmailSettings({ embedded = false }: { embedded?: boolean } = {})
         <h2 className={embedded ? "h3" : "h2"} id="gm-h">Gmail replies</h2>
         <p className="small muted">Your Gmail accounts are checked every 2 minutes with read-only access. Each message's sender, subject and short preview are sealed to your key before they are stored, so only this vault can read them. Reading never sends anything.</p>
       </div>
-      {status === null ? <p className="small muted">Checking...</p> : status.length === 0 ? (
+      {view.state === "asking" ? <p className="small muted">Checking...</p> : view.state === "none" ? (
         <p className="empty">No Gmail accounts connected yet.</p>
+      ) : view.state === "error" ? (
+        <p className="small muted">{view.note}</p>
+      ) : view.state === "seen" ? (
+        <>
+          <ul className="gm-accts">
+            {view.accounts.map((a) => (
+              <li key={a.account}>
+                <span className="pill good">Mail arriving</span>
+                <b className="trunc">{a.account}</b>
+                <span className="xs muted">{a.last ? `latest email ${relTime(a.last)}` : "mail seen from this account"}</span>
+              </li>
+            ))}
+          </ul>
+          {view.note && <p className="xs muted">{view.note}</p>}
+        </>
       ) : (
         <ul className="gm-accts">
-          {status.map((a) => {
+          {view.rows.map((a) => {
             const stale = !a.last_ok || Date.now() - new Date(a.last_ok).getTime() > 15 * 60_000;
             return (
               <li key={a.account}>

@@ -140,7 +140,7 @@ ok("the panel shows in the Tab list with the connect prompt, and Connect Gmail o
   assert.match(tm, /\{\(mailOnSnap\(s\) \|\| waOnSnap\(s\)\) && <Slot id="mail">\{mailOnSnap\(s\) && <ClientMail s=\{s\} mail \/>\}/, "behind the Client emails switch only, not the developer's account");
   const body = tm.slice(tm.indexOf("function ClientMail("), tm.indexOf("// ---------- upcoming meetings"));
   assert.doesNotMatch(body, /if \(!list\.length && !replied\.length\) return null;/, "an empty panel no longer hides");
-  assert.match(body, /const gmail = useGmailKnown\(empty && !seen\);/, "Gmail is only asked about while the panel is empty");
+  assert.match(body, /const gmail = useGmailKnown\(empty && !seen && !gmailMail, gmailMail\);/, "Gmail is only asked about while the panel is empty and no Gmail mail has arrived");
   assert.match(body, /shows === "connect"/);
   assert.match(body, /openSettings\("notify", \{ jump: "client-emails" \}\); \}\}>\{MAIL_EMPTY_WORDS\.button\}<\/button>/);
   assert.match(body, /\{MAIL_EMPTY_WORDS\.connect\}/);
