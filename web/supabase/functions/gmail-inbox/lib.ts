@@ -157,6 +157,11 @@ export function decodeEntities(s: string): string {
 }
 
 /** Short, content-free error text for gmail_state (never mail content, never tokens). */
+/** True when Google refused only because of its per minute quota (the next run continues). */
+export function isSlowDown(e: unknown): boolean {
+  return /^gmail (429|403 (rateLimitExceeded|userRateLimitExceeded))/.test(e instanceof Error ? e.message : String(e));
+}
+
 export function errText(e: unknown): string {
   const s = e instanceof Error ? e.message : String(e);
   return s.replace(/ya29\.[\w.-]+/g, "[token]").replace(/1\/\/[\w.-]+/g, "[token]").slice(0, 200);

@@ -192,6 +192,13 @@ await ok("accounts", () => {
   assert.equal(L.safeEqual("abc", "abd"), false);
   assert.equal(L.safeEqual("", ""), false, "an empty secret never authorises");
   assert.equal(L.errText(new Error("bad ya29.a0AfB_secret-token here")), "bad [token] here");
+  // A per minute quota refusal is "slow down", not a broken account (first run on a busy inbox, 16 Nov 2026).
+  assert.equal(L.isSlowDown(new Error("gmail 403 rateLimitExceeded: Quota exceeded for quota metric 'Total Query Cost'")), true);
+  assert.equal(L.isSlowDown(new Error("gmail 403 userRateLimitExceeded: User rate limit exceeded")), true);
+  assert.equal(L.isSlowDown(new Error("gmail 429")), true);
+  assert.equal(L.isSlowDown(new Error("gmail 403 insufficientPermissions: Request had insufficient authentication scopes.")), false);
+  assert.equal(L.isSlowDown(new Error("gmail 403")), false, "a bare 403 is a real problem");
+  assert.equal(L.isSlowDown(new Error("token refresh failed: invalid_grant")), false);
 });
 
 // ---------- end to end crypto: what the function seals, the browser opens ----------

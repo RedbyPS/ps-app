@@ -12,7 +12,7 @@
 // Plaintext mail exists only in memory for the length of a request. Nothing here sends mail.
 import { createClient } from "npm:@supabase/supabase-js@2.49.4";
 import {
-  type Account, type GmailMessage, afterSec, errText, inboundPayload, inboundQuery, mergeAccounts,
+  type Account, type GmailMessage, afterSec, errText, isSlowDown, inboundPayload, inboundQuery, mergeAccounts,
   parseAccounts, safeEqual, seal, sentPayload, sentQuery, sha256hex,
 } from "./lib.ts";
 
@@ -66,8 +66,14 @@ async function gget<T>(token: string, path: string): Promise<T> {
   for (let attempt = 0; ; attempt++) {
     const r = await fetch(GMAIL + path, { headers: { Authorization: `Bearer ${token}` } });
     if (r.ok) return await r.json() as T;
-    if ((r.status === 429 || r.status >= 500) && attempt < 2) { await new Promise((res) => setTimeout(res, 800 * (attempt + 1))); continue; }
-    throw new Error(`gmail ${r.status}`);
+    // Keep Google's own reason (no mail, no token) so Settings can say what to fix instead of a bare number.
+    const e = (await r.json().catch(() => ({}))) as { error?: { message?: string; errors?: { reason?: string }[] } };
+    const reason = e.error?.errors?.[0]?.reason || "";
+    // Google says "slow down" as 429 or as 403 rateLimitExceeded / userRateLimitExceeded: wait and try again.
+    const slowDown = r.status === 429 || (r.status === 403 && /ratelimit/i.test(reason));
+    if ((slowDown || r.status >= 500) && attempt < 2) { await new Promise((res) => setTimeout(res, 1500 * (attempt + 1))); continue; }
+    const why = [reason, e.error?.message].filter(Boolean).join(": ");
+    throw new Error(`gmail ${r.status}${why ? " " + why : ""}`);
   }
 }
 
@@ -117,15 +123,24 @@ async function pollAccount(a: Account, pub: string, cursorMs: number | null, run
 
   const rows: { source: string; sealed: string }[] = [];
   const hashes: string[] = [];
-  await pool(takeIn, 8, async (m) => {
+  // A quota refusal stops this run's reading but keeps everything already read: the first run on a busy
+  // inbox reads a week of mail, and throwing it all away made every run hit the same quota forever.
+  let stopped = false;
+  const read = async <M>(path: string): Promise<M | null> => {
+    if (stopped) return null;
+    try { return await gget<M>(token, path); } catch (e) { if (isSlowDown(e)) { stopped = true; return null; } throw e; }
+  };
+  await pool(takeIn, 4, async (m) => {
     // "full" for the opening of the body (lib.ts bodyOpening); the rest of it is never kept.
-    const msg = await gget<GmailMessage>(token, `/messages/${m.id}?format=full`);
+    const msg = await read<GmailMessage>(`/messages/${m.id}?format=full`);
+    if (!msg) return;
     hashes.push(m.h);
     if (msg.labelIds?.includes("SENT") || msg.labelIds?.includes("DRAFT")) return; // from you after all
     rows.push({ source: "gmail", sealed: await seal(pub, inboundPayload(a.email, msg)) });
   });
-  await pool(takeSent, 8, async (m) => {
-    const msg = await gget<GmailMessage>(token, `/messages/${m.id}?format=minimal`);
+  await pool(takeSent, 4, async (m) => {
+    const msg = await read<GmailMessage>(`/messages/${m.id}?format=minimal`);
+    if (!msg) return;
     hashes.push(m.h);
     rows.push({ source: "gmail-sent", sealed: await seal(pub, sentPayload(a.email, msg)) });
   });
@@ -139,7 +154,7 @@ async function pollAccount(a: Account, pub: string, cursorMs: number | null, run
     if (error) throw new Error("seen store: " + error.message);
   }
   // Only move the window forward once everything in it has been sealed.
-  const complete = takeIn.length === newIn.length && takeSent.length === newSent.length;
+  const complete = !stopped && takeIn.length === newIn.length && takeSent.length === newSent.length;
   return { sealed: rows.length, cursor: complete ? runStart : cursorMs, more: !complete };
 }
 
