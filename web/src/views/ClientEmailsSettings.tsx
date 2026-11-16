@@ -15,7 +15,7 @@ import { AI_COPY_WORDS } from "../core/mailaiprompt";
 import { mailSwitchChanged } from "../core/vault";
 import { toast, useVault } from "../ui/kit";
 import { GmailSettings } from "./Replies";
-import { CopyForAiButton, ownRef } from "./CopyForAi";
+import { CopyForAiChoice, ownRef } from "./CopyForAi";
 import { forgetGmailKnown, useGmailKnown } from "./gmailknown";
 import "./clientemails.css";
 
@@ -57,10 +57,7 @@ export function ClientEmailsSettings({ compact: _compact = false }: { compact?: 
       <p className="small muted ce-note">{CE_MAC_SENDS}</p>
       {can && (
         <div className="stack tight">
-          <div className="ce-row">
-            <CopyForAiButton className="btn" />
-          </div>
-          <p className="small muted">{AI_COPY_WORDS.line}</p>
+          <CopyForAiChoice />
         </div>
       )}
       {can && (

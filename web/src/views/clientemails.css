@@ -8,3 +8,7 @@
 .ce-copied { margin-left: 2px; }
 .ce-hand-link { cursor: pointer; width: fit-content; text-decoration: underline; text-underline-offset: 3px; }
 .ce-hand[open] > .ce-hand-link { margin-bottom: 6px; }
+/* Copy for your AI, two ways: two calm options side by side, one line under each (stacks on a narrow screen). */
+.ce-pick { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px 16px; align-items: start; }
+.ce-opt { display: grid; gap: 4px; justify-items: start; }
+.ce-opt > p { margin: 0; }

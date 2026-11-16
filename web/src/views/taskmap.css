@@ -790,7 +790,7 @@ html:not(.gos) .tm-overlay:not(.tm-docked) .tm-xrow > *, html:not(.gos) .tm-over
 .tm-mail-s { grid-column: 1 / -1; font-size: calc(12.5px * var(--k-fs, 1)); font-weight: 650; color: var(--k-acc-t, #F49BBE); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tm-mail-p { grid-column: 1 / -1; font-size: calc(12.5px * var(--k-fs, 1)); line-height: 1.42; color: color-mix(in srgb, var(--k-fg, #FFFFFF) min(100%, calc(76% * var(--k-ia, 1))), transparent);
   display: -webkit-box; -webkit-line-clamp: 5; -webkit-box-orient: vertical; overflow: hidden; }
-.tm-mail-a { grid-column: 1 / -1; display: flex; gap: calc(6px * var(--k-dn, 1)); margin-top: 5px; }
+.tm-mail-a { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: calc(6px * var(--k-dn, 1)); margin-top: 5px; }
 /* V1.62: the panel with no email in it: the Connect Gmail prompt, or the quiet "nothing new" line. */
 .tm-mail-empty { display: grid; gap: calc(4px * var(--k-dn, 1)); padding-top: calc(2px * var(--k-dn, 1)); }
 .tm-mail-none { display: block; padding-top: calc(2px * var(--k-dn, 1)); color: color-mix(in srgb, var(--k-fg, #FFFFFF) min(100%, calc(60% * var(--k-ia, 1))), transparent); }

@@ -148,7 +148,7 @@ ok("the panel shows in the Tab list with the connect prompt, and Connect Gmail o
   assert.match(file("src/core/settingsindex.ts"), /\{ id: "client-emails", group: "notify", /, "the jump lands on a real row");
   assert.match(file("src/views/SettingsGroups.tsx"), /"client-emails": block\(\(\) => <ClientEmailsSettings compact \/>\)/);
   const ce = file("src/views/ClientEmailsSettings.tsx");
-  assert.match(ce, /<CopyForAiButton className="btn" \/>/, "the one Copy for your AI button leads the section");
+  assert.match(ce, /<CopyForAiChoice \/>/, "the Copy for your AI choice (two ways) leads the section");
   assert.match(ce, /<details className="stack tight ce-hand">/, "the old step guide is closed behind one small link");
   assert.match(ce, /\{AI_COPY_WORDS\.hand\}/);
   const hook = file("src/views/gmailknown.ts");
