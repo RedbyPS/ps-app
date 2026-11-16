@@ -6,7 +6,8 @@ import * as C from "./crypto";
 import type { CalendarSnap, ClientRec, Doc, IEmail, IThread, Kind, Reply, Settings } from "./model";
 import { replyIdFor } from "./maildedupe";
 import { mailOnSnap } from "./mailsnap";
-import { setMailAllowed } from "./mailflag";
+import { setMailAllowed, setSecondAllowed } from "./mailflag";
+import { secondOnSnap } from "./secondsnap";
 import { waOnSnap } from "./wasnap";
 import { applyInbound as applyWaInbound, applyStatus, chatKey, groupChats, matchClient, prefsOf, waChatIdFor, type WaChat, type WaEvent, type WaStatusEvent } from "./whatsapp";
 import { applyInbound, applySent, buildMatcher, clientForInbound, parseAddress, type GmailInbound, type GmailSent } from "./mail";
@@ -190,6 +191,7 @@ function emit(patch: Partial<Snapshot> = {}) {
   snap = { ...snap, ...patch, version: snap.version + 1 };
   setMailAllowed(snap.primary && (mailOnSnap(snap) || waOnSnap(snap)));   // WhatsApp shares the email panel's place (PS 1.60)
     // the layout, Do Not Disturb and island choices follow the Client emails switch (core/mailflag.ts)
+  setSecondAllowed(secondOnSnap(snap));   // PS 1.65: the Second Computer panel in Edit mode follows its switch
   listeners.forEach((l) => l());
 }
 export const vaultStore = {

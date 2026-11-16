@@ -8,6 +8,7 @@ import { settingsData } from "./core/select";
 import { accountKind } from "./core/account";
 import { cleanSwitches, featureAnswers, registry, setFeatureContext, whoFor, type Account } from "./core/features";
 import { profile } from "./core/profile";
+import { SECOND_FEATURE, secondSwitch } from "./core/secondswitch";
 
 // The person's own switches live with the other settings in the vault (saved per account, so they follow the person).
 declare module "./core/model" {
@@ -42,6 +43,9 @@ export function startFeatureSync(shellPost?: (m: object) => void): void {
     setFeatureContext(account, mine);
     if (!post || account === null) return;
     const on = featureAnswers(registry(), whoFor(profile(), account), mine);
+    // PS 1.65: Second Computer is a core feature with its own switch (Settings, Second Computer), so the person's answer
+    // wins for it like on the page (core/secondswitch.ts), also on the developer's account. The Mac starts or stops it.
+    if (SECOND_FEATURE in on) on[SECOND_FEATURE] = secondSwitch(mine, account);
     const key = JSON.stringify(on);
     if (key === last) return;
     last = key;

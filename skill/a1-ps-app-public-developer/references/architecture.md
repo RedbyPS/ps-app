@@ -53,11 +53,11 @@ Code that only makes sense in one shell checks `import.meta.env.MODE` (`"ps"` or
   owner's features use is sealed to the owner's key on the server side.
 - `RED_ONLY` in `account.ts` and `mac/Sources/Owner.swift` switch the owner's personal features off for everyone
   else. The code of those features is not in core; it lives in the owner's layer. Plug points stand in (web files
-  that begin "Left out of the public source", `mac/Sources/DeveloperOnly.swift`, `phone/.../CmdKey.kt`, all listed
+  that begin "Left out of the public source" and `mac/Sources/DeveloperOnly.swift`, all listed
   in `layers/plugpoints.json`) and do nothing in the G Squad build.
 - `web/src/core/features.ts` holds `feature("id")` and the switches for things turned off for everyone but kept
   (for example Campaigns and the Notebook looks).
-- Left out of the repo (README, "What is left out"): Second Computer, AirPods and microphone auto routing, email
+- Left out of the repo (README, "What is left out"): AirPods and microphone auto routing, email
   cards, replies and sending, the follow up radar, the Instantly inbox, Campaigns, the Morning brief, Numerology,
   the PS rules, private release notes, inviting other owners, the server feeds behind them, and the owner's
   release tools. Do not rebuild these and do not wire new features to them.

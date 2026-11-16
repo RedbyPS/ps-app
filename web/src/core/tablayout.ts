@@ -10,7 +10,7 @@
 // x 1 is flush with the right edge, the same for y. So it lands in the same spot on any screen size and can never
 // be off screen. w and h are its size when it was dropped (w also fixes its width once it leaves its column).
 // In the lower half it hangs from the bottom, so a panel that grows (more meetings) grows up, never off screen.
-import { mailAllowed } from "./mailflag.ts";
+import { mailAllowed, secondAllowed } from "./mailflag.ts";
 import { CAMPAIGNS_ON } from "./features.ts";
 
 export type SlotPos = { x: number; y: number; w: number; h: number };
@@ -66,7 +66,7 @@ export const SLOTS: readonly SlotInfo[] = [
   { id: "clipboard", label: "Clear clipboard" },
   { id: "gear", label: "Settings", keep: true },
   { id: "security", label: "Security" },
-  { id: "second", label: "Second Computer", red: true },
+  { id: "second", label: "Second Computer" },   // PS 1.65: everyone's, once Second Computer is switched on (slotOk)
   { id: "gsquad", label: "G Squad" },
   { id: "dnd", label: "Do Not Disturb" },
   { id: "pskeys", label: "Tab and Lock", keep: true },
@@ -202,7 +202,7 @@ export const resetLayout = (at: string): TabLayout => ({ pos: {}, hidden: [], at
 
 /** The hidden panels this account can bring back, in screen order (the developer's own ones only on his account). */
 /** A panel the person may have: the developer's own ones need the developer's account, Client emails needs its switch (core/mailswitch.ts). */
-const slotOk = (s: SlotInfo, red: boolean) => s.mail ? mailAllowed() : red || !s.red;
+const slotOk = (s: SlotInfo, red: boolean) => s.mail ? mailAllowed() : s.id === "second" ? secondAllowed() : red || !s.red;
 export function trayOf(l: TabLayout, red: boolean): string[] {
   return SLOTS.filter((s) => l.hidden.includes(s.id) && slotOk(s, red) && !s.off).map((s) => s.id);
 }

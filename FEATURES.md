@@ -65,6 +65,7 @@ removed in Edit mode (top left), but that only hides them; the switches below ar
 | Lock and Touch ID | Lock PS; unlock with your fingerprint or passphrase. | Use it or not. |
 | Sleep mode | A full screen clock and alarm for the night. | Starts only when you start it. |
 | Sentry mode | Covers and guards the Mac while you are away. | Starts only when you start it. "Keep awake with the lid closed" and "Restart if not unlocked" are inside it. |
+| Second Computer | Pairs two of your Macs through your vault: send files, notes and research jobs to the other Mac, and lock, restart or shut it down, also from your phone. | Off until you switch it on. Settings, Second Computer. |
 | Auto reboot | Restarts the Mac on a schedule, using the restart helper. | Settings, Privacy and sharing, Security, "Auto reboot": Off. Nothing is installed until you click Set up. |
 | 1Password and Signal protection | PS stays out of those two apps. | Always on, on purpose. |
 | Soundboard | Play short sounds. | Opens only when you use it. |
@@ -160,6 +161,6 @@ Rewind (yearly recap). PS keeps a private history of your year, such as the task
 
 ## Not in this repo
 
-Features that only run on the developer's own account are left out (see README.md, "What is left out"): Second Computer,
+Features that only run on the developer's own account are left out (see README.md, "What is left out"):
 AirPods and microphone auto routing, the follow up radar, Campaigns, the Morning brief, Numerology, the PS rules, private release notes and inviting other owners. Campaigns
 and the Notebook looks are also switched off for everyone (`web/src/core/features.ts`).

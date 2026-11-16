@@ -32,7 +32,7 @@ const answers = (account: "red" | "other" | null, mine?: Record<string, boolean>
 ok("The developer's layer profile: others' shared features on, Client emails on, WhatsApp off as 1.61 left it, Screen recording at its default", () => {
   assert.equal(layerProfile.name, "red");
   assert.equal(layerProfile.othersShared, "on");
-  assert.deepEqual(layerProfile.features, { "client-emails": true, whatsapp: false });
+  assert.deepEqual(layerProfile.features, { "client-emails": true, whatsapp: false, "second-computer": true });   // PS 1.65: Second Computer stays on on the developer's account
   assert.equal(layerProfile.rules.tabOverProtectedApps, false, "the 1Password and Signal rules are untouched");
   assert.equal(layerProfile.rules.islandOverProtectedApps, false);
 });

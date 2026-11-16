@@ -71,7 +71,7 @@ import { AfkSettings } from "./AfkSettings";
 import { useAfkOn } from "./AfkBadge";
 import { MediaGuardSettings } from "./MediaGuardSettings";
 import { PsProjectSetting } from "./PsCreate";
-import { SecondSettings } from "./Second";
+import { SecondSwitch } from "./SecondSwitch";
 import { openSleepSettings } from "./SleepSettings";
 import { SentryBatterySetting, SentryLidSetting, SentryRestartSetting, SentryRestartSleepSetting } from "./Sentry";
 import { SharingList, openGSquad } from "./GSquad";
@@ -405,7 +405,7 @@ export const CONTROLS: Controls = {
   "project": block(() => <PsProjectSetting />, false),
   "link-iphone": function LinkIphone({ e }) { return <LinkIphoneRow e={e} />; },
   "mac-phone-signin": function PhoneSignIn({ e }) { return <LinkIphoneRow e={e} red />; },
-  "second": block(() => <SecondSettings />, false),
+  "second": block(() => <SecondSwitch />, false),   // PS 1.65: its On/Off, then its settings while on
   "invite": row(() => undefined),
 
   // Sleep mode (V1.47): one line and a button, like Security; its settings open full screen (views/SleepSettings.tsx)

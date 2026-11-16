@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleName</key><string>PS Middle Click</string>
+  <key>CFBundleDisplayName</key><string>PS Middle Click</string>
+  <key>CFBundleIdentifier</key><string>com.cincee.ps.middleclick</string>
+  <key>CFBundleExecutable</key><string>PSMiddleClick</string>
+  <key>CFBundlePackageType</key><string>APPL</string>
+  <key>CFBundleIconFile</key><string>AppIcon</string>
+  <key>CFBundleShortVersionString</key><string>1.0</string>
+  <key>CFBundleVersion</key><string>1</string>
+  <key>LSMinimumSystemVersion</key><string>14.0</string>
+  <key>LSUIElement</key><true/>
+  <key>NSHighResolutionCapable</key><true/>
+  <key>PSMCEmbedded</key><true/>
+  <key>NSHumanReadableCopyright</key><string>Part of PS. A firm trackpad press is a middle click.</string>
+</dict>
+</plist>

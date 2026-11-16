@@ -27,10 +27,8 @@ const RED_GATED: Record<string, string> = {
   Numerology: "c: the developer asked", PsRuleButton: "c: the developer asked (PS rules)", RuleBookHost: "c: the developer asked (website rule book)", DockBtn: "c: phone Rules button",
   MorningBrief: "b: Morning brief from the developer's daily report (website Today)", YourNumbers: "c: the developer asked (Numerology on the website Today)",
   CampaignStats: "b: Instantly campaigns", BriefButton: "b: Morning brief from the developer's daily report",
-  // Second Computer: the developer, 8 Nov 2026 (V1.42): "purely private release until I say otherwise". Native: Owner.whenRed.
-  SecondButton: "c: the developer asked (Second Computer)", SecondSettings: "c: the developer asked (Second Computer settings)",
-  OtherMac: "c: the developer asked (Second Computer, the other Mac)", Phones: "c: the developer asked (Second Computer phone pairing)",
-  GosMacs: "c: the developer asked (the phone's Your Macs, through Second Computer)", ClientMail: "b: the developer's Gmail",
+  // Second Computer left this list in PS 1.65 (the developer, 16 Nov 2026: public, with its own switch, SecondSwitch below).
+  ClientMail: "b: the developer's Gmail",
   ClientReplies: "b: the developer's Gmail", MatchField: "b: the developer's Gmail matching", GmailSettings: "b: the developer's Gmail", MailCardsWeb: "b: the developer's Gmail",
   NewTasks: "b: Telegram AT tasks and Claude suggestions", ClaudeAccess: "b: Claude's agent account", BgProblemCard: "b: the developer's background videos", GosAddVideoTile: "b: the developer's background videos",
   button: "c: phone Rule book menu item", p: "b: Invite owners note (the developer's project)", section: "b: Gmail replies, who emails me (the developer's Gmail)", div: "b: Add video for the developer's background videos",
@@ -49,6 +47,7 @@ const PUBLIC_CONTROLS: Record<string, string> = {
   IslandPlace: "the Dynamic Island's position on this Mac (Island.swift island.pos, G Squad)", IslandPosRow: "the same, in the island's own settings",
   IslandAwayRow: "Show it now while the island is away (right click > Disappear, V1.58)", IslandHideRow: "how long a click on the island's top line hides it (settings.island.hide, Island.swift, V1.40)",
   AutoResetSetting: "the automatic Reset and its time (core/resetday.ts, actions.ts maybeAutoReset, 8 Nov 2026)",
+  SecondSwitch: "Second Computer's On/Off, Settings, Second Computer (the Mac's Second.setOn and the page's stopSecond, PS 1.65)",
   MediaGuardSettings: "the AirPods card (MediaGuard.swift, everyone's since V1.40)", AirPodsFix: "Give AirPods button back to Spotify (MediaGuard.swift reconfigure, V1.40)",
 };
 const GATE = /(?:\bred|isRedAccount\([^()]*(?:\([^()]*\))?[^()]*\))\s*&&\s*(?:import\.meta\.env\.MODE !== "gos"\s*&&\s*)?\(?\s*(?:<Slot id="[a-z0-9-]+">\s*)?<([A-Za-z]+)/g;   // through an Edit mode Slot (views/EditMode.tsx)

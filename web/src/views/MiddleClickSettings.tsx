@@ -1,8 +1,9 @@
 // PS > Settings > Force Touch middle click (the developer, 31 Oct 2026). The helper "PS Middle Click" inside the PS
 // app on this Mac (ps-mac Sources/MiddleClick.swift, built from ~/Projects/middle-click, the same code as
 // the standalone PSMiddleClicker app): a firm trackpad press on a link in a browser opens it in a new
-// background tab. Off by default. PS never changes a system setting: it says what to switch and opens
-// the right page.
+// background tab. On by default for everyone (the developer, 16 Nov 2026); an explicit off stays off. The helper
+// never asks for its permission by itself: "Open Privacy & Security" has it ask macOS (one click) and
+// opens the page. PS never changes a system setting: it says what to switch and opens the right page.
 import { psPost, usePsSettings, type PsSettings } from "../ps";
 import { appName } from "../core/appname";
 

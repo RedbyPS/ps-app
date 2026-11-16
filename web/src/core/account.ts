@@ -36,7 +36,7 @@ export function isRedAccount(s: Pick<Snapshot, "status" | "role" | "red">): bool
  *  core/localcal.ts); Numerology and the PS rules stay the developer's because he asked (5 and 7 Nov 2026). */
 export const RED_ONLY = [
   "gmail", "mailcards", "telegram", "fireflies", "radar", "followupCard",
-  "instantly", "brief", "claude", "airpods", "backgroundVideos", "secondComputer",
+  "instantly", "brief", "claude", "airpods", "backgroundVideos",
   "numerology", "rules",
 ] as const;
 export type RedFeature = typeof RED_ONLY[number];

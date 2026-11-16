@@ -39,12 +39,15 @@ cp "$HERE/Helper/com.cincee.ps.rebootd.plist" "$APP/Contents/Library/LaunchDaemo
 # Force Touch middle click helper "PS Middle Click.app", built from ~/Projects/middle-click (the same code
 # as the standalone PSMiddleClicker app) and signed there as com.cincee.ps.middleclick with the same identity.
 # PS starts and stops it (Sources/MiddleClick.swift); it runs as its own process.
-# V1.58: a tree without it (the public repo has no middle-click folder) builds PS without the helper and says so.
-if MC="$(cd "${PS_MIDDLECLICK_DIR:-$HERE/../middle-click}" 2>/dev/null && pwd)"; then
+# V1.65: the public core carries the helper's source in mac/middle-click/ (web scripts/open-source.mjs), so a
+# build from core has it too; the private tree has it next door. A tree with neither builds PS without it and says so.
+MCDIR="${PS_MIDDLECLICK_DIR:-}"
+if [ -z "$MCDIR" ]; then if [ -f "$HERE/middle-click/build.sh" ]; then MCDIR="$HERE/middle-click"; else MCDIR="$HERE/../middle-click"; fi; fi
+if MC="$(cd "$MCDIR" 2>/dev/null && pwd)"; then
   mkdir -p "$APP/Contents/Library/LoginItems"
   PS_SIGNING_DIR="$SIGN" bash "$MC/build.sh" helper "$APP/Contents/Library/LoginItems" | grep -E "checks|Built|WARNING"
 else
-  echo "WARNING: no middle-click folder next to this one: PS is built without the Force Touch middle click helper"
+  echo "WARNING: no middle-click folder (mac/middle-click, or next to this one): PS is built without the Force Touch middle click helper"
 fi
 cp "$HERE/Info.plist" "$APP/Contents/Info.plist"
 # V1.49 (the developer, 12 Nov 2026: the app is called "PS app" for everyone): Finder, the Dock, Launchpad, Spotlight, the

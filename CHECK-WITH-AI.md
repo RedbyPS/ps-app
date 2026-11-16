@@ -29,7 +29,7 @@ comment in the code: check the code itself, and tell me where the docs and the c
    allows).
 
 4. Code that only runs for the developer is not in this repo. Placeholders stand in for it: web files that start
-   with "Left out of the public source", mac/Sources/DeveloperOnly.swift and the phone's CmdKey.kt. Confirm they
+   with "Left out of the public source" and mac/Sources/DeveloperOnly.swift. Confirm they
    do nothing. web/src/core/account.ts (RED_ONLY) and mac/Sources/Owner.swift decide which account counts as the
    developer's: work out what decides it and whether a server could make another person's account count.
 

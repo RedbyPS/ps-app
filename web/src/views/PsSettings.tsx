@@ -17,7 +17,7 @@ import { WhatsAppSettings } from "./WhatsAppSettings";
 import { mailOnSnap } from "../core/mailsnap";
 import { mailCan } from "../core/mailswitch";
 import { InviteOwners } from "./InviteOwners";
-import { SecondSettings } from "./Second";
+import { SecondSwitch } from "./SecondSwitch";
 import { openSecurity } from "./Security";
 import { openMacSettings } from "./MacSettings";
 import { PsProjectSetting } from "./PsCreate";
@@ -63,7 +63,7 @@ export function PsSettingsView({ onBack, overlay }: { onBack?: () => void; overl
 
       {overlay && <AppNameSetting />}
       <IslandPlace moved={!!st?.islandMoved} ready={!!st} prefs={islandPrefs(settingsData(s).island)} save={saveVault} />
-      {red && <SecondSettings />}
+      <SecondSwitch />{/* PS 1.65: everyone's, behind its own switch */}
       <AfkSettings />
       <MediaGuardSettings />{/* the AirPods card: everyone's (V1.40), off until switched on */}
       <MiddleClickSettings />

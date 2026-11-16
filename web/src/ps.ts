@@ -173,7 +173,8 @@ import { newLooks } from "./newbadge";
 import { radarDraft } from "./core/radarLive";
 import { tidyRadarState, type RadarState } from "./core/radar";
 import { bgAllowed, startBgVault } from "./core/bgvault";
-import { cleanSecondOp, runSecondOp, secondLocal, secondMessage, secondStore, setSecondMirror, startSecond } from "./second/store";
+import { cleanSecondOp, runSecondOp, secondLocal, secondMessage, secondStore, setSecondMirror, startSecond, stopSecond } from "./second/store";
+import { secondOnSnap } from "./core/secondsnap";
 import { cleanPeople } from "./core/numerology";
 import { cleanListLooks, cleanTodoOp, type TodoOp } from "./core/completed";
 import { cleanTickSoundLooks } from "./core/ticksound";
@@ -649,7 +650,7 @@ export function startPsBridge() {
       if (dirCardMessage(m as { type?: string })) return;  // G Squad: "X asked to join" card, Approve and Decline (src/squad/direngine.ts)
       if (chatCardMessage(m as { type?: string; id?: string; action?: string; text?: string })) return;  // G Squad chat: the history vote card's Yes and No (src/squad/chatengine.ts)
       if (islandMessage(m as { type?: string })) return;   // a tick on the Dynamic Island (src/island.ts)
-      if (secondOn && secondMessage(m as unknown as { type?: string })) return;   // The developer only, see sayOwner   // Second Computer (src/second/store.ts)
+      if (secondOn && secondMessage(m as unknown as { type?: string })) return;   // Second Computer (src/second/store.ts), only while switched on, see sayOwner
       if (m.type === "sync") rewindActive();   // Tab held: active on this Mac now (Rewind, src/rewind.ts)
       if (m.type === "mic") setMic(m);
       // A tick from the Tab list says which way since V1.34 (a repeat is harmless); the Dynamic Island still toggles.
@@ -992,9 +993,12 @@ export function startPsBridge() {
     if (s.status !== "unlocked") { ownerSaid = null; return; }
     const red = bgAllowed(s);
     if (red !== ownerSaid) { ownerSaid = red; psPost({ type: "owner", red }); }
-    // Second Computer is the developer's alone (V1.42, the developer: "purely private release until I say otherwise"): it starts only
-    // once his account is unlocked, after the owner message, so PS has started its own half first (Owner.whenRed).
-    if (red && !secondOn) { secondOn = true; startSecond(psPost); }
+    // Second Computer (PS 1.65: everyone's, behind its switch, core/secondswitch.ts; the developer's alone V1.42 to V1.64): it
+    // starts once the account is unlocked and the switch is on, after the feature answers, so PS has started its own half
+    // first (Second.setOn); switched off, both halves stop.
+    const second = secondOnSnap(s);
+    if (second && !secondOn) { secondOn = true; startSecond(psPost); }
+    else if (!second && secondOn) { secondOn = false; stopSecond(); }
   };
   vaultStore.subscribe(sayOwner);
   sayOwner();
@@ -1013,7 +1017,7 @@ export function startPsBridge() {
   startCalRefresh();   // asks for the calendar every 2 minutes and on wake; the server reads Google every minute (src/calrefresh.ts)
   startIsland(psPost);   // the Dynamic Island under the notch (src/island.ts)
   startPomodoro(() => islandNow());   // Pomodoro (src/pomodoro.ts): each phase saved as it ends, the island told at once
-  // Second Computer (src/second/store.ts): started by sayOwner above, on the developer's account only.
+  // Second Computer (src/second/store.ts): started and stopped by sayOwner above, by its switch.
   startRebootWarn(psPost);   // a card 10 min before the other Mac's auto reboot, with Postpone (src/rebootwarn.ts)
   startNoteLook(psPost);   // notification card colours and the Other alerts sound to the Mac (src/notelook.ts, core/notelook.ts)
   startSentryPrefs(psPost);   // Sentry mode's restart if not unlocked to the Mac, for the restart helper pop up (src/sentryprefs.ts, V1.49)

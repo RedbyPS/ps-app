@@ -10,7 +10,7 @@ import { MOBILE_APP_NAME } from "../core/appname";
 import { activeProject } from "../core/project";
 import { lock, lockPhone, phoneKept } from "../core/vault";
 import { useVault } from "../ui/kit";
-import { isRedAccount } from "../core/account";
+import { secondOnSnap } from "../core/secondsnap";
 import { openSettings, SetRow, type Controls, type RowProps } from "../views/SettingsScreen";
 import { canVibrate, gos, haptic, MWEB, setWebPrefs, useGos, type GosPrefs } from "./bridge";
 import { LayoutPicker, PermBtn, PermRow, Row, Switch, OPENERS } from "./GosSettings";
@@ -140,8 +140,8 @@ export const PHONE_CONTROLS: Controls = {
       body={<Note>A Home Screen app keeps its own sign in, so you sign in there once more.</Note>} />;
   },
   "phone-macs": function Macs({ e }: RowProps) {
-    const red = isRedAccount(useVault());   // the index says the developer only too (core/settingsindex.ts); never drawn for anyone else
-    return <SetRow e={e} body={<Bare>{red && <GosMacs />}</Bare>} open plain />;
+    const on = secondOnSnap(useVault());   // PS 1.65: Second Computer's switch (core/secondswitch.ts); the index says so too (core/settingsindex.ts)
+    return <SetRow e={e} body={<Bare>{on && <GosMacs />}</Bare>} open plain />;
   },
   "phone-not-here": ({ e }: RowProps) => <SetRow e={e} body={<Note>Per app network rows are left out on purpose: they would need a VPN service, which would push your VPN aside. All PS app traffic goes through your VPN like every other app.</Note>} />,
 

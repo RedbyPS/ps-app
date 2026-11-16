@@ -13,7 +13,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
 import type { Snapshot } from "../core/vault";
-import { isRedAccount } from "../core/account";
+import { secondOnSnap } from "../core/secondsnap";
 import { isOnline, machineMs, seenText, timerOn, type LockPeriod, type Machine, type RebootSetMode, type StatBody } from "../core/second";
 import { secondStore } from "../second/store";
 import { parseEnv, secondView, type SecondView } from "../second/view";
@@ -160,14 +160,14 @@ export function SecurityWindow({ s }: { s: Snapshot }) {
 
 function SecurityBody({ s }: { s: Snapshot }) {
   const v = useSecondView(s);
-  const red = isRedAccount(s);
+  const second = secondOnSnap(s);   // PS 1.65: the other Mac and the phones need Second Computer, now everyone's behind its switch
   return (
     <>
-      <Glance s={s} v={v} red={red} />
+      <Glance s={s} v={v} second={second} />
       <RebootCard title="Auto reboot on this Mac" />
       <HelperRemindRow />
-      {red && <OtherMac s={s} v={v} />}
-      {red && <Phones v={v} />}
+      {second && <OtherMac s={s} v={v} />}
+      {second && <Phones v={v} />}
       <AysSettings />
       <SignOut />
     </>
@@ -305,7 +305,7 @@ function timerText(m: Machine | null | undefined): string {
 const fmtLeft = (ms: number) => { const h = Math.floor(ms / HOUR), mm = Math.round((ms % HOUR) / 60_000); return h ? (mm ? `${h} h ${mm} min` : `${h} h`) : `${Math.max(1, mm)} min`; };
 const HELPER: Record<string, string> = { approved: "Switched on", "needs approval": "Needs your OK on that Mac", "not set up": "Not set up", missing: "Not in that build" };
 
-function Glance({ s, v, red }: { s: Snapshot; v: SecondView; red: boolean }) {
+function Glance({ s, v, second }: { s: Snapshot; v: SecondView; second: boolean }) {
   const r = usePsSettings()?.reboot;
   const mode = r?.mode === "active" ? "Active" : r?.mode === "watch" ? "Watch only" : "Off";
   const mine: Row[] = [
@@ -330,7 +330,7 @@ function Glance({ s, v, red }: { s: Snapshot; v: SecondView; red: boolean }) {
     <div className="sec-glance">
       <GlanceCard title={v.me?.name ?? "This Mac"} sub="This Mac" rows={mine} online clock={() => myClock(r)}
         periods={<Periods list={myPeriods} missing={r?.helper === "on" ? "The restart helper on this Mac writes these from this version on." : "Set up the restart helper to keep these."} />} />
-      {red && v.peer && (
+      {second && v.peer && (
         <GlanceCard title={v.peer.name} sub={v.role === "primary" ? "Your second Mac" : "Your main Mac"} rows={theirs} online={online} clock={() => peerClock(v.peer!.name, st, online)}
           periods={<Periods list={m?.timer?.periods} missing={`${v.peer.name} sends these once it has this version of PS app.`} />} />
       )}

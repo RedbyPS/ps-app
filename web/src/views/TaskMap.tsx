@@ -138,6 +138,7 @@ import { ReceiptButton } from "./Purchases";
 import { AfkBadge, setAfkOn } from "./AfkBadge";
 import { DndButton } from "./Dnd";
 import { SecondButton } from "./Second";
+import { secondOnSnap } from "../core/secondsnap";
 import { SecurityButton, SecurityWindow } from "./Security";
 import { MinecraftWindow } from "./Minecraft";
 import { MINECRAFT_ENABLED } from "../core/mcmode";
@@ -1406,8 +1407,8 @@ export function Overlay({ onClose, controls, docked, web, footer }: { onClose: (
         <div className="tm-tr2">
           {/* Security, the padlock just left of Second Computer (views/Security.tsx, the developer 1 Nov 2026): PS on a Mac only. */}
           {!docked && PS && <Slot id="security"><SecurityButton s={s} /></Slot>}
-          {/* Second Computer (views/Second.tsx): it shows only in PS on a Mac, where PS holds the device keys. */}
-          {red && <Slot id="second"><SecondButton s={s} /></Slot>}
+          {/* Second Computer (views/Second.tsx): it shows only in PS on a Mac, where PS holds the device keys, once it is switched on (PS 1.65, core/secondswitch.ts). */}
+          {secondOnSnap(s) && <Slot id="second"><SecondButton s={s} /></Slot>}
           {/* G Squad (V1.40, views/GSquad.tsx): just left of the moon, in PS on a Mac, every account. */}
           {((PS && !docked) || web) && <Slot id="gsquad"><GSquadButton /></Slot>}
           {import.meta.env.MODE !== "gos" && <Slot id="dnd"><DndButton st={st} s={s} act={(o: DndOp) => taskMapActions.dnd(o)} homeTz={st.tmHomeTz || undefined} /></Slot>}

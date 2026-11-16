@@ -231,13 +231,13 @@ class SecondDropWebView: WKWebView {
   private var downAt: NSPoint?
 
   func takeSecondDrops() { secondOk = true; takeDrops() }
-  /// V1.47: audio files dropped on the alarm playlist in Settings (everyone's PS; the Second places stay the developer's only).
+  /// V1.47: audio files dropped on the alarm playlist in Settings (everyone's PS; the Second places only while Second Computer is on).
   func takeAlarmDrops() { takeDrops() }
   private var secondOk = false
   private func takeDrops() {
     guard zone == nil else { return }
     let z = SecondDropZone(self)
-    z.allowSecond = { [weak self] in self?.secondOk == true }
+    z.allowSecond = { [weak self] in self?.secondOk == true && Second.shared.isOn }   // PS 1.65: only while its switch is on
     zone = z
     registerForDraggedTypes(Array(Set(registeredDraggedTypes + SecondDragLoad.types)))
   }

@@ -31,15 +31,14 @@ Start with these:
 Features that only run on the developer's own account are not included. The app you download contains them
 too, switched off for every account but the developer's, so this repo is not the complete source of the download.
 
-- Left out: Second Computer, AirPods and microphone auto routing, the follow up
+- Left out: AirPods and microphone auto routing, the follow up
   radar, Campaigns, the Morning brief, Numerology, the PS rules, private release notes,
   inviting other owners, and the server feeds behind them (calendar, Telegram, Fireflies, follow up). Client
   emails (Gmail and Instantly replies, with Reply) is in core since 1.60, off until each person switches it on. Also the developer's release tools and notes.
+- Second Computer is in this repo since 1.65, off until you switch it on (Settings, Second Computer).
 - Where public code calls into a left out feature, a small placeholder keeps the names and does nothing: web files
-  that start with "Left out of the public source", `mac/Sources/DeveloperOnly.swift` and
-  `phone/app/src/main/java/com/cincee/ps/gos/CmdKey.kt`. Two Mac files stay whole because public features use them
-  too: `SecondDrop.swift` (dropping alarm sounds and soundboard files on the list) and `RemoteCommand.swift`
-  (Sentry mode's screen lock). Tests of the left out features are not here.
+  that start with "Left out of the public source" and `mac/Sources/DeveloperOnly.swift`. Tests of the left out
+  features are not here.
 - `web/src/core/account.ts` (`RED_ONLY`) and `mac/Sources/Owner.swift` show how those features are switched off
   for every other account.
 - Names of the developer's clients and leads, real email addresses and the developer's folder paths were replaced with made up ones,
@@ -66,6 +65,7 @@ cd mac
 ./build.sh
 ```
 
+`build.sh` also builds the Force Touch middle click helper from `mac/middle-click/` into the app.
 `build.sh` signs with the developer's certificate by default. To sign with your own, make a self signed code signing
 certificate (`mac/signing/cert.cnf` shows the settings) and set its name in `build.sh`. Updates from cincee.com
 will not install over a copy you signed yourself, because the updater only accepts the developer's signature.

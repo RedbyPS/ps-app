@@ -101,7 +101,7 @@ to have it in everyone's copy, the person asks the owner to add it to the master
 
 Some features only run on the owner's own account. They are **left out** of core and live in his layer; where core
 calls them, **plug points** keep the names and do nothing (web files that start with "Left out of the public
-source", `mac/Sources/DeveloperOnly.swift`, the phone's `CmdKey.kt`, all listed in `layers/plugpoints.json`). Never
+source" and `mac/Sources/DeveloperOnly.swift`, all listed in `layers/plugpoints.json`). Never
 try to rebuild the owner's left out features, never try to make your account count as the owner's
 (`web/src/core/account.ts` `RED_ONLY`, `mac/Sources/Owner.swift`), and do not build shared features that depend on
 them. A plug point is still a plug point for your own layer: you may swap one for a file of your own, for your

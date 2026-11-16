@@ -13,7 +13,7 @@ import { PS, psPost, useAppIcons } from "../ps";
 import { sfx } from "../ui/sfx";
 import { morph } from "./DimensionX";
 import { vaultStore } from "../core/vault";
-import { isRedAccount } from "../core/account";
+import { secondOnSnap } from "../core/secondsnap";
 import { secondLocal } from "../second/store";
 import { byDay, CAUSES, causeOf, devicesSeen, dropStats, dur, type Drop, type Uptime } from "../core/lastonline";
 import "./cstats.css";
@@ -602,7 +602,7 @@ function UptimeView({ u }: { u: Uptime | null }) {
               <span className="nm-devt">{d.at ? seenWhen(d.at, now) : ""}</span>
             </li>))}
         </ul>
-        {!devices.length && <p className="cs-none">{isRedAccount(vault) ? "No other devices yet. The other Mac shows once Second Computer is set up there, the phone once PS GOS has saved something." : "No other devices yet. The phone shows once PS GOS has saved something."}</p>}
+        {!devices.length && <p className="cs-none">{secondOnSnap(vault) ? "No other devices yet. The other Mac shows once Second Computer is set up there, the phone once PS GOS has saved something." : "No other devices yet. The phone shows once PS GOS has saved something."}</p>}
         {(devices.length > 0 || !u.online) && <p className="cs-foot">{u.online
           ? "The other Mac sends a heartbeat every 5 minutes; the phone is seen when PS app GOS saves (screen time, a note, a command). Nothing new is fetched for this."
           : "While this Mac is offline it cannot hear from the others: their times are what PS app saw before the drop."}</p>}

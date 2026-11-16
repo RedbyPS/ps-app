@@ -13,6 +13,8 @@ import { norm, stem, scoreOne, tokensOf } from "./searchscore.ts";
 import { SLEEP_ENTRIES } from "./sleepsettings.ts";
 import { NOTEBOOK_ON } from "./features.ts";
 import { APPROVE_LINE } from "./autoapprove.ts";
+import { secondAllowed } from "./mailflag.ts";
+import { SECOND_HERE } from "./secondswitch.ts";
 export { norm, stem };
 
 /** Where PS is running: on a Mac (the Tab list), the website, or the phone (PS GOS and the iPhone web app). */
@@ -37,7 +39,7 @@ export interface SetEntry {
   group: GroupId;
   /** Under the group's small "More" (advanced or rarely changed). */
   more?: boolean;
-  /** The developer only (Numerology, PS Rules, Second Computer, his Gmail and anything already gated). */
+  /** The developer only (Numerology, PS Rules, his Gmail and anything already gated; Second Computer is everyone's since 1.65). */
   red?: true;
   /** Everyone but the developer (meetings from this Mac's Calendar: the developer's come from his Google calendar feed). */
   notRed?: true;
@@ -53,6 +55,8 @@ export interface SetEntry {
   mail?: true;
   /** Only for people who can switch Client emails on (first owner of their own Supabase project, core/mailswitch.ts). */
   mailCan?: true;
+  /** Only once Second Computer is switched on (core/secondswitch.ts, PS 1.65). */
+  second?: true;
   /** Only where screen recording is on in this build (core/features.ts "screen-recording"). */
   sr?: true;
   /** Only where the Posture reminder feature is on in this build (core/features.ts "posture-reminder"). */
@@ -282,7 +286,7 @@ export const SETTINGS: SetEntry[] = [
   // V1.55: on the developer's project the same code signs his phone in (PS GOS and the phone web app both run on his project), no
   // project link needed. views/LinkIphone.tsx, core/phonepair.ts. The passphrase sign in there is unchanged.
   { id: "mac-phone-signin", group: "sync", name: "Sign in your phone", line: "Show a code on this Mac. Scan it in PS on your phone and it signs in, no typing.", on: MAC, red: true, words: ["phone", "pixel", "android", "iphone", "sign in", "log in", "scan", "qr", "qr code", "camera", "pair", "link"] },
-  { id: "second", group: "sync", name: "Second Computer", line: "Pair your other Mac: lock it, restart it, send files.", on: MAC, red: true, words: ["second", "other mac", "m1", "m4", "pair", "pairing", "computer"] },
+  { id: "second", group: "sync", name: "Second Computer", line: "Pair your other Mac: lock it, restart it, send files.", on: MAC, words: ["second", "other mac", "m1", "m4", "pair", "pairing", "computer"] },
   { id: "invite", group: "sync", name: "Invite people", line: "Invite someone to PS app from the website, Settings, Invite owners.", on: MAC, red: true, more: true, words: ["invite", "friend", "share", "owner", "collaborators"] },
   { id: "vault", group: "sync", name: "Your vault", line: "Auto lock, your name, import, export and this device.", on: WEB, go: "vault", anchor: "pref-h", words: ["account", "vault", "profile"] },
   { id: "auto-lock", group: "sync", name: "Auto lock after", line: "Locks the vault after this long with nothing done.", on: WEB, go: "vault", anchor: "pref-h", parent: "vault", words: ["lock", "timeout", "idle", "auto lock"] },
@@ -384,7 +388,7 @@ export const SETTINGS: SetEntry[] = [
   { id: "phone-haptics", group: "phone", name: "Haptics", line: "A light tap when you tick, lift or drop a task.", on: PHONE, words: ["vibration", "vibrate", "buzz", "haptic", "feel"] },
   { id: "mweb-install", group: "phone", name: "Add to your Home Screen", line: "Opens full screen like an app and works offline.", ...MWEB_ONLY, words: ["install", "home screen", "app", "pwa", "add to home screen"] },
   { id: "phone-island", group: "phone", name: "Dynamic island", line: "A live island around the camera, over every app: meetings, Pomodoro, stand-ups, reminders, AI messages.", ...GOS_ONLY, words: ["island", "dynamic island", "pill", "camera", "overlay", "over other apps", "countdown", "pomodoro", "meeting", "stand up", "reminder", "ai message"] },
-  { id: "phone-macs", group: "phone", name: "Your Macs", line: "Restart, shut down or lock your Macs from this phone.", ...GOS_ONLY, red: true, words: ["mac", "macs", "restart", "shut down", "lock", "remote", "second computer"] },
+  { id: "phone-macs", group: "phone", name: "Your Macs", line: "Restart, shut down or lock your Macs from this phone.", ...GOS_ONLY, second: true, words: ["mac", "macs", "restart", "shut down", "lock", "remote", "second computer"] },
   { id: "phone-not-here", group: "phone", name: "Left on the Mac", line: "The keyboard tap, middle click, the mixer and AirPods switching stay on the Mac.", ...GOS_ONLY, more: true, words: ["keyboard", "mixer", "airpods", "middle click", "vpn", "network", "missing"] },
 
   // ---------- About and updates ----------
@@ -412,6 +416,8 @@ export const groupById = (id: GroupId): SetGroup => GROUPS.find((g) => g.id === 
 
 /** Whether this person, here, sees this setting (its group too). */
 export function visibleTo(e: SetEntry, ctx: Ctx): boolean {
+  if (e.second && !secondAllowed()) return false;   // PS 1.65: Second Computer's switch (core/mailflag.ts, set by the vault)
+  if (e.id === "second" && !SECOND_HERE) return false;   // a build without Second Computer's code has no row for it
   if (e.red && !ctx.red) return false;
   if (e.notRed && ctx.red) return false;
   if (e.mail && !ctx.mail) return false;

@@ -474,8 +474,12 @@ final class App: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMess
     Soundboard.shared.start()
     // Second Computer's questions float above the Tab list, and the list is put away first (SecondConfirm.swift).
     SecondConfirm.shared.beforeShow = { [weak self] in if self?.shown == true { self?.hideOverlay(force: true, giveBack: false) } }
-    // Second Computer is the developer's own (two Macs): other people never see it or its Keychain question (7 Nov 2026).
-    Owner.whenRed { Second.shared.start() }
+    // Second Computer (PS 1.65): everyone's, behind its switch (Settings, Second Computer; feature "second-computer", off
+    // until switched on, on for the developer through his layer). It starts or stops with the page's answer; nobody with it
+    // off sees it or its Keychain question. The developer's alone V1.42 to V1.64 (Owner.whenRed).
+    Second.shared.setOn(Second.switchedOn)
+    Features.observers.append { Second.shared.setOn(Second.switchedOn) }
+    if IS_TEST_COPY { Owner.whenRed { Second.shared.setOn(Second.switchedOn) } }   // a self test copy: as before, once its account is known
     // Remote Restart, Shut down and Lock (protocol section 13): Second checks the signed command, then
     // RemoteCommand carries it out (10 s Cancel card when unlocked) through the restart helper. The
     // machine block of the stat body (locked, timer, helper) comes from AutoReboot and is resent when it changes.
@@ -1024,8 +1028,8 @@ final class App: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMess
     overlay = ClickThroughWebView(frame: blur.bounds, configuration: config())
     overlay.autoresizingMask = [.width, .height]
     PageSwipe.install(overlay)   // V1.55: tells the Tab list when the fingers touch and lift (PageSwipe.swift)
-    // Files dropped on the Second panel go to the other Mac (SecondDrop.swift): the developer's PS only (V1.42).
-    Owner.whenRed { [weak self] in (self?.overlay as? SecondDropWebView)?.takeSecondDrops() }
+    // Files dropped on the Second panel go to the other Mac (SecondDrop.swift): only while Second Computer is on (PS 1.65).
+    (overlay as? SecondDropWebView)?.takeSecondDrops()
     (overlay as? SecondDropWebView)?.takeAlarmDrops()   // V1.47: audio files dropped on the alarm playlist (everyone)
     // V1.47: files and folders dropped on the Tab list while the Soundboard is open go to it (Soundboard.swift). Everyone's.
     (overlay as? SecondDropWebView)?.takeSoundboardDrops()
@@ -5044,10 +5048,10 @@ enum SelfTest {
   }
 }
 
-// Second Computer's Keychain items are the developer's alone (V1.44): before anything else can reach them, only the developer's own PS
-// may (SecondCrypto.swift SecondKeychain.gate; it is closed until this line). Everyone else's PS never reads, writes
-// or hands over one, so the Keychain never asks them about Second Computer.
-SecondKeychain.gate = { Owner.red }
+// Second Computer's Keychain items: before anything else can reach them, only a PS with Second Computer switched on may
+// (SecondCrypto.swift SecondKeychain.gate; it is closed until this line; PS 1.65, the developer's alone V1.44 to V1.64). A PS with
+// it off never reads, writes or hands over one, so the Keychain never asks about Second Computer.
+SecondKeychain.gate = { Second.switchedOn }
 
 // Sentry mode's guard (Sentry.swift SentryGuard, V1.48): PS's own binary started as `--ps-sentry-guard`; it waits for its
 // PS to exit and locks the Mac if Sentry mode was still engaged. It never gets past this line.

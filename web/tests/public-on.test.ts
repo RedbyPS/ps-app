@@ -108,17 +108,19 @@ ok("Screen recording keeps its own opt in: on as a feature, nothing records unti
   assert.equal(SR.settingsShows({ ps: true, st }), true, "its setup is offered in Settings");
 });
 
-ok("Numerology, PS Rules and Second Computer stay out of the public build", () => {
-  for (const f of ["numerology", "rules", "secondComputer"] as const) {
+ok("Numerology and PS Rules stay out of the public build; Second Computer is everyone's behind its switch (PS 1.65)", () => {
+  for (const f of ["numerology", "rules"] as const) {
     assert.ok((A.RED_ONLY as readonly string[]).includes(f), f);
     assert.equal(A.canUse({ status: "unlocked", role: "owner", red: false }, f), false, `${f} on a friend's account`);
   }
   const ids = F.cleanRegistry(core).map((f) => f.id).join(" ");
-  assert.doesNotMatch(ids, /numerology|rule|second/, "none of them is a feature a switch could turn on");
+  assert.doesNotMatch(ids, /numerology|rule/, "none of them is a feature a switch could turn on");
+  assert.ok(!(A.RED_ONLY as readonly string[]).includes("secondComputer"), "Second Computer is not the developer only any more");
+  assert.match(ids, /\bsecond-computer\b/, "Second Computer is a core feature with its own switch");
   const tm = file("src/views/TaskMap.tsx");
   assert.match(tm, /\{red && <Slot id="numerology"><Numerology /);
   assert.match(tm, /\{red && <Slot id="rules"><PsRuleButton /);
-  assert.match(tm, /\{red && <Slot id="second"><SecondButton /);
+  assert.match(tm, /\{secondOnSnap\(s\) && <Slot id="second"><SecondButton /);
 });
 
 // ---------- the email panel with nothing in it ----------

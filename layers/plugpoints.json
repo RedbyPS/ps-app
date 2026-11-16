@@ -9,21 +9,11 @@
     "src/core/privatenotes.ts",
     "src/core/radar.ts",
     "src/core/radarLive.ts",
-    "src/core/rebootwarn.ts",
     "src/core/rules.ts",
-    "src/core/second.ts",
     "src/dev/clive-fake.ts",
     "src/dev/cstats-fake.ts",
     "src/dev/radar-fake.ts",
-    "src/dev/second-fake.ts",
-    "src/gos/GosMacs.tsx",
-    "src/gos/cmdsign.ts",
-    "src/rebootwarn.ts",
     "src/rulegate.ts",
-    "src/second/dragzone.ts",
-    "src/second/drops.ts",
-    "src/second/store.ts",
-    "src/second/view.ts",
     "src/views/BriefTab.tsx",
     "src/views/CampaignStats.tsx",
     "src/views/CampaignsLive.tsx",
@@ -34,14 +24,10 @@
     "src/views/Numerology.tsx",
     "src/views/Radar.tsx",
     "src/views/RadarLive.tsx",
-    "src/views/RuleBook.tsx",
-    "src/views/Second.tsx",
-    "src/views/SecondWindow.tsx"
+    "src/views/RuleBook.tsx"
   ],
   "mac": [
     "Sources/DeveloperOnly.swift"
   ],
-  "phone": [
-    "app/src/main/java/com/cincee/ps/gos/CmdKey.kt"
-  ]
+  "phone": []
 }

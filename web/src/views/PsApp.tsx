@@ -27,7 +27,7 @@ import { startSetupDoor, WelcomeHost } from "./Welcome";
 import { UpdateFace } from "./UpdateFace";
 import "./ps.css";
 import { appName, macListHint } from "../core/appname";
-import { isRedAccount } from "../core/account";
+import { secondOnSnap } from "../core/secondsnap";
 
 export function PsLayout({ tools }: { tools: ReactNode }) {
   const [view, setView] = useState<"todo" | "settings">("todo");
@@ -77,7 +77,7 @@ export function PsSecondWindow() {
   }, []);
   const tab = location.hash.replace(/^#/, "") || undefined;
   if (s.status !== "unlocked") return <div className="sw-locked">{appName()} is locked. Unlock it to use Second Computer.</div>;
-  if (!isRedAccount(s)) return null;   // Second Computer is the developer's alone (V1.42)
+  if (!secondOnSnap(s)) return null;   // PS 1.65: everyone's, once switched on (core/secondswitch.ts); the developer's alone V1.42 to V1.64
   return <SecondWindow s={s} initial={tab} />;
 }
 

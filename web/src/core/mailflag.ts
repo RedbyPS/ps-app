@@ -5,3 +5,8 @@
 let on = false;
 export const setMailAllowed = (v: boolean) => { on = v; };
 export const mailAllowed = () => on;
+
+// PS 1.65: the same for Second Computer (core/secondswitch.ts): its Edit mode panel follows the person's switch.
+let second = false;
+export const setSecondAllowed = (v: boolean) => { second = v; };
+export const secondAllowed = () => second;

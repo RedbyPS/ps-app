@@ -1,17 +1,68 @@
-// Left out of the public source: Second Computer. It only runs on the developer's own account, so this
-// placeholder keeps the names the rest of the app imports and does nothing (scripts in the private tree:
-// open-source.mjs). See README.md, "What is left out".
-const inert: any = new Proxy(function () {}, {
-  get: (_t: unknown, k: string | symbol): any => (k === Symbol.toPrimitive ? () => "" : k === "then" ? undefined : k === Symbol.iterator ? function* () {} : inert),
-  apply: () => undefined,
-  construct: () => ({}),
-});
-const _v0: any = Promise.resolve(undefined);
-const _v1: any = Promise.resolve(undefined);
-const _v2: any = Promise.resolve(undefined);
-const _v3: any = Promise.resolve(undefined);
-export function putDrop(_p0?: { [k: string]: any; arrayBuffer?: (...a: any[]) => any; bytes?: (...a: any[]) => any; slice?: (...a: any[]) => any; stream?: (...a: any[]) => any; text?: (...a: any[]) => any }, ..._more: any[]): Promise<any> { return _v0; }
-export function takeDrop(_p0?: any, ..._more: any[]): Promise<any> { return _v1; }
-export function putPreview(_p0?: any, _p1?: any, ..._more: any[]): Promise<any> { return _v2; }
-export function getPreview(_p0?: any, ..._more: any[]): Promise<any> { return _v3; }
-export type Preview = { [k: string]: any; name: any; mime: any; bytes: { [k: string]: any; BYTES_PER_ELEMENT: any; buffer: any; byteLength: any; byteOffset: any; copyWithin: (_p0?: any, _p1?: any, _p2?: any, ..._more: any[]) => any; every: (_p0?: any, _p1?: any, ..._more: any[]) => any; fill: (_p0?: any, _p1?: any, _p2?: any, ..._more: any[]) => any; filter: (_p0?: any, _p1?: any, ..._more: any[]) => any; find: (_p0?: any, _p1?: any, ..._more: any[]) => any; findIndex: (_p0?: any, _p1?: any, ..._more: any[]) => any; forEach: (_p0?: any, _p1?: any, ..._more: any[]) => any; indexOf: (_p0?: any, _p1?: any, ..._more: any[]) => any; join: (_p0?: any, ..._more: any[]) => any; lastIndexOf: (_p0?: any, _p1?: any, ..._more: any[]) => any; length: any; map: (_p0?: any, _p1?: any, ..._more: any[]) => any; reduce: (_p0?: any, ..._more: any[]) => any; reduceRight: (_p0?: any, ..._more: any[]) => any; reverse: (..._more: any[]) => any; set: (_p0?: any, _p1?: any, ..._more: any[]) => any; slice: (_p0?: any, _p1?: any, ..._more: any[]) => any; some: (_p0?: any, _p1?: any, ..._more: any[]) => any; sort: (_p0?: any, ..._more: any[]) => any; subarray: (_p0?: any, _p1?: any, ..._more: any[]) => any; toLocaleString: (..._more: any[]) => any; toString: (..._more: any[]) => any; valueOf: (..._more: any[]) => any; entries: (..._more: any[]) => any; keys: (..._more: any[]) => any; values: (..._more: any[]) => any; includes: (_p0?: any, _p1?: any, ..._more: any[]) => any; at: (_p0?: any, ..._more: any[]) => any }; at?: any };
+// Second Computer: a file dropped on the floating Tab list (which holds no vault) is handed to the main PS window
+// through IndexedDB, which both windows share (same origin, same data store). Only the key crosses the bridge.
+// The main window deletes the entry as soon as it has read it.
+const DB = "ps-second", STORE = "drops";
+function open(): Promise<IDBDatabase> {
+  return new Promise((resolve, reject) => {
+    const r = indexedDB.open(DB, 1);
+    r.onupgradeneeded = () => { r.result.createObjectStore(STORE); };
+    r.onsuccess = () => resolve(r.result);
+    r.onerror = () => reject(r.error);
+  });
+}
+async function tx<T>(mode: IDBTransactionMode, f: (s: IDBObjectStore) => IDBRequest<T>): Promise<T> {
+  const db = await open();
+  try {
+    return await new Promise<T>((resolve, reject) => {
+      const t = db.transaction(STORE, mode), q = f(t.objectStore(STORE));
+      t.oncomplete = () => resolve(q.result);
+      t.onerror = () => reject(t.error);
+    });
+  } finally { db.close(); }
+}
+export async function putDrop(file: File): Promise<string> {
+  const key = crypto.randomUUID();
+  await tx("readwrite", (s) => s.put({ name: file.name, type: file.type, blob: file, at: Date.now() }, key));
+  return key;
+}
+export async function takeDrop(key: string): Promise<(Blob & { name: string }) | null> {
+  const v = await tx<{ name: string; type: string; blob: Blob } | undefined>("readonly", (s) => s.get(key));
+  await tx("readwrite", (s) => s.delete(key)).catch(() => {});
+  if (!v?.blob) return null;
+  return Object.assign(v.blob.slice(0, v.blob.size, v.type), { name: v.name });
+}
+
+// Previews (a picture, a PDF or a text file asked for with "preview") are kept the same way for the window to
+// show, the newest 20 only. Nothing here leaves this Mac.
+const PREVIEWS = "previews";
+function openP(): Promise<IDBDatabase> {
+  return new Promise((resolve, reject) => {
+    const r = indexedDB.open(`${DB}-previews`, 1);
+    r.onupgradeneeded = () => { r.result.createObjectStore(PREVIEWS); };
+    r.onsuccess = () => resolve(r.result);
+    r.onerror = () => reject(r.error);
+  });
+}
+async function txP<T>(mode: IDBTransactionMode, f: (s: IDBObjectStore) => IDBRequest<T>): Promise<T> {
+  const db = await openP();
+  try {
+    return await new Promise<T>((resolve, reject) => {
+      const t = db.transaction(PREVIEWS, mode), q = f(t.objectStore(PREVIEWS));
+      t.oncomplete = () => resolve(q.result);
+      t.onerror = () => reject(t.error);
+    });
+  } finally { db.close(); }
+}
+export type Preview = { name: string; mime: string; bytes: Uint8Array; at?: number };
+export async function putPreview(key: string, p: Preview) {
+  await txP("readwrite", (s) => s.put({ ...p, at: Date.now() }, key));
+  const keys = await txP<IDBValidKey[]>("readonly", (s) => s.getAllKeys());
+  if (keys.length > 20) {
+    const all = await txP<(Preview & { at: number })[]>("readonly", (s) => s.getAll());
+    const old = keys.map((k, i) => ({ k, at: all[i]?.at ?? 0 })).sort((a, b) => a.at - b.at).slice(0, keys.length - 20);
+    for (const o of old) await txP("readwrite", (s) => s.delete(o.k));
+  }
+}
+export async function getPreview(key: string): Promise<Preview | null> {
+  return (await txP<Preview | undefined>("readonly", (s) => s.get(key)).catch(() => undefined)) ?? null;
+}
