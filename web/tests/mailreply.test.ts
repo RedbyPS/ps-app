@@ -101,6 +101,23 @@ ok("the job refuses: nothing typed, a bad To, no thread", () => {
 });
 ok("a time in the past means now", () => { assert.equal(M.makeJob(ctx, { message: "x", sig: "", quote: false }, now - 5000, now, "j").sendAt, now); });
 
+// ---------- send-as address in the job ----------
+ok("an email addressed to a send-as address: the card, the screen's context and the job carry it", () => {
+  const c = M.ctxFromGmail("m:a1", { ...rep, replyFrom: "Work@Example.com" } as never, client)!;
+  assert.equal(c.replyFrom, "work@example.com"); assert.equal(c.account, "studio@example.com");
+  const j = M.makeJob(c, { message: "Hi Jane", sig: "", quote: false }, now, now, "ja");
+  assert.equal(j.replyFrom, "work@example.com"); assert.equal(j.account, "studio@example.com", "the account still signs in and sends");
+  assert.equal(j.draft.ctx.replyFrom, "work@example.com", "Edit opens it again with the same From");
+});
+ok("no send-as address (old record, the account itself, junk, Instantly): no field in the job", () => {
+  for (const rf of [undefined, null, "studio@example.com", "x y", "a@b.example\nBcc: z@y.example"]) {
+    const j = M.makeJob(M.ctxFromGmail("m:a2", { ...rep, replyFrom: rf } as never, client)!, { message: "Hi", sig: "", quote: false }, now, now, "jb");
+    assert.equal("replyFrom" in j, false, String(rf));
+  }
+  const lead = M.ctxFromLead("n:e9", { id: "e9", from: "lena@acme-co.example", account: "ann@outreach.example" })!;
+  assert.equal("replyFrom" in M.makeJob({ ...lead, replyFrom: "work@example.com" }, { message: "Hi", sig: "", quote: false }, now, now, "jc"), false);
+});
+
 // ---------- schedule ----------
 ok("quick choices 3, 5, 10, 15, 30 minutes; the wheel starts at 5", () => {
   assert.deepEqual([...M.QUICK], [3, 5, 10, 15, 30]);

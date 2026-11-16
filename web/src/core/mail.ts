@@ -18,6 +18,8 @@ export interface GmailInbound {
   snippet: string | null;
   opening?: string | null;       // the start of the body, quotes and signature cut (lib.ts bodyOpening)
   msgId?: string | null;
+  /** The verified send-as address of this Gmail account the email was addressed to (lib.ts replyFromOf). Absent: it came to the account itself. */
+  replyFrom?: string | null;
 }
 /** The email's identity: its Message-ID header without the angle brackets, lower case. Without one (rare), the Gmail id. */
 export function messageKey(m: { msgId?: string | null; account?: string | null; id?: string | null }): string {
@@ -127,6 +129,13 @@ export function clientForInbound(
   return thread.clientId;
 }
 
+/** A plain address, lower case, and not the account itself; anything else is null (the reply goes From the account). */
+export function cleanReplyFrom(v: unknown, account: string | null | undefined): string | null {
+  if (typeof v !== "string") return null;
+  const a = v.trim().toLowerCase();
+  return a.length <= 254 && /^[^\s@<>()",;:]+@[^\s@<>()",;:]+\.[^\s@<>()",;:]+$/.test(a) && a !== (account || "").toLowerCase() ? a : null;
+}
+
 const MAX_IDS = 50;
 
 /** Fold one inbound message into the thread's reply record. Returns null when nothing changes. */
@@ -137,6 +146,7 @@ export function applyInbound(existing: Reply | undefined, m: GmailInbound, clien
     lastKey: messageKey(m),
     from: email || "", fromName: name, subject: (m.subject || "(no subject)").trim(), snippet: (m.snippet || "").trim(), date,
     opening: (m.opening || "").trim() || null,
+    replyFrom: cleanReplyFrom(m.replyFrom, m.account),
   };
   if (!existing) {
     return { clientId, account: m.account, threadId: m.threadId, msgIds: [m.id], ...fresh, count: 1, handled: false, handledAt: null, handledHow: null };
