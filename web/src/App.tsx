@@ -87,7 +87,8 @@ function route(): "demo" | "join" | "join-owner" | "app" | "overlay" | "campaign
   if (import.meta.env.DEV && p === "/dev-second-window") {     // the same window with fictional data
     void Promise.all([import("./dev/fake"), import("./dev/second-fake"), import("./core/vault"), import("./second/store")]).then(([f, sf, v, st]) => {
       const x = sf.fakeSecond(Date.now(), new URLSearchParams(location.search).get("as"));
-      v.__devLoad([...f.fakeDocs(), ...x.docs]);
+      const code = new URLSearchParams(location.search).has("code");   // ?code: Code jobs switched on (PS 1.65)
+      v.__devLoad([...f.fakeDocs().map((d) => code && d.kind === "settings" ? { ...d, data: { ...(d.data as object), secondCodeJobs: true } } : d), ...x.docs]);
       st.setSecondMirror(x.local);
     });
     return "second-window";

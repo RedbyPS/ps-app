@@ -3,7 +3,7 @@
 // key rotation, the job allowlist and secret check, and the runner (3 at once, the sandbox flags, timeout, cancel,
 // its folder gone after the ack) with a FICTIONAL `claude` script. Keys live in a temporary folder; one check makes a
 // real Secure Enclave key there. Never the Keychain, never the network, never the developer's files.
-//   mkdir -p build/outsource && cp tests/second-outsource-test.swift build/outsource/main.swift && swiftc build/outsource/main.swift Sources/SecondSeal.swift Sources/SecondOutsource.swift Sources/SecondJobs.swift Sources/SecondProc.swift Sources/SecondCrypto.swift Sources/SecondHost.swift Sources/SecondShare.swift Sources/SecondFiles.swift Sources/SafeSignal.swift -o build/outsource/test && build/outsource/test
+//   mkdir -p build/outsource && cp tests/second-outsource-test.swift build/outsource/main.swift && swiftc build/outsource/main.swift Sources/SecondSeal.swift Sources/SecondOutsource.swift Sources/SecondJobs.swift Sources/SecondProc.swift Sources/SecondCrypto.swift Sources/SecondHost.swift Sources/SecondShare.swift Sources/SecondFiles.swift Sources/SafeSignal.swift Sources/SecondCodeCore.swift Sources/SecondCodeRunner.swift -o build/outsource/test && build/outsource/test
 import CryptoKit
 import Foundation
 
@@ -123,7 +123,7 @@ if SecureEnclave.isAvailable {
 // ---------- what a job may ask for ----------
 func jobWhy(_ p: [String: Any]) -> String { why(SecondOJob.check(p)) }
 check("job-research-ok", jobWhy(research) == "opened")
-check("job-only-research", jobWhy(["kind": "claude", "prompt": "x", "title": "x"]) == "Not allowed: only research runs on the second Mac for now")
+check("job-only-research", jobWhy(["kind": "claude", "prompt": "x", "title": "x"]) == "Not allowed: only research and code jobs run on the second Mac")
 check("job-no-extra-scope", jobWhy(research.merging(["scope": "bash"]) { a, _ in a }) == "Bad arguments")
 check("job-minutes-limit", jobWhy(research.merging(["minutes": 31]) { _, b in b }) == "Bad arguments")
 check("job-secret-refused", jobWhy(research.merging(["prompt": "Use my key sk-ant-api03-abcdefghijklmnopqrstuv to check"]) { _, b in b }).hasPrefix("It looks like it holds a secret (an API key)"))

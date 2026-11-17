@@ -523,6 +523,7 @@ export interface Settings {
   tmNames?: import("./lists").ListNames;    // V1.55: the main list's and the built-in sections' own names (Priorities and the rest). Unset = as before
   tmSwipeDir?: import("./lists").SwipeDir;  // V1.55: a two finger swipe to the right goes to the list on the right (push, default) or brings the left one (drag)
   looksSaved?: import("./looksprofiles").LooksStore;   // V1.56 Saved looks: the Edit overview's whole setup saved by name, per device kind (mac, gos, ios), core/looksprofiles.ts and core/maclook.ts
+  secondCodeJobs?: boolean;      // PS 1.65 Second Computer, Outsource, "Code jobs" (core/secondcode.ts): true = code jobs may be sent and run. Missing = off
   editSounds?: boolean;          // V1.56 "Edit mode sounds" (core/editsounds.ts): false = the Edit overview makes no sounds. Missing = on
   tmTheme?: "dark" | "light";    // the Tab list's theme (More settings; light for bright sun). Default dark
   tmNotebook?: string;           // a paper Notebook look for the Tab list (core/notebook.ts NB_DESIGNS, More settings), "off" or unset = the normal look

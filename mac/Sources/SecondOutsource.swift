@@ -6,8 +6,9 @@ import Foundation
 // v1.3, section 19). The main Mac seals a research task to the second Mac (SecondSeal.swift) and signs it; the second
 // Mac checks it (accept), runs up to 3 at once, each in its own throwaway folder with headless Claude Code limited to
 // web search, web pages and that folder (SecondOutsourceRunner), and seals every status and the report back. The
-// vault only ever carries the sealed envelopes (records sojob, sores). Research only for now: `kind` is the place a
-// later job type would go, and anything else is refused.
+// vault only ever carries the sealed envelopes (records sojob, sores). Kinds: research, and since PS 1.65 code (a code
+// job: SecondCodeCore.swift checks it, SecondCodeRunner.swift runs it one at a time, its git bundle comes back sealed
+// through the file stream). Code jobs run only where the person switched them on (Second Computer, Outsource).
 
 /// A sealed, signed envelope: the body JSON (header plus the sealed part) and a signature by the sender's job key.
 enum SecondOEnv {
@@ -68,7 +69,10 @@ enum SecondOEnv {
 
 /// What a sealed job may ask for (research only for now) and the plain words when it may not.
 enum SecondOJob {
-  struct Job { var kind: String; var title: String; var prompt: String; var model: String?; var minutes: Int; var cancel: String? }
+  struct Job { var kind: String; var title: String; var prompt: String; var model: String?; var minutes: Int; var cancel: String?; var code: SecondCodeJob? = nil }
+  /// Code jobs are switched on on this Mac (the page tells PS: Second Computer, Outsource, Code jobs). Off by default.
+  static var codeOn: () -> Bool = { false }
+  static let codeOff = "Code jobs are off on this Mac. Switch them on in Second Computer, Outsource."
   static let maxPrompt = 8000, defaultMinutes = 20, maxMinutes = 30, maxRunning = 3, maxWaiting = 20
 
   static func check(_ p: [String: Any]) -> Result<Job, SecondRefusal> {
@@ -84,11 +88,17 @@ enum SecondOJob {
       if let m = p["minutes"] { guard let n = m as? NSNumber, CFGetTypeID(n) != CFBooleanGetTypeID(), n.doubleValue == n.doubleValue.rounded(), n.intValue >= 5, n.intValue <= maxMinutes else { return no("Bad arguments") }; minutes = n.intValue }
       if let s = secret(pr + "\n" + t) { return no("It looks like it holds a secret (\(s)). Nothing secret may go to the other Mac.") }
       return .success(Job(kind: "research", title: t, prompt: pr, model: model, minutes: minutes, cancel: nil))
+    case "code":
+      guard codeOn() else { return no(codeOff) }
+      if let s = secret((p["prompt"] as? String ?? "") + "\n" + (p["title"] as? String ?? "")) { return no("It looks like it holds a secret (\(s)). Nothing secret may go to the other Mac.") }
+      let (c, why) = SecondCodeJob.check(p, id: "pending")   // the envelope's own id goes in when it runs
+      guard let c else { return no(why ?? "Bad arguments") }
+      return .success(Job(kind: "code", title: c.title, prompt: c.prompt, model: c.model, minutes: c.minutes, cancel: nil, code: c))
     case "cancel":
       guard Set(p.keys) == ["kind", "job"], let j = p["job"] as? String, SecondJobs.isUUID(j) else { return no("Bad arguments") }
       return .success(Job(kind: "cancel", title: "", prompt: "", model: nil, minutes: 0, cancel: j))
     default:
-      return no("Not allowed: only research runs on the second Mac for now")
+      return no("Not allowed: only research and code jobs run on the second Mac")
     }
   }
 
@@ -119,6 +129,8 @@ final class SecondOutsourceRunner {
   struct Status {
     var job: String; var title: String; var state: String; var reason: String?; var step: String?; var summary: String?
     var startedAt: Date?; var endedAt: Date?; var report: String?; var files: [(String, Data)] = []; var suite: String; var from: String
+    /// Code jobs: the result's fields (tool, branch, base, head, commits, files changed) and the bundle on disk with its SHA-256.
+    var code: [String: Any]? = nil; var bundle: String? = nil; var bundleSha: String? = nil
   }
   private struct Running { var job: SecondOJob.Job; var id: String; var from: String; var suite: String; var proc: Process?; var cancelled: Bool; var started: Date }
   private let q = DispatchQueue(label: "ps.second.outsource", qos: .utility)
@@ -131,7 +143,14 @@ final class SecondOutsourceRunner {
   var log: (String) -> Void = { psLog($0) }
   /// Tests replace Claude with a fictional stand-in, and make a minute short.
   var claudePath: () -> String? = { nil }
-  var secondsPerMinute: Double = 60
+  var secondsPerMinute: Double = 60 { didSet { code.secondsPerMinute = secondsPerMinute } }
+  /// Code jobs, one at a time with a queue of 5, in Second/code (SecondCodeRunner.swift).
+  private(set) lazy var code: SecondCodeRunner = {
+    let r = SecondCodeRunner(root: places.root + "/code", home: places.home, tools: OutTools.find(home: places.home, extra: places.tools), searchDirs:
+      [places.projects] + ["Developer", "Code", "Documents/GitHub", "src", "dev"].map { places.home + "/" + $0 }, mirrors: places.root + "/repos")
+    r.tools.git = places.git
+    return r
+  }()
   private var flags: Set<String>?
 
   init(places: SecondPlaces) {
@@ -145,6 +164,7 @@ final class SecondOutsourceRunner {
   /// A checked job. Refused at once when 20 are waiting already.
   func submit(_ j: SecondOJob.Job, id: String, from: String, suite: String) {
     if j.kind == "cancel" { cancel(j.cancel ?? ""); return }
+    if j.kind == "code", var c = j.code { c.id = id; submitCode(c, title: j.title, from: from, suite: suite); return }
     lock.lock()
     let dup = running[id] != nil || waiting.contains { $0.1 == id }, full = waiting.count >= SecondOJob.maxWaiting
     if !dup && !full { waiting.append((j, id, from, suite)) }
@@ -156,6 +176,7 @@ final class SecondOutsourceRunner {
   }
 
   func cancel(_ id: String) {
+    if code.has(id) { code.cancel(id); return }
     lock.lock()
     if let i = waiting.firstIndex(where: { $0.1 == id }) {
       let w = waiting.remove(at: i); lock.unlock()
@@ -172,12 +193,36 @@ final class SecondOutsourceRunner {
     lock.lock(); let w = waiting; waiting.removeAll(); let r = running.values.compactMap { $0.proc }; for k in running.keys { running[k]?.cancelled = true }; lock.unlock()
     for x in w { onStatus(Status(job: x.1, title: x.0.title, state: "cancelled", reason: "PS app stopped", endedAt: Date(), suite: x.3, from: x.2)) }
     r.forEach(stop)
+    code.cancelAll()
   }
 
   /// The main Mac has the result: its folder goes (a folder nobody acknowledged goes after 3 days anyway).
   func done(_ id: String) {
     guard SecondJobs.isUUID(id) else { return }
     q.async { [dir] in try? FileManager.default.removeItem(atPath: dir + "/" + id) }
+    code.forget(id)
+  }
+
+  /// A code job: queued in the code runner, each step and the end told back like research (sealed by the coordinator).
+  private func submitCode(_ c: SecondCodeJob, title: String, from: String, suite: String) {
+    if let cp = claudePath() { code.tools.claude = cp }
+    var st = Status(job: c.id, title: title, state: "queued", suite: suite, from: from)
+    let started = Date()
+    let ok = code.submit(c, progress: { [weak self] state, step in
+      st.state = state; st.step = step.isEmpty ? nil : step
+      if state == "running", st.startedAt == nil { st.startedAt = Date() }
+      self?.onStatus(st)
+    }, done: { [weak self] d in
+      var f = Status(job: c.id, title: title, state: d.state, reason: d.report.note.isEmpty ? nil : d.report.note, startedAt: st.startedAt ?? started, endedAt: Date(),
+                     report: d.report.markdown(title: title), files: d.shots, suite: suite, from: from)
+      f.summary = d.report.summary.isEmpty ? nil : String(d.report.summary.suffix(300))
+      var fields = d.report.json
+      fields["note"] = d.report.note
+      f.code = fields; f.bundle = d.bundlePath; f.bundleSha = d.bundleSha
+      self?.onStatus(f)
+      self?.log("PS second: code job \(c.id.prefix(8)) \(d.state) in \(d.report.seconds) s")
+    })
+    if !ok { onStatus(Status(job: c.id, title: title, state: "refused", reason: code.has(c.id) ? "This job is already here" : "5 code jobs are waiting already", endedAt: Date(), suite: suite, from: from)) }
   }
 
   private func prune() {

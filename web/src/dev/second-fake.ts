@@ -24,7 +24,7 @@ function fakeSecondAll(now: number): { docs: Doc[]; local: SecondLocal } {
   const b = (t: string, from: string, to: string, at: number, extra: object, id = uuid(Math.round(at % 1e9))) => ({ v: 1, t, id, from, to, at, ...extra });
   const docs: Doc[] = [
     d("sd1", "sdev", { device: M4, env: env(M4, b("dev", M4, "all", now - 90 * M, { name: "The developer's MacBook Air M4", model: "MacBook Air 13 inch, M4", role: "primary", pub: "BDEV4" })) }),
-    d("sd2", "sdev", { device: M1, env: env(M1, b("dev", M1, "all", now - 80 * M, { name: "Home M1", model: "MacBook Air, M1", role: "secondary", pub: "BDEV1" })) }),
+    d("sd2", "sdev", { device: M1, env: env(M1, b("dev", M1, "all", now - 80 * M, { name: "Home M1", model: "MacBook Air, M1", role: "secondary", pub: "BDEV1", okeys: { sign: "DEV1", xwing: "DEV1" } })) }),
     d("sp1", "spair", { env: env(M1, b("pairok", M1, M4, now - 79 * M, { primary: M4, primaryPub: "BDEV4", secondary: M1, secondaryPub: "BDEV1" })) }),
     d("ss1", "sstat", { device: M1, env: env(M1, b("stat", M1, "all", now - 2 * M, { cpu: 62, battery: 100, charging: false, power: "ac", busy: uuid(901), queue: 1, have: { "ps-mac": sha("a"), "web": sha("b") }, disk: 188, mem: 48, app: "V1.23",
       machine: { awake: true, locked: true, fileVault: "on", passwordImmediately: true, timer: { hours: 18, deadline: Math.round((now + 7 * 3_600_000 + 12 * M) / 1000), mode: "active" }, bootedAt: Math.round((now - 11 * 3_600_000) / 1000), lastRestart: { at: Math.round((now - 11 * 3_600_000) / 1000), kind: "restart" }, helper: "approved" } })) }),
@@ -78,6 +78,19 @@ function fakeSecondAll(now: number): { docs: Doc[]; local: SecondLocal } {
     progress: [{ id: "up1", name: "Invoice October.pdf", size: 2_400_000, done: 0, total: 1, dir: "up" }],
     projects: ["web", "middle-click", "ps-gos", "ps-mac"].map((name) => ({ name, path: `/Users/dev/Projects/${name}` })),
     pairing: null, waitingSince: null, note: null,
+    // Sealed outsourced jobs as PS hands them over (PS 1.65 code jobs and the owner's research), all made up.
+    ojobs: [
+      { job: uuid(951), title: "Make the mail tests pass", state: "running", step: "Claude Code is working", suite: "xwing", at: now - 6 * M, startedAt: now - 5 * M, mine: true, kind: "code",
+        code: { tool: "claude", repo: "web", base: sha("c") } },
+      { job: uuid(952), title: "Stable sort in the task list", state: "done", suite: "xwing", at: now - 52 * M, startedAt: now - 51 * M, endedAt: now - 34 * M, mine: true, kind: "code",
+        summary: "Made the sort stable and added two tests. npm test: 41 files passed.",
+        report: "# Stable sort in the task list\n\n- State: done\n- Tool: codex\n- Commits: 2\n\n## What the AI said\n\nMade the sort stable and added two tests. npm test: 41 files passed.\n",
+        code: { tool: "codex", repo: "web", base: sha("c"), branch: "outsource/" + uuid(952), commits: 2, files: [" src/core/sort.ts      | 14 ++++++----", " tests/sort.test.ts    | 31 ++++++++++++++++++", " 2 files changed, 37 insertions(+), 8 deletions(-)"] },
+        bundle: "Downloads/From your other Mac/2026-11-17 09.12 Stable sort in the task list/result.bundle",
+        fetch: "git fetch '~/Downloads/From your other Mac/2026-11-17 09.12 Stable sort in the task list/result.bundle' outsource/" + uuid(952) + ":review/00000000" },
+      { job: uuid(953), title: "Compare three note apps", state: "done", suite: "p256", at: now - 3 * 60 * M, startedAt: now - 3 * 60 * M + M, endedAt: now - 2 * 60 * M, mine: true,
+        summary: "Bear is the simplest, Craft the richest, Apple Notes the most private.", report: "# Compare three note apps\n\nMade up findings.", folder: "Downloads/From your other Mac/2026-11-17 07.00 Compare three note apps" },
+    ],
   };
   return { docs, local };
 }

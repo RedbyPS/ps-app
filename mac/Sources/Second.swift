@@ -89,6 +89,9 @@ final class Second {
   private(set) var okeys: SecondKeys?
   private var orunner: SecondOutsourceRunner?
   private var ojobs: [String: [String: Any]] = [:]
+  /// Code jobs (PS 1.65): the person's switch in the Outsource tab, as the page last told it (saved, so it holds before
+  /// the page loads). Off by default: no code job is sent from or run on this Mac until it is switched on here.
+  private(set) var codeJobsOn = false
   /// Self test: the Allow card's text while it shows (test copies never show a real card).
   var keyCardShown: String?
   /// Self test: the next read fails like a Keychain Deny (then Allow reads normally).
@@ -127,12 +130,14 @@ final class Second {
   func start() {
     guard !started else { return }
     started = true
+    SecondOJob.codeOn = { [weak self] in self?.codeJobsOn ?? false }
     if !test {
       let d = UserDefaults.standard
       // The starting role from the chip (M1 secondary, M4 primary) is the developer's own two Macs (Owner.red): anyone
       // else's Mac starts as neither and they pick (PS 1.65), so no friend's Mac stays awake or runs work by surprise.
       let r = Second.startRole(stored: d.string(forKey: "second.role"), chosen: d.bool(forKey: "second.roleChosen"), chip: Owner.red ? Second.chip() : "")
       role = r.role; roleChosen = r.chosen; chipName = Second.chip()
+      codeJobsOn = d.bool(forKey: "second.codeJobs")
       if !r.chosen && r.role != "none" { psLog("PS second: no role chosen yet, \(r.role) from this Mac's chip") }
     }
     if test {   // a made up chip and saved choice (the self test plays an M4 and an M1 with a stale saved role)
@@ -355,6 +360,10 @@ final class Second {
     case "second:oacked": oacked(msg, id)
     case "second:outsource":   // the window's Research form (the developer's click): sealed like a chat's
       outsource(rid: nil, ["kind": "research", "title": msg["title"] ?? "", "prompt": msg["prompt"] ?? "", "model": msg["model"] ?? NSNull(), "minutes": msg["minutes"] ?? NSNull()])
+    case "second:ocode":       // the Outsource tab's Code job form: sealed the same way
+      outsource(rid: nil, Second.codePlain(msg))
+    case "second:codeJobs":    // the person's switch (Second Computer, Outsource, Code jobs)
+      setCodeJobs(msg["on"] as? Bool == true)
     default: break
     }
   }
@@ -763,6 +772,11 @@ final class Second {
         guard let self else { return }
         if let req, !done.ok || i < n - 1 { self.post(["type": "second:chunkOk", "req": req, "error": done.reason ?? "Refused"]) }
         self.ack(env, ref: done.ref, ok: done.ok, reason: done.reason, path: done.path.map { $0.hasPrefix(downloads) ? "Downloads/From PS/" + ($0 as NSString).lastPathComponent : $0 })
+        if done.ok, done.purpose == "result", let job = b["job"] as? String, self.ojobs[job]?["kind"] as? String == "code", let path = done.path {
+          self.ojobs[job]?["landed"] = ["file": done.ref, "path": path]
+          self.codeLand(job)
+          return
+        }
         if let g = done.get, self.dests.finish(g, done.ok ? nil : SecondDragOut.err(done.reason ?? "Did not arrive")) {
           psLog(done.ok ? "PS second: a file dragged out of the window landed where it was dropped" : "PS second: a file dragged out of the window did not arrive")
           return
@@ -1059,10 +1073,11 @@ final class Second {
       try? fm.removeItem(atPath: path)
       guard let data, data.count < 1 << 20, let r = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
             let rid = r["id"] as? String, SecondJobs.isId(rid), let type = r["type"] as? String else { continue }
-      if type == "outsource" || type == "ocancel" {   // sealed here, never through the page in the clear
+      if type == "outsource" || type == "ocancel" || type == "ocode" {   // sealed here, never through the page in the clear
         let a = r["args"] as? [String: Any] ?? [:]
         DispatchQueue.main.async { [weak self] in
           if type == "ocancel" { self?.outsource(rid: rid, ["kind": "cancel", "job": a["job"] ?? ""]) }
+          else if type == "ocode" { self?.outsource(rid: rid, Second.codePlain(a)) }
           else { self?.outsource(rid: rid, ["kind": "research", "title": a["title"] ?? "", "prompt": a["prompt"] ?? "", "model": a["model"] ?? NSNull(), "minutes": a["minutes"] ?? NSNull()]) }
         }
         continue
@@ -1331,7 +1346,7 @@ extension Second {
     guard let p = id.peers.first(where: { $0.role == "secondary" }) else { no("no second Mac is paired"); return }
     guard let pk = okeys.peer(p.device) else { no("PS app on \(p.name) needs the update that takes sealed research"); return }
     var clean = plain.filter { !($0.value is NSNull) }
-    if clean["kind"] as? String == "research", (clean["title"] as? String).map(SecondJobs.isTitle) != true { clean["title"] = SecondOJob.title(clean["prompt"] as? String ?? "") }
+    if ["research", "code"].contains(clean["kind"] as? String ?? ""), (clean["title"] as? String).map(SecondJobs.isTitle) != true { clean["title"] = SecondOJob.title(clean["prompt"] as? String ?? "") }
     let j: SecondOJob.Job
     switch SecondOJob.check(clean) { case .failure(let w): no(w.why); return; case .success(let x): j = x }
     let me = id.device
@@ -1344,10 +1359,11 @@ extension Second {
         guard let self else { return }
         self.post(["type": "second:ojobOut", "env": env.json, "job": job])
         if j.kind == "cancel" { if let rid { self.cliResultO(rid, ["state": "sent", "job": job, "suite": suite, "title": "Stop a task"]) }; return }
-        self.ojobs[job] = ["job": job, "title": j.title, "state": "sent", "suite": suite, "at": self.nowMs(), "mine": true, "to": p.device, "rid": rid ?? ""]
+        self.ojobs[job] = ["job": job, "title": j.title, "state": "sent", "suite": suite, "at": self.nowMs(), "mine": true, "to": p.device, "rid": rid ?? "", "kind": j.kind]
+        if let c = j.code { self.ojobs[job]?["code"] = ["tool": c.tool, "repo": c.repo, "base": c.base] }
         self.saveOJobs()
         if let rid { self.cliResultO(rid, ["state": "sent", "job": job, "suite": suite, "title": j.title]) }
-        psLog("PS second: sent a sealed research task (\(suite == "xwing" ? "X-Wing" : "P-256"))")
+        psLog("PS second: sent a sealed \(j.kind) task (\(suite == "xwing" ? "X-Wing" : "P-256"))")
         // Never a silent hang: nobody opened it in 10 minutes (offline, asleep, PS closed there) and the chat is told.
         DispatchQueue.main.asyncAfter(deadline: .now() + 11 * 60) { [weak self] in
           guard let self, self.ojobs[job]?["state"] as? String == "sent" else { return }
@@ -1394,12 +1410,29 @@ extension Second {
     if let d = st.startedAt { plain["startedAt"] = (d.timeIntervalSince1970 * 1000).rounded() }
     if let d = st.endedAt { plain["endedAt"] = (d.timeIntervalSince1970 * 1000).rounded() }
     if !st.files.isEmpty { plain["files"] = st.files.map { ["name": $0.0, "b64": $0.1.base64EncodedString()] } }
+    if let c = st.code { plain["code"] = c }
     var row = ojobs[st.job] ?? ["job": st.job, "at": nowMs(), "mine": false]
+    if st.code != nil || row["kind"] as? String == "code" { row["kind"] = "code" }
     row["title"] = st.title.isEmpty ? row["title"] ?? "Research" : st.title; row["state"] = st.state; row["suite"] = st.suite
     row["step"] = st.step ?? NSNull(); row["reason"] = st.reason ?? NSNull(); row["summary"] = st.summary ?? NSNull()
     ojobs[st.job] = row; postOJobs()
     let me = id.device
     work.async { [weak self] in
+      var plain = plain
+      // A code job's git bundle: sealed for the main Mac (tied to this job and its file id), then up through the file
+      // stream first; the sealed result names its file and SHA-256, so the main Mac only keeps the bundle it was told of.
+      if let path = st.bundle, let sha = st.bundleSha, var c = plain["code"] as? [String: Any] {
+        let fid = UUID().uuidString.lowercased()
+        if let data = FileManager.default.contents(atPath: path), data.count <= SecondCodeBundle.maxBundle, OutHash.sha256(data) == sha,
+           let s = try? SecondSeal.seal(data, aad: SecondCodeBundle.aad(job: st.job, file: fid), to: pk) {
+          let file = SecondCodeBundle.pack(suite: s.suite, kid: s.kid, enc: s.enc, ct: s.ct)
+          c["bundle"] = ["file": fid, "sha256": sha, "size": data.count]
+          let up: [String: Any] = ["type": "second:upload", "file": fid, "purpose": "result", "job": st.job, "to": st.from, "name": "outsource-\(st.job.prefix(8)).psbundle",
+                                   "mime": "application/octet-stream", "size": file.count, "sha256": OutHash.sha256(file), "b64": file.base64EncodedString()]
+          DispatchQueue.main.async { self?.post(up) }
+        } else { c["note"] = ((c["note"] as? String).map { $0 + " " } ?? "") + "The bundle could not be sealed, so it stayed on this Mac." }
+        plain["code"] = c
+      }
       guard let (env, _) = SecondOEnv.make(t: "ores", from: me, to: st.from, job: st.job, plain: plain, peer: pk, keys: okeys) else { return }
       DispatchQueue.main.async { self?.post(["type": "second:oresOut", "env": env.json, "job": st.job]) }
     }
@@ -1435,6 +1468,7 @@ extension Second {
     for k in ["state", "step", "reason", "summary", "startedAt", "endedAt", "resAt"] { row[k] = p[k] ?? (k == "state" ? row[k] : NSNull()) }
     if row["suite"] == nil, let s = p["suite"] { row["suite"] = s }
     if let t = p["title"] as? String, !t.isEmpty { row["title"] = t }
+    if row["kind"] as? String == "code", let c = p["code"] as? [String: Any] { row["code"] = (row["code"] as? [String: Any] ?? [:]).merging(c) { $1 } }
     let state = row["state"] as? String ?? "sent", final = ["done", "failed", "refused", "cancelled", "timeout", "expired"].contains(state)
     if final, was != state, let from = p["from"] as? String ?? row["to"] as? String {
       let title = row["title"] as? String ?? "Research"
@@ -1448,11 +1482,17 @@ extension Second {
     }
     ojobs[job] = row
     saveOJobs(); postOJobs()
-    if let rid = row["rid"] as? String, SecondJobs.isId(rid) {
-      var r: [String: Any] = ["job": job, "state": state, "title": row["title"] ?? "", "suite": row["suite"] ?? ""]
-      for k in ["reason", "summary", "report", "folder"] { if let v = row[k] as? String { r[k] = v } }
-      cliResultO(rid, r)
-    }
+    oCli(job)
+    if final, row["kind"] as? String == "code" { codeLand(job) }
+  }
+
+  /// The chat's result file for a job (`second.ts wait` and `result` read it): state, report and, for a code job, the bundle.
+  fileprivate func oCli(_ job: String) {
+    guard let row = ojobs[job], let rid = row["rid"] as? String, SecondJobs.isId(rid) else { return }
+    var r: [String: Any] = ["job": job, "state": row["state"] ?? "sent", "title": row["title"] ?? "", "suite": row["suite"] ?? ""]
+    for k in ["reason", "summary", "report", "folder", "kind", "bundle", "fetch", "bundleProblem"] { if let v = row[k] as? String { r[k] = v } }
+    if let c = row["code"] as? [String: Any] { r["code"] = c.filter { $0.key != "bundle" } }
+    cliResultO(rid, r)
   }
 
   /// ~/Downloads/From your other Mac/<date> <title>/report.md and the small files that came with it.
@@ -1496,7 +1536,7 @@ extension Second {
     let rows = Array(ojobs.values.sorted { (($0["at"] as? Double) ?? 0) > (($1["at"] as? Double) ?? 0) }.prefix(100))
     work.async { [weak self] in   // the reports are read off the main thread
       let list = rows.map { r -> [String: Any] in
-        var x = r.filter { !($0.value is NSNull) && $0.key != "rid" && $0.key != "to" && $0.key != "resAt" }
+        var x = r.filter { !($0.value is NSNull) && $0.key != "rid" && $0.key != "to" && $0.key != "resAt" && $0.key != "landed" }
         if let path = r["report"] as? String { x["report"] = (try? String(contentsOfFile: path, encoding: .utf8)).map { String($0.prefix(48 * 1024)) } ?? NSNull() }
         if let f = r["folder"] as? String { x["folder"] = "Downloads/From your other Mac/" + (f as NSString).lastPathComponent }
         if x["state"] as? String == "expired" { x["state"] = "failed" }
@@ -1504,6 +1544,81 @@ extension Second {
       }
       DispatchQueue.main.async { self?.post(["type": "second:ojobs", "list": list]) }
     }
+  }
+}
+
+// MARK: code jobs (PS 1.65): a kind in the sealed outsource body, the bundle back through the file stream
+
+extension Second {
+  /// A code job's sealed body from the window's form or a chat's `second.ts code` (only the known keys; checked again in SecondOJob.check).
+  static func codePlain(_ a: [String: Any]) -> [String: Any] {
+    var p: [String: Any] = ["kind": "code"]
+    for k in ["title", "prompt", "repo", "base", "tool", "model", "minutes", "shots"] { if let v = a[k], !(v is NSNull) { p[k] = v } }
+    return p
+  }
+
+  /// The person's Code jobs switch, from the page. Off: queued and running code jobs on this Mac stop.
+  func setCodeJobs(_ on: Bool) {
+    guard on != codeJobsOn else { return }
+    codeJobsOn = on
+    if !test { UserDefaults.standard.set(on, forKey: "second.codeJobs") }
+    if !on { orunner?.code.cancelAll() }
+    psLog("PS second: code jobs \(on ? "on" : "off") on this Mac")
+  }
+
+  /// The main Mac: once both the sealed result (which names the bundle's file id and SHA-256) and that sealed file are
+  /// here, the bundle is opened with this Mac's key, checked and kept as result.bundle beside the report. Nothing is merged:
+  /// the person (or their AI) fetches it into a review branch.
+  fileprivate func codeLand(_ job: String) {
+    guard let row = ojobs[job], row["mine"] as? Bool == true, row["bundlePath"] == nil, let okeys,
+          let landed = row["landed"] as? [String: Any], let path = landed["path"] as? String, let fid = landed["file"] as? String else { return }
+    // A bundle with no result naming it yet waits for the result; one the result does not name is dropped.
+    guard let want = (row["code"] as? [String: Any])?["bundle"] as? [String: Any], let wantFile = want["file"] as? String, let sha = want["sha256"] as? String else {
+      if let st = row["state"] as? String, ["done", "failed", "cancelled", "timeout"].contains(st) { codeDrop(job, path, "The bundle came without a result that names it, so it was not kept.") }
+      return
+    }
+    guard fid == wantFile else { codeDrop(job, path, "A bundle came that this job's result does not name, so it was not kept."); return }
+    let title = row["title"] as? String ?? "Code job", branch = (row["code"] as? [String: Any])?["branch"] as? String ?? "outsource/" + job
+    var folder = row["folder"] as? String
+    if folder == nil { folder = saveCodeFolder(title) }
+    guard let folder else { return }
+    work.async { [weak self] in
+      var problem: String?, dest: String?
+      let fm = FileManager.default
+      if let d = fm.contents(atPath: path), d.count <= SecondCodeBundle.maxBundle + (64 << 10), let u = SecondCodeBundle.unpack(d), let mine = okeys.privateFor(u.kid),
+         let plain = try? SecondSeal.open(SecondSeal.Sealed(suite: u.suite, kid: u.kid, enc: u.enc, ct: u.ct), aad: SecondCodeBundle.aad(job: job, file: fid), with: mine) {
+        if OutHash.sha256(plain) == sha {
+          let to = SecondLanding.free(folder, "result.bundle")
+          if (try? plain.write(to: URL(fileURLWithPath: to), options: .atomic)) != nil { dest = to } else { problem = "The bundle could not be written to Downloads." }
+        } else { problem = "The bundle did not match its sealed check, so it was not kept." }
+      } else { problem = "The bundle could not be opened (tampered, or sealed for a key this Mac no longer has), so it was not kept." }
+      try? fm.removeItem(atPath: path)
+      DispatchQueue.main.async {
+        guard let self else { return }
+        self.ojobs[job]?["landed"] = nil
+        if let dest {
+          self.ojobs[job]?["bundlePath"] = dest
+          self.ojobs[job]?["bundle"] = "Downloads/From your other Mac/" + (folder as NSString).lastPathComponent + "/" + (dest as NSString).lastPathComponent
+          self.ojobs[job]?["fetch"] = SecondCodeBundle.fetchLine(bundle: dest, branch: branch, job: job)
+          psLog("PS second: a code job's bundle landed, checked")
+        } else { self.ojobs[job]?["bundleProblem"] = problem; psLog("PS second: a code job's bundle was refused") }
+        if self.ojobs[job]?["folder"] == nil { self.ojobs[job]?["folder"] = folder }
+        self.saveOJobs(); self.postOJobs(); self.oCli(job)
+      }
+    }
+  }
+  private func codeDrop(_ job: String, _ path: String, _ why: String) {
+    work.async { try? FileManager.default.removeItem(atPath: path) }
+    ojobs[job]?["landed"] = nil; ojobs[job]?["bundleProblem"] = why
+    psLog("PS second: a code job's bundle was refused")
+    saveOJobs(); postOJobs(); oCli(job)
+  }
+  /// ~/Downloads/From your other Mac/<date> <title> for a bundle whose report folder is not there.
+  private func saveCodeFolder(_ title: String) -> String? {
+    let base = (test ? (downloads as NSString).deletingLastPathComponent : places.home + "/Downloads") + "/From your other Mac"
+    let f = DateFormatter(); f.locale = Locale(identifier: "en_US_POSIX"); f.dateFormat = "yyyy-MM-dd HH.mm"
+    let dir = SecondLanding.free(base, SecondLanding.clean(f.string(from: Date()) + " " + title))
+    return (try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)) != nil ? dir : nil
   }
 }
 

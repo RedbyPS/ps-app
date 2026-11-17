@@ -19,9 +19,12 @@ import type { Doc } from "../core/model";
 import {
   CHUNK, checkJob, chunkCount, fileRefusal, isDone, JOB_MAX_AGE, MSG_MAX, prune, secretPath,
   type AckBody, type BundleRef, type CmdAction, type DevBody, type Env, type FileBody, type GetBody, type IdxBody, type JobBody, type JobStatusBody, type JobType, type PairBody, type Peer, type Role, type StatBody,
-  cmdAction, CMD_MAX_AGE, checkGet, monthKey, rebootSet, sendRefusal, sharePathOk, WAITING_MAX,
+  cmdAction, CMD_MAX_AGE, checkGet, looksSecret, monthKey, rebootSet, sendRefusal, sharePathOk, WAITING_MAX,
 } from "../core/second";
 import type { SecondOp } from "../views/Second";
+import { settingsData } from "../core/select";
+import { saveSettings } from "../core/actions";
+import { codeBody, codeJobsOn, type CodeJobIn } from "../core/secondcode";
 import { putPreview, takeDrop } from "./drops";
 import { EMPTY_LOCAL, mySeeks, parseEnv, SEEK_LIFE, secondView, type NativeInfo, type OffInfo, type OJobInfo, type OutItem, type SeekBody, type Progress, type SecondLocal, type SecondView } from "./view";
 
@@ -516,6 +519,17 @@ export function outsource(o: { title: string; prompt: string; model?: "opus" | "
   note(v.online ? "Sealed and sent. It starts in a few seconds." : `${v.peer.name} is offline: a sealed task waits only 10 minutes.`);
 }
 
+/** The Outsource tab's Code job form (PS 1.65): PS seals and sends it as kind "code" (the same way as `second.ts code`). */
+export function outsourceCode(j: CodeJobIn) {
+  const v = currentView();
+  if (!codeJobsOn(settingsData(vaultStore.get()))) { note("Code jobs are off. Switch them on at the top of Outsource."); return; }
+  if (!v.peer?.outsource) { note(`${v.peer?.name ?? "The second Mac"} needs PS app updated before it can take sealed work.`); return; }
+  const { body, why } = codeBody(j, looksSecret);
+  if (!body) { note(`Not sent: ${why}`); return; }
+  post({ type: "second:ocode", ...body });
+  note(v.online ? "Sealed and sent. It starts in a few seconds." : `${v.peer.name} is offline: a sealed job waits only 10 minutes.`);
+}
+
 /** Finder asked for a file the developer dragged out of the window: the signed request, and its id back to PS. */
 async function fetchTo(m: Record<string, unknown>) {
   const r = String(m.req ?? "");
@@ -856,6 +870,7 @@ async function pass() {
   try {
     if (vaultStore.get().status !== "unlocked") return;
     if (!local.me) { if (local.off) await announceOff(local.off); return; }
+    tellCode();
     if (local.off) await announceOff(local.off); else await announce();
     void answerSeek();   // not awaited: jobs and files carry on meanwhile
     finishPair();
@@ -885,8 +900,15 @@ async function pass() {
 
 /** PS main window: start once the bridge is up (and again after it was switched off, PS 1.65). */
 let active = false, hooked = false, retry: number | undefined;
+/** The person's Code jobs switch as this page last told PS (PS keeps it, so a restarted PS waits for the page's word). */
+let toldCode: boolean | undefined;
+function tellCode() {
+  const on = codeJobsOn(settingsData(vaultStore.get()));
+  if (on !== toldCode) { toldCode = on; post({ type: "second:codeJobs", on }); }
+}
 export function startSecond(p: Post) {
   post = p;
+  toldCode = undefined;
   if (active) return;
   active = true;
   if (!hooked) { hooked = true; vaultStore.subscribe(schedule); onSecondPoke(schedule); }
@@ -922,6 +944,13 @@ export function cleanSecondOp(x: unknown): SecondOp | null {
     case "outsource": return typeof o.title === "string" && typeof o.prompt === "string" && o.prompt.trim()
       ? { op: "outsource", title: o.title.slice(0, 80), prompt: o.prompt.slice(0, 8000), model: o.model === "sonnet" ? "sonnet" : o.model === "opus" ? "opus" : undefined,
           minutes: Number.isInteger(o.minutes) ? o.minutes as number : undefined } : null;
+    case "codeJobs": return typeof o.on === "boolean" ? { op: "codeJobs", on: o.on } : null;   // the Code jobs switch (PS 1.65)
+    case "ocode": {   // a code job (PS 1.65): checked again here and by PS on both Macs
+      const j = (o.job && typeof o.job === "object" ? o.job : {}) as Record<string, unknown>;
+      if (typeof j.prompt !== "string" || typeof j.repo !== "string" || typeof j.base !== "string") return null;
+      return { op: "ocode", job: { prompt: j.prompt.slice(0, 20_000), repo: j.repo.slice(0, 300), base: j.base.slice(0, 100), title: str(j.title, 80), tool: j.tool === "codex" ? "codex" : "claude",
+        model: j.model === "sonnet" ? "sonnet" : j.model === "opus" ? "opus" : undefined, minutes: Number.isInteger(j.minutes) ? j.minutes as number : undefined, shots: j.shots === true } };
+    }
     case "sendDrop": {
       if (typeof o.key !== "string" || !KEY.test(o.key)) return null;
       const into = typeof o.root === "string" && /^[a-z0-9-]{1,40}$/.test(o.root) && (o.dir === undefined || o.dir === "" || sharePathOk(String(o.dir)));
@@ -953,6 +982,8 @@ export function runSecondOp(o: SecondOp) {
     case "msg": void Promise.all((o.keys ?? []).map(takeDrop)).then((fs) => sendMsg(o.text, fs.filter((f): f is NonNullable<typeof f> => !!f), o.files ?? [])).catch(() => note("Could not send the note.")); break;
     case "outboxDrop": post({ type: "second:outboxDrop", id: o.id }); break;
     case "outsource": outsource(o); break;
+    case "ocode": outsourceCode(o.job); break;
+    case "codeJobs": void saveSettings({ secondCodeJobs: o.on }).catch(() => note("Could not save the switch.")); break;
     case "sendDrop": void takeDrop(o.key).then((f) => { if (f) void sendFile(f, o.root ? { root: o.root, dir: o.dir ?? "" } : undefined); else note("That file was not found. Drop it again."); }); break;
     case "fetch": void fetchShared(o.device, o.root, o.path, o.as); break;
     case "cmd": void machineCmd(o.action); break;

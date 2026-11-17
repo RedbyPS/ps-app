@@ -2,6 +2,7 @@
 // store.ts moves the data). Pure: the main window and the floating Tab list both call it, the Tab list
 // with the copy the main window hands it. Bodies are read here for DISPLAY only; whether anything runs or
 // lands is decided by the native side after it checks the signature (protocol.md section 3).
+import type { CodeInfo } from "../core/secondcode";
 import type { Doc } from "../core/model";
 import { CHUNK, isDone, isOnline, monthKey, WAITING_MAX, type IdxBody, type IdxEntry, type Machine, type DevBody, type Env, type FileBody, type JobBody, type JobState, type JobStatusBody, type MsgBody, type Peer, type Role, type StatBody, type AckBody, type PairBody } from "../core/second.ts";
 
@@ -10,7 +11,9 @@ import { CHUNK, isDone, isOnline, monthKey, WAITING_MAX, type IdxBody, type IdxE
 export interface NativeInfo { device: string; name: string; model?: string; pub: string; role: Role; chip?: string; chosen?: boolean; app?: string; okid?: string }
 /** An outsourced job as PS knows it after opening its sealed records (v1.3). Titles and reports live only in memory. */
 export interface OJobInfo { job: string; title: string; state: JobState | "sent"; step?: string; reason?: string; summary?: string; suite: string; at: number;
-  startedAt?: number; endedAt?: number; mine: boolean; report?: string; folder?: string }
+  startedAt?: number; endedAt?: number; mine: boolean; report?: string; folder?: string;
+  /** PS 1.65 code jobs: kind "code", its result fields, where the checked bundle landed, the fetch line, or why it was not kept. */
+  kind?: string; code?: CodeInfo; bundle?: string; fetch?: string; bundleProblem?: string }
 /** PS could not start Second Computer on this Mac (no device key): what the other Mac is told. */
 /** here: what this Mac's own panel says (V1.31), retried: the developer's Allow was already tried, allowing: the read is running. */
 export interface OffInfo { why: string; name: string; model?: string; chip?: string; app?: string; here?: string; retried?: boolean; allowing?: boolean }
@@ -62,7 +65,7 @@ export interface FileRow { id: string; name: string; size: number; at: number; f
   folder?: boolean; stalled?: boolean }
 export interface JobRow { id: string; type: JobBody["type"]; args: Record<string, unknown>; at: number; to: string; state: JobState | "sent"; status: JobStatusBody | null; updated: number;
   /** v1.3: sealed (outsourced from a chat): its suite, the report and where its copy is. */
-  sealed?: { suite: string; report?: string; folder?: string } }
+  sealed?: { suite: string; report?: string; folder?: string; kind?: string; code?: CodeInfo; bundle?: string; fetch?: string; bundleProblem?: string } }
 /** The starting role PS picks from the chip (ps-mac Second.startRole): an M1 is the second Mac, an M4 the main one. */
 export function chipRole(chip?: string): Role | null {
   const c = (chip ?? "").trim();
@@ -301,7 +304,7 @@ export function secondView(docs: Doc[], local: SecondLocal, now = Date.now()): S
     const status = { t: "jobst", job: o.job, state: o.state === "sent" ? "accepted" : o.state, reason: o.reason, step: o.step, summary: o.summary, startedAt: o.startedAt, endedAt: o.endedAt,
       tail: o.report ? o.report.slice(0, 48 * 1024) : "" } as unknown as JobStatusBody;
     jobs.push({ id: o.job, type: "research", args: { title: o.title }, at: o.at, to: peer?.device ?? "", state: o.state, status: o.state === "sent" ? null : status, updated: o.endedAt ?? o.startedAt ?? o.at,
-      sealed: { suite: o.suite, report: o.report, folder: o.folder } });
+      sealed: { suite: o.suite, report: o.report, folder: o.folder, ...(o.kind === "code" ? { kind: "code", code: o.code, bundle: o.bundle, fetch: o.fetch, bundleProblem: o.bundleProblem } : {}) } });
   }
   jobs.sort((a, b) => b.at - a.at);
 

@@ -50,6 +50,7 @@ export const TOUR_STEPS: TourStep[] = [
   { ids: ["nl-dates"], title: "Dates in plain words", line: "Type tomorrow 9am or every Friday in a new task and PS sets it. Click the chip to keep the words.", where: "Any Add a task box. Switch: Settings, Your list, Dates in plain words" },
   { ids: ["tz-focus"], title: "Time zones, opened tall", line: "Click a time zone to open it where the list is. Hover works as before.", where: "Time zones in the Tab list. Switch: Settings, Time and reset, Click a time zone to open it", on: ["mac", "web"] },
   { ids: ["audio-priority"], title: "Speakers and microphones in order", line: "Drag your speakers and microphones into order. PS uses the top one that is connected.", where: "The volume mixer button in the Tab list. Switch: Settings, Mac, Audio priority", on: ["mac"] },
+  { ids: ["second-computer"], title: "Second Computer", line: "Pair your other Mac and send it files, research and, once you switch them on, code jobs.", where: "Settings, Second Computer. Code jobs: the Second Computer window, Outsource", on: ["mac"], owner: true },
   { ids: ["whats-new-tour"], title: "Edit mode on your phone", line: "Zoom out to move your pages and panels around.", where: "The Edit button at the top left of your list", on: ["phone"] },
 ];
 

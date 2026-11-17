@@ -285,3 +285,19 @@
 .sw-send-files:hover { background: color-mix(in srgb, var(--k-fg, #FFFFFF) min(100%, calc(11% * var(--k-ia, 1))), transparent); }
 .sw-xfer span small { display: block; font-size: calc(11px * var(--k-fs, 1)); opacity: 0.6; }
 .sw-xfer.stalled .sw-prog s { opacity: 0.45; }
+
+/* PS 1.65 code jobs in Outsource: the switch, Copy for AI and the result (thin, like the rest of the window). */
+.sw-code { display: grid; gap: calc(6px * var(--k-dn, 1)); padding: calc(10px * var(--k-dn, 1)) calc(12px * var(--k-dn, 1)); margin-bottom: 12px; border: 1px solid var(--sw-line); border-radius: calc(12px * var(--k-rd, 1)); background: var(--sw-card); }
+.sw-code .sw-fine { margin: 0; }
+.sw-code-row { display: flex; align-items: center; justify-content: space-between; gap: calc(10px * var(--k-dn, 1)); }
+.sw-code-row > span { display: grid; gap: 2px; min-width: 0; }
+.sw-code-row b { font-size: calc(13px * var(--k-fs, 1)); font-weight: 800; }
+.sw-code-row em { font-style: normal; font-size: calc(11.5px * var(--k-fs, 1)); line-height: 1.4; color: var(--sw-mute); }
+.sw-seg { display: inline-flex; flex: none; padding: 2px; border-radius: 999px; border: 1px solid var(--sw-line); }
+.sw-seg button { border: 0; background: transparent; color: var(--sw-mute); font: inherit; font-size: calc(11.5px * var(--k-fs, 1)); font-weight: 750; padding: calc(4px * var(--k-dn, 1)) calc(11px * var(--k-dn, 1)); border-radius: 999px; cursor: pointer; transition: background .18s var(--sw-ease), color .18s var(--sw-ease); }
+.sw-seg button.sel { background: color-mix(in srgb, var(--k-acc, #EC4E86) 26%, transparent); color: var(--k-fg, #FFFFFF); }
+.sw-code-ai { justify-self: start; display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--sw-line); background: transparent; color: inherit; font: inherit; font-size: calc(11.5px * var(--k-fs, 1)); font-weight: 700; padding: calc(5px * var(--k-dn, 1)) calc(10px * var(--k-dn, 1)); border-radius: 999px; cursor: pointer; }
+.sw-code-ai:hover { background: color-mix(in srgb, var(--k-fg, #FFFFFF) min(100%, calc(8% * var(--k-ia, 1))), transparent); }
+.sw-coderes { display: grid; gap: 4px; }
+.sw-stat { max-height: 160px; min-height: 0; height: auto; flex: none; }
+@media (prefers-reduced-motion: reduce) { .sw-seg button { transition: none; } }

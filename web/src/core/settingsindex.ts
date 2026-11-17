@@ -295,7 +295,7 @@ export const SETTINGS: SetEntry[] = [
   // V1.55: on the developer's project the same code signs his phone in (PS GOS and the phone web app both run on his project), no
   // project link needed. views/LinkIphone.tsx, core/phonepair.ts. The passphrase sign in there is unchanged.
   { id: "mac-phone-signin", group: "sync", name: "Sign in your phone", line: "Show a code on this Mac. Scan it in PS on your phone and it signs in, no typing.", on: MAC, red: true, words: ["phone", "pixel", "android", "iphone", "sign in", "log in", "scan", "qr", "qr code", "camera", "pair", "link"] },
-  { id: "second", group: "sync", name: "Second Computer", line: "Pair your other Mac: lock it, restart it, send files.", on: MAC, words: ["second", "other mac", "m1", "m4", "pair", "pairing", "computer"] },
+  { id: "second", group: "sync", name: "Second Computer", line: "Pair your other Mac: lock it, restart it, send files.", on: MAC, words: ["second", "other mac", "m1", "m4", "pair", "pairing", "computer", "outsource", "code jobs", "code job", "git bundle"] },
   { id: "invite", group: "sync", name: "Invite people", line: "Invite someone to PS app from the website, Settings, Invite owners.", on: MAC, red: true, more: true, words: ["invite", "friend", "share", "owner", "collaborators"] },
   { id: "vault", group: "sync", name: "Your vault", line: "Auto lock, your name, import, export and this device.", on: WEB, go: "vault", anchor: "pref-h", words: ["account", "vault", "profile"] },
   { id: "auto-lock", group: "sync", name: "Auto lock after", line: "Locks the vault after this long with nothing done.", on: WEB, go: "vault", anchor: "pref-h", parent: "vault", words: ["lock", "timeout", "idle", "auto lock"] },

@@ -18,6 +18,8 @@ import { appNum, blocker, jobRunning, ONE_CLICK_APP, SEEK_WAIT, secondView, STAT
 import { DOWNLOAD_LINK, fileState, pickFiles, secondActions } from "./Second";
 import { canNative, dropPlace, onDroppedText, useDropOver } from "../second/dragzone";
 import { sfx } from "../ui/sfx";
+import { settingsData } from "../core/select";
+import { aiGuide, CODE_DEFAULT_MINUTES, CODE_MINUTE_CHOICES, CODE_WORDS, codeJobsOn, codeLine, type CodeTool } from "../core/secondcode";
 import "./secondwin.css";
 import { RebootCard } from "./RebootCard";
 
@@ -123,7 +125,7 @@ export function SecondWindow({ s, initial }: { s: Snapshot; initial?: string }) 
           <div className="sw-pane" key={tab}>
             {tab === "files" && <FilesPane v={v} jump={jump} onJumped={() => setJump(null)} />}
             {tab === "messages" && <MessagesPane v={v} onLink={openLink} />}
-            {tab === "outsource" && <OutsourcePane v={v} projects={local.projects} onLink={openLink} />}
+            {tab === "outsource" && <OutsourcePane v={v} projects={local.projects} onLink={openLink} code={codeJobsOn(settingsData(s))} />}
             {tab === "machine" && <MachinePane v={v} />}
           </div>
         )}
@@ -490,16 +492,28 @@ function MessagesPane({ v, onLink }: { v: SecondView; onLink: (l: string) => voi
 }
 
 // ---------- Outsource ----------
-type Kind = Exclude<JobType, "cancel">;
+type Kind = Exclude<JobType, "cancel"> | "code";
 const KINDS: { type: Kind; title: string; hint: string; icon: string }[] = [
   { type: "research", title: "Research", hint: "A Claude research project. The report lands in PS Shared, Outsource.", icon: "research" },
+  { type: "code", title: CODE_WORDS.kind, hint: CODE_WORDS.kindHint, icon: "claude" },
   { type: "claude", title: "Claude Code task", hint: "A project folder and a prompt. Changes come back as a patch.", icon: "claude" },
   { type: "tests", title: "Run tests", hint: "Any project's tests on your current code.", icon: "test" },
   { type: "selftest", title: "PS app self test", hint: "The full self test, off this Mac.", icon: "shield" },
   { type: "build", title: "Build PS app", hint: "Builds PS app from your current code.", icon: "build" },
 ];
-function OutsourcePane({ v, projects, onLink }: { v: SecondView; projects: { name: string }[]; onLink: (l: string) => void }) {
+/** A sealed job's own label: a code job says so (PS 1.65), the rest as before. */
+const jobLabel = (j: JobRow) => j.sealed?.kind === "code" ? CODE_WORDS.kind : JOB_LABEL[j.type];
+function OutsourcePane({ v, projects, onLink, code }: { v: SecondView; projects: { name: string }[]; onLink: (l: string) => void; code: boolean }) {
   const [form, setForm] = useState<Kind | null>(null);
+  // Esc closes an open form (the window itself stays).
+  useEffect(() => {
+    if (!form) return;
+    const k = (e: KeyboardEvent) => { if (e.key === "Escape") { e.preventDefault(); setForm(null); } };
+    window.addEventListener("keydown", k);
+    return () => window.removeEventListener("keydown", k);
+  }, [form]);
+  useEffect(() => { if (!code && form === "code") setForm(null); }, [code, form]);
+  const kinds = KINDS.filter((k) => k.type !== "code" || (code && !!v.peer?.outsource));
   const [sel, setSel] = useState<string | null>(() => v.jobs[0]?.id ?? null);
   const primary = v.role === "primary";
   const job = v.jobs.find((j) => j.id === sel) ?? null;
@@ -512,9 +526,10 @@ function OutsourcePane({ v, projects, onLink }: { v: SecondView; projects: { nam
   return (
     <div className="sw-out">
       <section className="sw-out-list">
+        <CodeSwitch on={code} primary={primary} peer={v.peer?.name ?? "your other Mac"} />
         {primary && (
           <div className="sw-kinds">
-            {KINDS.map((k) => (
+            {kinds.map((k) => (
               <button key={k.type} type="button" className={form === k.type ? "sel" : ""} onClick={() => { click(); setForm(form === k.type ? null : k.type); setSel(null); }}>
                 <I n={k.icon} size={18} /><b>{k.title}</b>
               </button>
@@ -525,7 +540,7 @@ function OutsourcePane({ v, projects, onLink }: { v: SecondView; projects: { nam
           <div key={g} className="sw-group"><h3>{g}</h3>
             {list.slice(0, 40).map((j) => (
               <button key={j.id} type="button" className={`sw-jrow s-${j.state}${sel === j.id && !form ? " sel" : ""}`} onClick={() => { click(); setSel(j.id); setForm(null); }}>
-                <span><b>{jobTitle(j)}</b><em>{JOB_LABEL[j.type]} · {seenText(j.at)}</em></span>
+                <span><b>{jobTitle(j)}</b><em>{jobLabel(j)} · {seenText(j.at)}</em></span>
                 <i className="sw-state">{STATE_WORD[j.state]}</i>
               </button>
             ))}
@@ -534,7 +549,7 @@ function OutsourcePane({ v, projects, onLink }: { v: SecondView; projects: { nam
         {v.jobs.length === 0 && !primary && <p className="sw-empty">No work yet.</p>}
       </section>
       <section className="sw-out-detail">
-        {form ? <NewJob type={form} projects={projects} sealed={!!v.peer?.outsource} onDone={() => setForm(null)} /> : job ? <JobDetail j={job} v={v} primary={primary} onLink={onLink} />
+        {form === "code" ? <CodeJobForm projects={projects} onDone={() => setForm(null)} /> : form ? <NewJob type={form} projects={projects} sealed={!!v.peer?.outsource} onDone={() => setForm(null)} /> : job ? <JobDetail j={job} v={v} primary={primary} onLink={onLink} />
           : <p className="sw-empty">{primary ? "Pick what to outsource, or ask any Claude chat to \"outsource these to my other Mac\". Research runs up to 3 at once on the second Mac, never on this one." : "Jobs from your main Mac show here."}</p>}
       </section>
     </div>
@@ -543,7 +558,7 @@ function OutsourcePane({ v, projects, onLink }: { v: SecondView; projects: { nam
 const jobTitle = (j: JobRow) => j.type === "research" ? String(j.args.title ?? "Research") : j.type === "claude" ? String(j.args.prompt ?? "").slice(0, 70)
   : j.type === "tests" ? `${String(j.args.project ?? "")} tests` : j.type === "selftest" ? `Self test${j.args.only ? `: ${String(j.args.only)}` : ""}` : "Build PS app";
 
-function NewJob({ type, projects, sealed, onDone }: { type: Kind; projects: { name: string }[]; sealed: boolean; onDone: () => void }) {
+function NewJob({ type, projects, sealed, onDone }: { type: Exclude<Kind, "code">; projects: { name: string }[]; sealed: boolean; onDone: () => void }) {
   const [project, setProject] = useState("");
   const [prompt, setPrompt] = useState("");
   const [title, setTitle] = useState("");
@@ -595,6 +610,89 @@ function NewJob({ type, projects, sealed, onDone }: { type: Kind; projects: { na
   );
 }
 
+// ---------- Code jobs (PS 1.65): the switch, the form and the result ----------
+/** The person's Code jobs switch (settings.secondCodeJobs, synced). Saved by the main page (the window's ops go there). */
+function CodeSwitch({ on, primary, peer }: { on: boolean; primary: boolean; peer: string }) {
+  const [copied, setCopied] = useState(false);
+  const set = (want: boolean) => { if (want === on) return; click(); secondActions.run({ op: "codeJobs", on: want }); };
+  return (
+    <div className="sw-code">
+      <div className="sw-code-row">
+        <span><b>{CODE_WORDS.switchName}</b><em>{on ? CODE_WORDS.switchLine : CODE_WORDS.offNote}</em></span>
+        <div className="sw-seg" role="radiogroup" aria-label={CODE_WORDS.switchName}>
+          <button type="button" role="radio" aria-checked={on} className={on ? "sel" : ""} onClick={() => set(true)}>On</button>
+          <button type="button" role="radio" aria-checked={!on} className={on ? "" : "sel"} onClick={() => set(false)}>Off</button>
+        </div>
+      </div>
+      {on && <p className="sw-fine">{CODE_WORDS.bothMacs}</p>}
+      {on && primary && (
+        <button type="button" className="sw-code-ai" onClick={() => { void navigator.clipboard?.writeText(aiGuide(peer)); click(); setCopied(true); window.setTimeout(() => setCopied(false), 2400); }}>
+          <I n="claude" size={14} /> {copied ? CODE_WORDS.forAICopied : CODE_WORDS.forAI}
+        </button>
+      )}
+    </div>
+  );
+}
+
+function CodeJobForm({ projects, onDone }: { projects: { name: string }[]; onDone: () => void }) {
+  const [title, setTitle] = useState("");
+  const [repo, setRepo] = useState("");
+  const [base, setBase] = useState("main");
+  const [prompt, setPrompt] = useState("");
+  const [tool, setTool] = useState<CodeTool>("claude");
+  const [model, setModel] = useState<"opus" | "sonnet">("opus");
+  const [minutes, setMinutes] = useState(CODE_DEFAULT_MINUTES);
+  const [shots, setShots] = useState(false);
+  const ok = !!repo.trim() && !!base.trim() && !!prompt.trim();
+  const go = () => {
+    if (!ok) return;
+    click();
+    secondActions.run({ op: "ocode", job: { title: title.trim() || undefined, repo: repo.trim(), base: base.trim(), prompt: prompt.trim(), tool, model: tool === "claude" ? model : undefined, minutes, shots } });
+    onDone();
+  };
+  return (
+    <div className="sw-form">
+      <h2><I n="claude" size={20} /> {CODE_WORDS.kind}</h2>
+      <p className="sw-muted">{CODE_WORDS.kindHint}</p>
+      <label><span>Title</span><input value={title} maxLength={80} placeholder="For example: Make the mail tests pass" onChange={(e) => setTitle(e.target.value)} /></label>
+      <div className="sw-inline">
+        <label><span>{CODE_WORDS.repo}</span><input value={repo} list="sw-code-repos" maxLength={300} placeholder={CODE_WORDS.repoHint} onChange={(e) => setRepo(e.target.value)} /></label>
+        <label><span>{CODE_WORDS.base}</span><input value={base} maxLength={100} placeholder={CODE_WORDS.baseHint} onChange={(e) => setBase(e.target.value)} /></label>
+      </div>
+      <datalist id="sw-code-repos">{projects.map((p) => <option key={p.name} value={p.name} />)}</datalist>
+      <label className="grow"><span>{CODE_WORDS.ask}</span>
+        <textarea rows={6} value={prompt} maxLength={20_000} onChange={(e) => setPrompt(e.target.value)} placeholder={CODE_WORDS.askHint} /></label>
+      <div className="sw-inline">
+        <label><span>{CODE_WORDS.tool}</span><select value={tool} onChange={(e) => setTool(e.target.value === "codex" ? "codex" : "claude")}><option value="claude">Claude Code</option><option value="codex">Codex</option></select></label>
+        {tool === "claude" && <label><span>Model</span><select value={model} onChange={(e) => setModel(e.target.value as "opus")}><option value="opus">Opus</option><option value="sonnet">Sonnet</option></select></label>}
+        <label><span>Up to</span><select value={minutes} onChange={(e) => setMinutes(Number(e.target.value))}>{CODE_MINUTE_CHOICES.map((m) => <option key={m} value={m}>{m < 60 ? `${m} minutes` : m === 60 ? "1 hour" : `${m / 60} hours`}</option>)}</select></label>
+      </div>
+      <label className="sw-check"><input type="checkbox" checked={shots} onChange={(e) => setShots(e.target.checked)} /> {CODE_WORDS.shots}</label>
+      <p className="sw-fine">{CODE_WORDS.fine}</p>
+      <div className="sw-acts"><button type="button" onClick={onDone}>Cancel</button><button type="button" className="sw-primary" disabled={!ok} onClick={go}>Send to the second Mac</button></div>
+    </div>
+  );
+}
+
+function CodeResult({ j }: { j: JobRow }) {
+  const c = j.sealed?.code, [copied, setCopied] = useState(false);
+  const line = codeLine(c);
+  return (
+    <div className="sw-coderes">
+      {line && <p className="sw-fine">{line}{c?.base ? ` · base ${c.base.slice(0, 10)}` : ""}</p>}
+      {c?.files && c.files.length > 0 && <pre className="sw-log sw-stat">{c.files.slice(0, 12).join("\n")}</pre>}
+      {j.sealed?.bundle ? (
+        <div className="sw-acts left">
+          <span className="sw-chip"><I n="file" size={14} />{CODE_WORDS.landed} {j.sealed.bundle}</span>
+          {j.sealed.fetch && <button type="button" onClick={() => { void navigator.clipboard?.writeText(j.sealed!.fetch!); click(); setCopied(true); window.setTimeout(() => setCopied(false), 2400); }}>{copied ? CODE_WORDS.copied : CODE_WORDS.fetch}</button>}
+        </div>
+      ) : j.state === "done" && (c?.commits ?? 0) > 0 && !j.sealed?.bundleProblem ? <p className="sw-fine">{CODE_WORDS.waiting}</p> : null}
+      {j.sealed?.bundleProblem && <p className="sw-step">{j.sealed.bundleProblem}</p>}
+      {j.sealed?.bundle && <p className="sw-fine">{CODE_WORDS.noMerge}</p>}
+    </div>
+  );
+}
+
 function JobDetail({ j, v, primary, onLink }: { j: JobRow; v: SecondView; primary: boolean; onLink: (l: string) => void }) {
   const st = j.status;
   const took = st?.startedAt ? Math.round(((st.endedAt ?? Date.now()) - st.startedAt) / 1000) : null;
@@ -606,10 +704,11 @@ function JobDetail({ j, v, primary, onLink }: { j: JobRow; v: SecondView; primar
   return (
     <div className="sw-jd">
       <header><span className={`sw-state big s-${j.state}`}>{STATE_WORD[j.state]}</span><h2>{jobTitle(j)}</h2></header>
-      <p className="sw-muted">{JOB_LABEL[j.type]} · sent {seenText(j.at)}{took !== null ? ` · ${fmtDur(took)}` : ""}{st?.exit !== undefined ? ` · exit ${st.exit}` : ""}</p>
+      <p className="sw-muted">{jobLabel(j)} · sent {seenText(j.at)}{took !== null ? ` · ${fmtDur(took)}` : ""}{st?.exit !== undefined ? ` · exit ${st.exit}` : ""}</p>
       {(st?.reason || st?.summary || st?.step) && <p className="sw-step">{st?.reason || st?.summary || st?.step}</p>}
       {j.sealed && <p className="sw-fine">Sealed with {suiteWords(j.sealed.suite)}{j.sealed.folder ? ` · copy in ${j.sealed.folder}` : ""}</p>}
-      {j.type !== "research" && j.type !== "claude" ? null : <blockquote>{String(j.args.prompt ?? "")}</blockquote>}
+      {j.sealed?.kind === "code" && <CodeResult j={j} />}
+      {j.type !== "research" && j.type !== "claude" ? null : j.sealed?.kind === "code" ? null : <blockquote>{String(j.args.prompt ?? "")}</blockquote>}
       <pre ref={log} className="sw-log">{st?.tail || (j.state === "sent" ? "Waiting for the second Mac to pick it up..." : "No output yet.")}</pre>
       {st?.files && st.files.length > 0 && <p className="sw-fine">Changed: {st.files.slice(0, 20).join(", ")}{st.files.length > 20 ? ` and ${st.files.length - 20} more` : ""}</p>}
       <div className="sw-acts left">

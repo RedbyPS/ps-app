@@ -15,12 +15,14 @@ import { secondStore } from "../second/store";
 import { blocker, jobRunning, SEEK_WAIT, secondView, STATE_WORD, type FileRow, type JobRow, type SecondLocal, type SecondView } from "../second/view";
 import { canNative, dropPlace, useDropOver } from "../second/dragzone";
 import { sfx } from "../ui/sfx";
+import type { CodeJobIn } from "../core/secondcode";
 import "./second.css";
 
 export type SecondOp =
   | { op: "msg"; text: string; keys?: string[]; files?: string[] }
   | { op: "outboxDrop"; id: string }
   | { op: "outsource"; title: string; prompt: string; model?: "opus" | "sonnet"; minutes?: number }
+  | { op: "ocode"; job: CodeJobIn } | { op: "codeJobs"; on: boolean }
   | { op: "sendDrop"; key: string; root?: string; dir?: string }
   | { op: "job"; type: Exclude<JobType, "cancel">; project?: string; prompt?: string; preset?: string; only?: string; send?: boolean; model?: "opus" | "sonnet"; title?: string; minutes?: number }
   | { op: "fetch"; device: string; root: string; path: string; as: "download" | "preview" }

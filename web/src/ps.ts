@@ -63,6 +63,7 @@ export function cleanLooks(p: Record<string, unknown>): Partial<Settings> {
   if (Number.isFinite(Number(p.tmBgIntensity)) && p.tmBgIntensity !== null) o.tmBgIntensity = pct(p.tmBgIntensity);
   if (Number.isFinite(Number(p.tmBgFrequency)) && p.tmBgFrequency !== null) o.tmBgFrequency = pct(p.tmBgFrequency);
   if (typeof p.tmBgSound === "boolean") o.tmBgSound = p.tmBgSound;
+  if (typeof p.secondCodeJobs === "boolean") o.secondCodeJobs = p.secondCodeJobs;   // Second Computer, Outsource, Code jobs (core/secondcode.ts)
   if (Number.isFinite(Number(p.tmBgVolume)) && p.tmBgVolume !== null) o.tmBgVolume = pct(p.tmBgVolume);
   if (Number.isFinite(Number(p.tmBgVideoBright)) && p.tmBgVideoBright !== null && p.tmBgVideoBright !== "") o.tmBgVideoBright = bgBright(p.tmBgVideoBright);   // core/bgbright.ts
   if (p.tmBgPhone === null) o.tmBgPhone = null;                                       // the phone back to Same as my Mac (core/bgcrop.ts, V1.47)

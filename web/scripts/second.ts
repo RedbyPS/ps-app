@@ -9,11 +9,16 @@
 //   node scripts/second.ts claude <project folder or name> "<what to do>" [--model opus|sonnet] [--minutes 5..60]
 //   node scripts/second.ts cancel <job id>
 //   node scripts/second.ts outsource [--model opus|sonnet] [--minutes 5..30] [--json tasks.json] "<task 1>" "<task 2>" ...
+//   node scripts/second.ts code <repo> "<what to do>" [--base <commit>] [--tool claude|codex] [--model opus|sonnet] [--minutes 5..240] [--shots] [--title "<title>"]
 //   node scripts/second.ts wait <job> [<job> ...]     (exits when every one has finished; run it in the background)
 //   node scripts/second.ts result <job>               (the report)
 // Common: --timeout <minutes> (default 45, wait 75), --no-wait (send and exit 0), --no-fallback.
 // outsource: each task is its own research job, sealed to the M1 (post-quantum X-Wing where both Macs can) and run
 // there up to 3 at once with web search and its own folder only. Reports land in ~/Downloads/From your other Mac.
+// code (PS 1.65, only while Code jobs is switched on in Second Computer, Outsource): a code job, sealed the same way, run
+// on the second Mac in its own copy of <repo> (a folder name it has, or a git link; a folder here gives its name and its
+// current commit as --base), one at a time, never pushing. A git bundle comes back next to the report; `result` prints
+// the fetch line. Nothing merges by itself.
 //
 // Exit codes: 0 done and passed, 1 failed, refused or timed out, 2 bad usage, 3 the second Mac cannot take it
 // (PS not running or locked, nothing paired, the M1 offline, no answer in 30 s): run it locally as before.
@@ -25,6 +30,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, s
 import { homedir } from "node:os";
 import { basename, join, resolve } from "node:path";
 import { randomBytes } from "node:crypto";
+import { codeBody, folderName, repoOk, type CodeTool } from "../src/core/secondcode.ts";
 import { FILE_MAX, looksSecret, OJOB_MAX_MINUTES, outsourceTitle, secretPath, suiteWords, TEST_PRESETS, isDone, type JobStatusBody } from "../src/core/second.ts";
 
 const DIR = process.env.PS_SECOND_DIR || join(homedir(), "Library/Application Support/PS/Second/cli");   // tests point these elsewhere
@@ -40,7 +46,7 @@ for (let i = 0; i < argv.length; i++) {
   if (a.startsWith("--")) {
     const [k, v] = a.slice(2).split("=", 2);
     if (v !== undefined) flags.set(k, v);
-    else if (["only", "preset", "model", "minutes", "timeout", "json"].includes(k)) flags.set(k, argv[++i] ?? "");
+    else if (["only", "preset", "model", "minutes", "timeout", "json", "base", "tool", "title"].includes(k)) flags.set(k, argv[++i] ?? "");
     else flags.set(k, true);
   } else pos.push(a);
 }
@@ -166,7 +172,8 @@ function localTests(dir: string, preset: string): number {
 }
 
 // ---------- outsourcing (v1.3): sealed research jobs, waited for in the background ----------
-type ORes = { id: string; kind?: string; job?: string; title?: string; state: string; suite?: string; reason?: string; summary?: string; report?: string; folder?: string; at?: number };
+type ORes = { id: string; kind?: string; job?: string; title?: string; state: string; suite?: string; reason?: string; summary?: string; report?: string; folder?: string; at?: number;
+  bundle?: string; fetch?: string; bundleProblem?: string };
 const FINAL = new Set(["done", "failed", "refused", "cancelled", "timeout", "expired"]);
 function oresAll(): ORes[] {
   const out: ORes[] = [];
@@ -233,6 +240,48 @@ async function sendOutsource(st: State | null): Promise<never> {
   }
   process.exit(code);
 }
+/** A code job (PS 1.65): sealed by PS as kind "code"; the second Mac says no while Code jobs is off there. */
+async function sendCode(st: State | null): Promise<never> {
+  const why = outsourceBlock(st);
+  if (why) { say(`[second] not sent: ${why}.`); process.exit(3); }
+  const usage = 'node scripts/second.ts code <repo> "<what to do>" [--base <commit>] [--tool claude|codex] [--model opus|sonnet] [--minutes 5..240] [--shots] [--title "<title>"]';
+  const [repoArg, ...rest] = pos;
+  const prompt = rest.join(" ").trim();
+  if (!repoArg || !prompt) fail(usage);
+  let repo = repoArg, base = flag("base");
+  // A folder on this Mac (a path, or a name in the Projects folder): its name goes, and its current commit is the base.
+  const link = repoOk(repoArg) && !folderName(repoArg);
+  const here = link ? null : folderName(repoArg) && !existsSync(repoArg) ? (existsSync(join(PROJECTS, repoArg, ".git")) ? join(PROJECTS, repoArg) : null)
+    : existsSync(repoArg) ? resolve(repoArg) : null;
+  if (!link && !here && !folderName(repoArg)) fail(`No such folder: ${repoArg}`);
+  if (here) {
+    if (!existsSync(join(here, ".git"))) fail(`Not a git project: ${repoArg}`);
+    repo = basename(here);
+    if (typeof base !== "string") base = git(here, ["rev-parse", "HEAD"]);
+  }
+  if (typeof base !== "string" || !base) fail("Say which commit: --base <commit or branch> (the other Mac must have it).");
+  const tool = flag("tool"), model = flag("model"), minutes = flag("minutes"), title = flag("title");
+  if (tool !== undefined && tool !== "claude" && tool !== "codex") fail("--tool is claude or codex");
+  if (model !== undefined && model !== "opus" && model !== "sonnet") fail("--model is opus or sonnet");
+  const { body, why: no } = codeBody({ repo, base: String(base), prompt, tool: (tool as CodeTool | undefined) ?? "claude", model: model as "opus" | "sonnet" | undefined,
+    minutes: minutes === undefined ? undefined : Number(minutes), shots: flag("shots") === true, title: typeof title === "string" ? title : undefined }, looksSecret);
+  if (!body) fail(`Not sent: ${no}`, 1);
+  const id = randomBytes(9).toString("base64url");
+  writeReq({ id, type: "ocode", args: body }, id);
+  const start = Date.now();
+  let r: ORes | null = null;
+  while (Date.now() - start < 30_000) {
+    r = oresOf(id);
+    if (r && r.state !== "sending") break;
+    await new Promise((res) => setTimeout(res, 300));
+  }
+  if (!r) { rmSync(join(DIR, `req-${id}.json`), { force: true }); say("[second] not sent: PS did not pick it up within 30 s."); process.exit(3); }
+  if (r.state === "refused" || r.state === "failed") { say(`[second] not sent: ${r.reason ?? "refused"}`); process.exit(1); }
+  say(`[second] sent ${r.job}  "${r.title ?? ""}"  (sealed with ${suiteWords(r.suite)}), base ${String(base).slice(0, 12)}`);
+  say(`[second] to be told when it finishes: node scripts/second.ts wait ${r.job}`);
+  say(`[second] then: node scripts/second.ts result ${r.job}   (the report and the git fetch line; nothing merges by itself)`);
+  process.exit(0);
+}
 async function waitOutsource(keys: string[]): Promise<never> {
   if (!keys.length) fail("node scripts/second.ts wait <job> [<job> ...]");
   const limit = Math.max(1, Number(flag("timeout")) || 75) * 60_000, start = Date.now();
@@ -253,6 +302,8 @@ async function waitOutsource(keys: string[]): Promise<never> {
           say(`[second] "${r.title}" ${state === "done" ? "finished" : state}${r.reason ? `: ${r.reason}` : state === "expired" ? ": the other Mac never picked it up (offline or PS closed there)" : ""}`);
           if (r.summary) say(`  ${r.summary}`);
           if (r.report) say(`  report: ${r.report}`);
+          if (r.fetch) say(`  bundle: ${r.bundle ?? ""}\n  review it: ${r.fetch}`);
+          else if (r.bundleProblem) say(`  ${r.bundleProblem}`);
           if (state !== "done") failed++;
         } else if (state === "running") say(`[second] "${r.title}" running on the other Mac`);
         else if (state === "queued") say(`[second] "${r.title}" waiting for a free slot on the other Mac`);
@@ -269,11 +320,14 @@ async function waitOutsource(keys: string[]): Promise<never> {
 async function main() {
   const st = readState();
   if (cmd === "outsource") await sendOutsource(st);
+  if (cmd === "code") await sendCode(st);
   if (cmd === "wait") await waitOutsource(pos);
   if (cmd === "result") {
     const r = oresOf(pos[0] ?? "") ?? fail("node scripts/second.ts result <job>");
     if (!r.report) { say(`[second] "${r.title}" is ${r.state}${r.reason ? `: ${r.reason}` : ""}; no report yet.`); process.exit(r.state === "done" ? 0 : 1); }
     say(readFileSync(r.report, "utf8"));
+    if (r.fetch) say(`\n[second] bundle: ${r.bundle ?? ""}\n[second] review it in your own copy: ${r.fetch}\n[second] nothing is merged; decide after review.`);
+    else if (r.bundleProblem) say(`\n[second] ${r.bundleProblem}`);
     process.exit(0);
   }
   if (cmd === "cancel" && oresOf(pos[0] ?? "")) {
@@ -283,7 +337,7 @@ async function main() {
     process.exit(0);
   }
   if (!cmd || cmd === "help" || flag("help")) {
-    say(readFileSync(new URL(import.meta.url), "utf8").split("\n").filter((l) => l.startsWith("//")).slice(0, 24).map((l) => l.slice(3)).join("\n"));
+    say(readFileSync(new URL(import.meta.url), "utf8").split("\n").filter((l) => l.startsWith("//")).slice(0, 30).map((l) => l.slice(3)).join("\n"));
     process.exit(cmd ? 0 : 2);
   }
   if (cmd === "status") {
