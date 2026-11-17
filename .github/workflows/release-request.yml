@@ -1,0 +1,22 @@
+# A version tag was pushed (tools/claim-version.mjs). This run has no secret and does nothing but finish; when it
+# does, release.yml starts. release.yml runs as it is on MAIN (workflow_run always uses main's copy), so a tag on some
+# other commit can never bring its own release workflow, and only main may read the signing keys.
+name: Release request
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions: {}
+
+jobs:
+  note:
+    name: release request
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Tag
+        env:
+          TAG: ${{ github.ref_name }}
+          SHA: ${{ github.sha }}
+        run: echo "Version tag $TAG on $SHA; release.yml decides whether it is a shared release."

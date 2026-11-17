@@ -1,0 +1,56 @@
+# Keeps waiting pull requests up to date (the design, section 6). "Branch must be up to date" is required on main,
+# so after every merge each open pull request with auto merge on gets main merged into its branch; its checks then
+# run again on the combined code and GitHub merges it when they pass. A pull request whose lines clash with main is
+# left as it is: its author rebases and pushes. The bot app's token is used so the update starts the checks
+# (an update made with GITHUB_TOKEN would not).
+name: Update branches
+
+on:
+  push:
+    branches: [main]
+
+permissions: {}
+
+concurrency:
+  group: update-branches
+  cancel-in-progress: true
+
+jobs:
+  update:
+    name: update waiting pull requests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: ps-bot
+    steps:
+      - name: Bot token
+        id: token
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ vars.PS_BOT_CLIENT_ID }}
+          private-key: ${{ secrets.PS_BOT_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+          # Merging main into a branch carries main's workflow files along, which GitHub counts as a workflow change.
+          permission-workflows: write
+      - name: Merge main into each waiting branch
+        env:
+          GH_TOKEN: ${{ steps.token.outputs.token }}
+          OWNER_BRANCH_PREFIX: red/
+        run: |
+          set -euo pipefail
+          # Open pull requests into main, from this repo, with auto merge on. One that is already up to date is refused
+          # by GitHub (nothing to merge) and simply skipped.
+          gh pr list --repo "$GITHUB_REPOSITORY" --base main --state open --limit 100 \
+            --json number,headRefName,headRefOid,isCrossRepository,autoMergeRequest \
+            --jq '.[] | select(.isCrossRepository == false and .autoMergeRequest != null) | [.number, .headRefName, .headRefOid] | @tsv' \
+            > waiting.tsv
+          if [ ! -s waiting.tsv ]; then echo "No pull request is waiting for main."; exit 0; fi
+          while IFS=$'\t' read -r pr ref sha; do
+            # Owner branches are pushed only by the developer (ruleset), so the bot leaves them alone.
+            case "$ref" in "$OWNER_BRANCH_PREFIX"*) echo "#$pr ($ref): an owner branch, left alone"; continue ;; esac
+            if gh api -X PUT "repos/$GITHUB_REPOSITORY/pulls/$pr/update-branch" -f expected_head_sha="$sha" > /dev/null 2>err.txt; then
+              echo "#$pr ($ref): main merged in, its checks run again"
+            else
+              echo "#$pr ($ref): not updated ($(head -c 300 err.txt)); a clash with main is fixed by its author"
+            fi
+          done < waiting.tsv

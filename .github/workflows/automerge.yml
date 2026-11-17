@@ -1,0 +1,59 @@
+# Auto merge (the developer: "no approval needed"). Every pull request from a person's branch of this repo
+# (<name>/<topic>, for example jan/island-corner) gets auto merge (squash) switched on; GitHub merges it the moment
+# every required check passes. Pull requests from forks are left for the developer: a stranger's change never merges by itself.
+#
+# pull_request_target: this file runs as it is on main, and nothing from the pull request is checked out or run.
+# The token is the PS bot app's (environment ps-bot), not GITHUB_TOKEN: a merge made with GITHUB_TOKEN would not
+# start the workflows that follow a merge (update-branches.yml).
+name: Auto merge
+
+on:
+  pull_request_target:
+    branches: [main]
+    types: [opened, reopened, synchronize, ready_for_review]
+
+permissions: {}
+
+concurrency:
+  group: automerge-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  enable:
+    name: auto merge on
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      !github.event.pull_request.draft
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment: ps-bot
+    steps:
+      - name: A person's branch?
+        id: branch
+        env:
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+        run: |
+          if [[ "$HEAD_REF" =~ ^[a-z][a-z0-9-]{0,30}/[A-Za-z0-9._/-]+$ ]]; then
+            echo "ok=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Branch $HEAD_REF is not <name>/<topic>: auto merge stays off (the design, section 6)."
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Bot token
+        if: steps.branch.outputs.ok == 'true'
+        id: token
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ vars.PS_BOT_CLIENT_ID }}
+          private-key: ${{ secrets.PS_BOT_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+      - name: Switch auto merge on (squash)
+        if: steps.branch.outputs.ok == 'true'
+        env:
+          GH_TOKEN: ${{ steps.token.outputs.token }}
+          PR: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          gh pr merge "$PR" --repo "$GITHUB_REPOSITORY" --auto --squash --match-head-commit "$HEAD_SHA"
+          echo "Auto merge is on for #$PR: it merges once every required check passes."

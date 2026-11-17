@@ -1,0 +1,105 @@
+# Build checks: the pull request's own code is built and tested here, so this workflow never has a secret.
+# Required checks on main (see the hand over note): "web", "mac", "phone".
+# Called again by release.yml on the exact commit being released.
+name: Checks
+
+on:
+  pull_request:
+    branches: [main]
+  merge_group:
+  workflow_call:
+    inputs:
+      ref:
+        description: The commit to check (the release workflow passes the tag's commit)
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: checks-${{ github.event.pull_request.number || inputs.ref || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  NODE_VERSION: "26"
+
+jobs:
+  web:
+    name: web
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.ref || '' }}
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Install the web packages
+        run: npm ci --prefix web --ignore-scripts --no-audit --no-fund
+      # tsc and the web unit tests on the G Squad tree (core, no layer).
+      - name: G Squad build check (web)
+        run: node tools/build.mjs gsquad web --check
+      # The example layer proves the plug in path still works.
+      - name: Example layer build check (web)
+        run: node tools/build.mjs layers/example/layer.json web --check
+
+  mac:
+    name: mac
+    runs-on: macos-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.ref || '' }}
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Install the web packages
+        run: npm ci --prefix web --ignore-scripts --no-audit --no-fund
+      - name: Swift version
+        run: swiftc --version
+      # swiftc -typecheck on the G Squad tree and on the example layer.
+      - name: G Squad build check (mac)
+        run: node tools/build.mjs gsquad mac --check
+      - name: Example layer build check (mac)
+        run: node tools/build.mjs layers/example/layer.json mac --check
+
+  phone:
+    name: phone
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.ref || '' }}
+          persist-credentials: false
+      - uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: gradle
+          cache-dependency-path: |
+            phone/**/*.gradle*
+            phone/gradle/wrapper/gradle-wrapper.properties
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - name: Android platform for compileSdk
+        run: |
+          sdk="$(sed -n 's/.*compileSdk *= *\([0-9][0-9]*\).*/\1/p' phone/app/build.gradle.kts | head -1)"
+          echo "compileSdk $sdk"
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-$sdk" > /dev/null
+      - name: Assemble the G Squad tree
+        run: node tools/assemble.mjs --out .build/gsquad
+      - name: Phone unit tests
+        working-directory: .build/gsquad/phone
+        run: ./gradlew --no-daemon testDebugUnitTest
