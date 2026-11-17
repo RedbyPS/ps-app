@@ -14,14 +14,14 @@ import { newAiCode, registerAiCode, listAis, unlinkAi } from "../src/squad/devli
 import { cleanAiView, cleanSquadOp } from "../src/squad/view.ts";
 import type { SquadRec } from "../src/core/squadrec.ts";
 // @ts-ignore plain JS module
-import * as C from "../core-root/skill/a1-ps-app-public-developer/collab.mjs";
+import * as C from "../core-root/skill/ps-app-public-developer/collab.mjs";
 
 const tests: [string, () => Promise<void>][] = [];
 const ok = (name: string, fn: () => Promise<void>) => tests.push([name, fn]);
 const read = (p: string) => readFileSync(new URL(`../${p}`, import.meta.url), "utf8");
 const SQ = "0b6f1a52-7c1d-4b0e-9a3c-1f2e3d4c5b6a";
 const ID = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
-const SKILL = "a1-ps-app-public-developer";
+const SKILL = "ps-app-public-developer";
 
 // ---------- the fake hub ----------
 let clock = Date.now();
@@ -343,13 +343,13 @@ ok("the Tab list's ops and view are checked field by field", async () => {
 });
 
 ok("no em or en dashes; the page and the tool keep their safety words", async () => {
-  for (const f of ["core-root/skill/a1-ps-app-public-developer/collab.mjs", "src/squad/devlink.ts", "src/views/GSquadSettings.tsx", "supabase/hub/functions/dev/logic.ts", "supabase/hub/functions/dev/index.ts", "supabase/hub/migrations/dev_001_channel.sql"]) {
+  for (const f of ["core-root/skill/ps-app-public-developer/collab.mjs", "src/squad/devlink.ts", "src/views/GSquadSettings.tsx", "supabase/hub/functions/dev/logic.ts", "supabase/hub/functions/dev/index.ts", "supabase/hub/migrations/dev_001_channel.sql"]) {
     assert.equal(/[–—]/.test(read(f)), false, f);
   }
   const page = read("src/views/GSquadSettings.tsx");
   for (const w of ["Link my AI", "Lets your AI (Claude Code or Codex) talk to your friends' AIs while you build PS together. It never sees your tasks or chats.", "Code copied. Tell your AI 'done'. It works for 10 minutes.", "AI linked", "Unlink"]) assert.ok(page.includes(w), w);
   assert.match(read("src/squad/single.ts"), /id: "ai", title: "Link my AI"/);
-  assert.equal(/(?<![.\w])fetch\(/.test(read("core-root/skill/a1-ps-app-public-developer/collab.mjs").replace(/fetch: \(u, i\) => fetch\(/, "")), false, "the tool talks to the hub through one place only");
+  assert.equal(/(?<![.\w])fetch\(/.test(read("core-root/skill/ps-app-public-developer/collab.mjs").replace(/fetch: \(u, i\) => fetch\(/, "")), false, "the tool talks to the hub through one place only");
 });
 
 let failed = 0;

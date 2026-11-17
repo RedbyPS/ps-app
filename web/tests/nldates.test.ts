@@ -318,7 +318,7 @@ ok("cleanTimeRemind: only a real time and a day or days get through (it comes in
   for (const bad of [null, "10:00", { at: "25:00", date: "2026-11-18" }, { at: "9:00", date: "2026-11-18" }, { at: "10:00" }, { at: "10:00", days: [] }, { at: "10:00", date: "18/11" }]) assert.equal(cleanTimeRemind(bad), null);
 });
 ok("timeReminder: ONE reminder 15 minutes before the typed time, never the 15 minute nag (owner, 17 Nov)", () => {
-  // "call David at 3pm": pops up once at 14:45, its window ends at 15:00, so it rings once.
+  // "call Alex at 3pm": pops up once at 14:45, its window ends at 15:00, so it rings once.
   const r = timeReminder("r1", "task1", { at: "15:00", date: "2026-11-18", tz: "" }, NOW, TZ);
   assert.equal(r.task, "task1"); assert.equal(r.at, "14:45"); assert.equal(r.until, "15:00"); assert.equal(r.date, "2026-11-18");
   const c = cleanReminder(r, NOW)!;

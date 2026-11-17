@@ -95,9 +95,14 @@ jobs:
       - name: Android platform for compileSdk
         run: |
           sdk="$(sed -n 's/.*compileSdk *= *\([0-9][0-9]*\).*/\1/p' phone/app/build.gradle.kts | head -1)"
-          echo "compileSdk $sdk"
+          [ -n "$sdk" ] || { echo "no compileSdk in phone/app/build.gradle.kts"; exit 1; }
+          # From API 37 on, SDK platforms carry a minor level in their name: compileSdk 37 is the package
+          # "platforms;android-37.0" (there is no "platforms;android-37"). Pinned by the build file, never "latest".
+          if [ "$sdk" -ge 37 ]; then pkg="platforms;android-$sdk.0"; dir="android-$sdk.0"; else pkg="platforms;android-$sdk"; dir="android-$sdk"; fi
+          echo "compileSdk $sdk: $pkg"
           yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
-          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-$sdk" > /dev/null
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "$pkg" > /dev/null
+          [ -f "$ANDROID_HOME/platforms/$dir/android.jar" ] || { echo "$pkg did not install"; exit 1; }
       - name: Assemble the G Squad tree
         run: node tools/assemble.mjs --out .build/gsquad
       - name: Phone unit tests

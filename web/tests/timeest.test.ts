@@ -18,7 +18,7 @@ const ok = (name: string, fn: () => void) => { fn(); n++; console.log("ok -", na
 const MIN = 60_000;
 const T0 = Date.parse("2026-11-17T09:00:00Z");
 const at = (m: number) => T0 + m * MIN;
-const NY = "America/New_York", TB = "Asia/Tbilisi";
+const NY = "America/New_York", DXB = "Asia/Dubai";
 
 ok("the setting: all three on by default, 09:00 to 17:00, odd values fall back", () => {
   assert.deepEqual(cleanTe(undefined), TE_DEFAULT);
@@ -155,7 +155,7 @@ ok("two devices: month records keep every finish, an untick on either wins, orde
   assert.equal(teRecId("u1", "live"), teRecId("u1", "live"));
   assert.notEqual(teRecId("u1", "live"), teRecId("u2", "live"));
   assert.match(teRecId("u1", "2026-11"), /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-8[0-9a-f]{3}-[0-9a-f]{12}$/);
-  assert.equal(monthOf(Date.parse("2026-11-30T23:30:00Z"), TB), "2026-12");
+  assert.equal(monthOf(Date.parse("2026-11-30T23:30:00Z"), DXB), "2026-12");
 });
 
 ok("cleaning: damaged records never throw, old things are pruned", () => {
@@ -262,18 +262,18 @@ ok("free time: working hours minus meetings, overlapping meetings once, all day 
 
 ok("free time: working hours past midnight", () => {
   const p = { from: "22:00", to: "06:00" };
-  const tbl = (iso: string) => Date.parse(iso + "+04:00");   // Tbilisi wall time
-  const night = workWindow(tbl("2026-11-18T02:00:00"), p, TB);
+  const tbl = (iso: string) => Date.parse(iso + "+04:00");   // Dubai wall time
+  const night = workWindow(tbl("2026-11-18T02:00:00"), p, DXB);
   assert.equal(night.day, "2026-11-17");
   assert.equal(night.s, tbl("2026-11-17T22:00:00"));
   assert.equal(night.e, tbl("2026-11-18T06:00:00"));
   assert.equal(freeMin(night, tbl("2026-11-18T02:00:00"), [{ start: tbl("2026-11-18T03:00:00"), end: tbl("2026-11-18T04:00:00") }]), 180);
-  const evening = workWindow(tbl("2026-11-17T20:00:00"), p, TB);
+  const evening = workWindow(tbl("2026-11-17T20:00:00"), p, DXB);
   assert.equal(evening.s, tbl("2026-11-17T22:00:00"));
   assert.equal(freeMin(evening, tbl("2026-11-17T20:00:00"), []), 480);
-  const morning = workWindow(tbl("2026-11-18T07:00:00"), p, TB);   // after last night's hours: tonight's
+  const morning = workWindow(tbl("2026-11-18T07:00:00"), p, DXB);   // after last night's hours: tonight's
   assert.equal(morning.day, "2026-11-18");
-  const all = workWindow(tbl("2026-11-17T12:00:00"), { from: "08:00", to: "08:00" }, TB);
+  const all = workWindow(tbl("2026-11-17T12:00:00"), { from: "08:00", to: "08:00" }, DXB);
   assert.equal(all.e - all.s, 24 * 60 * MIN);
 });
 
@@ -302,7 +302,7 @@ ok("the recap: Rewind keeps each finished task's minutes under the tick's own ke
   const now = Date.parse("2026-11-17T20:00:00Z");
   const base = { todos: [], daylogs: [], workouts: [], screentime: [], calendars: [], meetings: [], awayLog: [], gymAck: [], gym: null, money: {} };
   const t = Date.parse("2026-11-17T10:00:00Z");
-  const { days } = R.derive({ ...base, timed: [{ id: "a", n: "Weekly report", m: 40, e: 30, at: t }, { id: "p", n: "Open 1Password vault", m: 5, e: 0, at: t }] }, { tz: TB, now, since: 0 });
+  const { days } = R.derive({ ...base, timed: [{ id: "a", n: "Weekly report", m: 40, e: 30, at: t }, { id: "p", n: "Open 1Password vault", m: 5, e: 0, at: t }] }, { tz: DXB, now, since: 0 });
   const tm = days.get("2026-11-17")!.tm!;
   assert.deepEqual(Object.values(tm), [["Weekly report", 40, 30]], "never anything about 1Password");
   assert.equal(Object.keys(tm)[0], R.hkey(`a|${new Date(t).toISOString()}`));

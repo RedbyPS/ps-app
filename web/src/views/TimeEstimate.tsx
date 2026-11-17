@@ -38,7 +38,7 @@ export function timeView(s: Snapshot): TimeView {
   const isLive = (d: { data: unknown }) => (d.data as { t?: unknown } | null)?.t === "live";
   const live = T.foldTime(recs.filter(isLive)).live;
   let done: (T.TDone & { id: string })[] | null = null;   // the month records only when a screen asks (Edit's past times), once per snapshot
-  v = { prefs: T.cleanTe(st.timeEst), on: s.status === "unlocked" && feature(T.TE_FEATURE), live, away: T.awaySpans(st.awayLog),
+  v = { prefs: T.cleanTe(st.timeEst), on: s.status === "unlocked" && feature("time-estimates"), live, away: T.awaySpans(st.awayLog),
     done: () => (done ??= T.allDone([...T.foldTime(recs.filter((d) => !isLive(d))).months.values()].map((m) => m.rec))) };
   cache.set(s, v);
   return v;

@@ -4,7 +4,7 @@ import { feature } from "./core/features";
 import { deviceId, deviceKind, effective, hasPicks, type DevKind } from "./core/devicebg";
 
 export const DEVICE_BG = "device-backgrounds";
-export const deviceBgOn = (): boolean => { try { return feature(DEVICE_BG); } catch { return false; } };
+export const deviceBgOn = (): boolean => { try { return feature("device-backgrounds"); } catch { return false; } };
 
 /** Which kind of device this page runs on. */
 export const thisKind = (): DevKind =>

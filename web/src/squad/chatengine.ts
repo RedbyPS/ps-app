@@ -188,7 +188,7 @@ function rebuild() {
   view = {
     in: !!s, ready: !!s && !!st && !st.rot && s.keys.has(st.epoch), open, unread: open ? 0 : (st?.u ?? 0) + (dmOn() ? [...dm!.convs.values()].reduce((n, c) => n + c.status.u, 0) : 0),
     lines: open ? lines() : [], more: !!s?.more, votes: votes(), note: s ? joinerLine(mine, s.hasHistory()) : null,
-    sound: settings().squadChatSound === true, notify: feature(NOTIFY_FEATURE), notifyOn: settings().squadNotify !== false, noteSound: settings().squadNotifySound !== false, islandOk: PS_PAGE && feature(ISLAND_FEATURE), noteIsland: settings().squadNoteIsland !== false, sending: [...pending.values()].filter((p) => !p.failed).length, error, loaded: !!s?.loaded, gif: gifView(),
+    sound: settings().squadChatSound === true, notify: feature("gsquad-notify"), notifyOn: settings().squadNotify !== false, noteSound: settings().squadNotifySound !== false, islandOk: PS_PAGE && feature(ISLAND_FEATURE), noteIsland: settings().squadNoteIsland !== false, sending: [...pending.values()].filter((p) => !p.failed).length, error, loaded: !!s?.loaded, gif: gifView(),
     convs: buildConvs(convList()), activeConv: active, dm: dmOn(),
     members: open && s ? [...s.people.values()].filter((p) => !p.left).map((p) => ({ id: p.id, name: p.me ? "You" : p.name, me: p.me, left: false, ...(dm?.pics.get(p.id) ? { pic: dm.pics.get(p.id)! } : {}) })) : [],
   };
@@ -241,7 +241,7 @@ const readLedger = () => { try { noteLedger = cleanNoteLedger(JSON.parse(localSt
 const writeLedger = (l: Record<string, number>) => { noteLedger = l; try { localStorage.setItem(LEDGER_KEY, JSON.stringify(l)); } catch { /* storage blocked: this run's list still holds */ } };
 const getSince = (): string | null => { try { return localStorage.getItem(SINCE_KEY) || null; } catch { return null; } };
 const setSince = (v: string | null) => { try { if (v) localStorage.setItem(SINCE_KEY, v); else localStorage.removeItem(SINCE_KEY); } catch { /* storage blocked */ } };
-const noteEnabled = () => noteOn(feature(NOTIFY_FEATURE), settings());
+const noteEnabled = () => noteOn(feature("gsquad-notify"), settings());
 const putNote = (c: NoteCard) => {
   noteShown.set(c.id, c);
   if (PS_PAGE && post) post({ type: "meetCard", card: c });

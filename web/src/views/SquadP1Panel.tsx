@@ -24,7 +24,7 @@ export function SquadP1Panel() {
   const v = useSquad();
   const st = settingsData(useVault());
   const now = useNow();
-  if (!v.in || !p1PanelOn(feature(P1_FEATURE), st)) return null;
+  if (!v.in || !p1PanelOn(feature("squad-p1"), st)) return null;
   const names = new Map(v.members.map((m) => [m.id, m.name]));
   const rows = (v.p1 ?? []).filter((r) => names.has(r.member) && (r.x ? !r.xa || now - Date.parse(r.xa) <= P1_DONE_SHOW_MS : now - p1Deadline(r.s) <= P1_MISSED_SHOW_MS));
   return (

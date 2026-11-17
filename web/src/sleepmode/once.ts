@@ -15,7 +15,7 @@ import { prefsOf, sleepModeOf } from "../core/sleepmode";
 import { ONCE_FEATURE, ONCE_NOTES, onceChoose, onceSpent, onceView, onceWords, withOwner, type Authenticator, type OnceChoice, type OwnerAnswer } from "../core/alarmonce";
 import type { Settings } from "../core/model";
 
-export const onceOn = (): boolean => feature(ONCE_FEATURE);
+export const onceOn = (): boolean => feature("alarm-once");
 const localTz = () => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC"; } catch { return "UTC"; } };
 export const onceTz = localTz;
 

@@ -10,7 +10,7 @@ import { sfx } from "../ui/sfx";
 /** The "Show the squad's Priority 1 tasks" switch (Squad settings, What you share). */
 export function SquadP1Switch() {
   const st = settingsData(useVault());
-  if (!feature(P1_FEATURE)) return null;
+  if (!feature("squad-p1")) return null;
   const on = st.squadP1Show !== false;
   return (
     <ul className="gs-list" data-p1="show">

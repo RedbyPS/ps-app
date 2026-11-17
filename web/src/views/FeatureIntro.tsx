@@ -124,12 +124,12 @@ function tourListFor(s: Snapshot): TourStep[] {
 const tourAgainAsked = (): boolean => { try { return localStorage.getItem(AGAIN_KEY) === "1"; } catch { return false; } };
 /** The intros the tour replaces show on their own only while the tour is switched off (then nothing is folded). */
 const foldedUnlessTour = (read: (can: boolean, s: Snapshot) => Promise<"done" | "open" | "unknown">) =>
-  async (can: boolean, s: Snapshot): Promise<"done" | "open" | "unknown"> => (feature(TOUR_FEATURE) && feature("feature-intros") ? "done" : read(can, s));
+  async (can: boolean, s: Snapshot): Promise<"done" | "open" | "unknown"> => (feature("whats-new-tour") && feature("feature-intros") ? "done" : read(can, s));
 const DONE_PROBES: Record<string, (can: boolean, s: Snapshot) => Promise<"done" | "open" | "unknown">> = {
   // PS 1.65 the tour: updaters only (a first install has nothing "new" to be shown), once per person (Done on any device ends it everywhere),
   // never with "Show first use tips" off, and only when at least one step applies. "Show the tour again" (Settings, About) asks for it.
   [TOUR_ID]: async (_can, s) => {
-    if (!feature(TOUR_FEATURE) || s.status !== "unlocked" || !tipsOn(settingsData(s).tipsShow)) return "unknown";
+    if (!feature("whats-new-tour") || s.status !== "unlocked" || !tipsOn(settingsData(s).tipsShow)) return "unknown";
     const who = tourAgainAsked() ? "open" : updaterProbe(TOUR_ID, s);
     if (who !== "open") return who;
     return tourListFor(s).length ? "open" : "unknown";
@@ -140,7 +140,7 @@ const DONE_PROBES: Record<string, (can: boolean, s: Snapshot) => Promise<"done" 
   // PS 1.63 Priority 1 with the squad: shared by default (opt out). A person who already answered is done. Everyone else (new or existing)
   // sees the same one notice once they are in a squad. This probe NEVER saves anything: only a click on the card saves (CHOICES below).
   "squad-p1": async (_can, s) => {
-    if (!feature(P1_FEATURE)) return "unknown";
+    if (!feature("squad-p1")) return "unknown";
     const todo = p1Default(squadStore.get().in, cleanShareOpts(settingsData(s).squadShare));
     return todo === "keep" ? "done" : todo === "tell" ? "open" : "unknown";
   },
@@ -149,16 +149,16 @@ const DONE_PROBES: Record<string, (can: boolean, s: Snapshot) => Promise<"done" 
   "gsquad-pieces-165": foldedUnlessTour(async () => (feature("gsquad-pieces") && squadStore.get().in ? "open" : "unknown")),
   "gsquad-v3-165": foldedUnlessTour(async () => (feature("gsquad-v3") && squadStore.get().in ? "open" : "unknown")),
   // PS 1.65 Receipts: only while the feature is on for an owner; Ok ends it for good.
-  receipts: foldedUnlessTour(async (_can, s) => (s.status === "unlocked" && s.role === "owner" && receiptsOn(feature(RCPT_FEATURE), settingsData(s).receipts) ? "open" : "unknown")),
+  receipts: foldedUnlessTour(async (_can, s) => (s.status === "unlocked" && s.role === "owner" && receiptsOn(feature("receipts"), settingsData(s).receipts) ? "open" : "unknown")),
   // PS 1.65 Posture reminder: only while the feature is on and the person has not switched it off; Ok ends it for good.
   "posture-165": foldedUnlessTour(async (_can, s) => (feature("posture-reminder") && posturePrefs(settingsData(s).posture).on ? "open" : "unknown")),
   // PS 1.65 Checklist reminder: shown only while the feature is on; Ok ends it for good.
-  "checklist-165": foldedUnlessTour(async () => (feature(CHK_FEATURE) ? "open" : "unknown")),
+  "checklist-165": foldedUnlessTour(async () => (feature("checklist-reminder") ? "open" : "unknown")),
   // PS 1.65 stacked notifications: only on the Mac, and only while its switch is on.
   "notif-stack-165": foldedUnlessTour(async () => (PS && feature("notif-stack") ? "open" : "unknown")),
   // PS 1.65 Activity monitor: only on a Mac with the feature on and the person's own switch on; Ok ends it for good.
   "activity-monitor-165": foldedUnlessTour(async (_can, s) => (PS && feature("activity-monitor") && settingsData(s).activityMonitor !== false ? "open" : "unknown")),
-  // PS 1.65 G Squad DMs, groups and pictures: only once the hub answers for them (until Red deploys it, it just waits), for people in a squad.
+  // PS 1.65 G Squad DMs, groups and pictures: only once the hub answers for them (until the developer deploys it, it just waits), for people in a squad.
   "gsquad-dm": foldedUnlessTour(async () => (feature("gsquad-dm") && squadStore.get().in && chatStore.get().dm === true ? "open" : "unknown")),
   // PS 1.65 Proton Mail through Bridge: only on a Mac with the feature on, and only until Bridge is linked (a link retires it for good).
   "proton-bridge-165": foldedUnlessTour(async () => (!PS || !feature(PROTON_FEATURE) ? "unknown" : protonMirror.get().status.linked ? "done" : "open")),

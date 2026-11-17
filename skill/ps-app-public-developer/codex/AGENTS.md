@@ -10,6 +10,6 @@ a backup that works either way.
 ## PS (the to do app)
 
 When the folder you work in is a clone of github.com/RedbyPS/ps-app (it has web/, mac/ and phone/ folders and a
-README that starts with "# PS"), first read ~/.agents/skills/a1-ps-app-public-developer/SKILL.md and follow it,
+README that starts with "# PS"), first read ~/.agents/skills/ps-app-public-developer/SKILL.md and follow it,
 starting with its Step 0 question. Read its references/ files when SKILL.md points to them.
 ```

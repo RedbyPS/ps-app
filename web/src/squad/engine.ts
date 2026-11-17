@@ -86,7 +86,7 @@ export function squadView(): SquadView { return view; }
 function set(p: Partial<SquadView>) { view = { ...view, ...p }; emit(); }
 /** Every open or recent P1 of the squad from all the shared copies held (never cut to the panel's few rows). The alerts read this. */
 function p1All(): P1Row[] {
-  return feature(P1_FEATURE) && rec ? p1Rows([...tasks.values()], { me: rec.memberId, live: new Set([...members.values()].filter((m) => !m.left).map((m) => m.id)), now: Date.now() }) : [];
+  return feature("squad-p1") && rec ? p1Rows([...tasks.values()], { me: rec.memberId, live: new Set([...members.values()].filter((m) => !m.left).map((m) => m.id)), now: Date.now() }) : [];
 }
 function rebuild() {
   set({
@@ -331,7 +331,7 @@ async function push() {
     const clients = docs<ClientRec>("client").map((d) => d.data);
     // PS 1.63: with the squad-p1 feature off, the Priority 1 piece is off too (the gate then refuses it before the key is touched).
     const st = settingsData(s);
-    const gated = feature(P1_FEATURE) ? st : { ...st, squadShare: { ...cleanShareOpts(st.squadShare), p1: false } };
+    const gated = feature("squad-p1") ? st : { ...st, squadShare: { ...cleanShareOpts(st.squadShare), p1: false } };
     const plan = await planTaskSync({ todos, settings: gated, clients, squad: rec.squadId, member: rec.memberId, secret: rec.secret, key: currentKey(rec), have });
     for (let i = 0; i < plan.put.length; i += 100) {
       const rows = plan.put.slice(i, i + 100);

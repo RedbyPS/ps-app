@@ -22,8 +22,8 @@ const split = (s: string) => splitRamble(s, NOW, TZ);
 
 // ---------- the split without the model: many rambles ----------
 const SAMPLES: [string, string[]][] = [
-  ["call David tomorrow at 10, send Paulette the invoice, gym every day at 8", ["Call David tomorrow at 10", "Send Paulette the invoice", "Gym every day at 8"]],
-  ["Call David tomorrow at 10. Send Paulette the invoice. Gym every day at 8.", ["Call David tomorrow at 10", "Send Paulette the invoice", "Gym every day at 8"]],
+  ["call Alex tomorrow at 10, send Sam the invoice, gym every day at 8", ["Call Alex tomorrow at 10", "Send Sam the invoice", "Gym every day at 8"]],
+  ["Call Alex tomorrow at 10. Send Sam the invoice. Gym every day at 8.", ["Call Alex tomorrow at 10", "Send Sam the invoice", "Gym every day at 8"]],
   ["I need to call the bank and then email the landlord", ["Call the bank", "Email the landlord"]],
   ["buy milk and eggs", ["Buy milk and eggs"]],
   ["buy milk, eggs and bread", ["Buy milk, eggs and bread"]],
@@ -32,7 +32,7 @@ const SAMPLES: [string, string[]][] = [
   ["remind me to water the plants every Monday, then take the bins out tonight", ["Water the plants every Monday", "Take the bins out tonight"]],
   ["don't forget to pay rent on the 1st and after that book the dentist", ["Pay rent on the 1st", "Book the dentist"]],
   ["okay so first of all finish the report by Friday; also order printer ink", ["Finish the report by Friday", "Order printer ink"]],
-  ["call David, tomorrow at 10", ["Call David tomorrow at 10"]],
+  ["call Alex, tomorrow at 10", ["Call Alex tomorrow at 10"]],
   ["tomorrow at 9, call the plumber", ["Call the plumber tomorrow at 9"]],
   ["pay the 1,000 dirham deposit", ["Pay the 1,000 dirham deposit"]],
   ["write the newsletter. ", ["Write the newsletter"]],
@@ -67,12 +67,12 @@ ok("split: a huge transcript is cut, never slow", () => {
 
 // ---------- each task's dates through parseTaskText (the sample from the request) ----------
 ok("the request's sample: three tasks with their dates and repeats", () => {
-  const rows = reviewStart(split("call David tomorrow at 10, send Paulette the invoice, gym every day at 8")).items.map((it) => reviewRow(it, NOW, TZ));
+  const rows = reviewStart(split("call Alex tomorrow at 10, send Sam the invoice, gym every day at 8")).items.map((it) => reviewRow(it, NOW, TZ));
   assert.equal(rows.length, 3);
-  assert.equal(rows[0].title, "Call David");
+  assert.equal(rows[0].title, "Call Alex");
   assert.equal(rows[0].parsed?.due, "2026-11-18");
   assert.equal(rows[0].parsed?.time, "10:00");
-  assert.equal(rows[1].title, "Send Paulette the invoice");
+  assert.equal(rows[1].title, "Send Sam the invoice");
   assert.equal(rows[1].parsed, null);
   assert.equal(rows[2].title, "Gym");
   assert.equal(rows[2].parsed?.kind, "daily");
@@ -90,11 +90,11 @@ ok("clean: lead ins, fillers and end punctuation go", () => {
 });
 
 // ---------- the model's split, checked (fake model) ----------
-const RAMBLE = "call David tomorrow at 10, send Paulette the invoice, gym every day at 8";
+const RAMBLE = "call Alex tomorrow at 10, send Sam the invoice, gym every day at 8";
 ok("model: good JSON is used", () => {
-  const r = tasksFrom(RAMBLE, '{"tasks": ["Call David tomorrow at 10", "Send Paulette the invoice", "Gym every day at 8"]}', NOW, TZ);
+  const r = tasksFrom(RAMBLE, '{"tasks": ["Call Alex tomorrow at 10", "Send Sam the invoice", "Gym every day at 8"]}', NOW, TZ);
   assert.equal(r.via, "model");
-  assert.deepEqual(r.tasks, ["Call David tomorrow at 10", "Send Paulette the invoice", "Gym every day at 8"]);
+  assert.deepEqual(r.tasks, ["Call Alex tomorrow at 10", "Send Sam the invoice", "Gym every day at 8"]);
 });
 ok("model: JSON inside a code fence or chatter is read", () => {
   assert.deepEqual(parseModelText('Sure! ```json\n{"tasks":["a","b"]}\n```'), ["a", "b"]);
@@ -105,19 +105,19 @@ ok("model: JSON inside a code fence or chatter is read", () => {
   assert.equal(parseModelText({ tasks: ["x"] }), null);
 });
 ok("model: a made up task makes the plain split win", () => {
-  const r = tasksFrom(RAMBLE, '{"tasks": ["Call David tomorrow at 10", "Send Paulette the invoice", "Gym every day at 8", "Buy a new laptop for the office"]}', NOW, TZ);
+  const r = tasksFrom(RAMBLE, '{"tasks": ["Call Alex tomorrow at 10", "Send Sam the invoice", "Gym every day at 8", "Buy a new laptop for the office"]}', NOW, TZ);
   assert.equal(r.via, "split");
   assert.equal(r.tasks.length, 3);
 });
 ok("model: a lost task makes the plain split win", () => {
-  assert.equal(tasksFrom(RAMBLE, '{"tasks": ["Call David tomorrow at 10"]}', NOW, TZ).via, "split");
+  assert.equal(tasksFrom(RAMBLE, '{"tasks": ["Call Alex tomorrow at 10"]}', NOW, TZ).via, "split");
 });
 ok("model: a date it reworded makes the plain split win (the parser must see the words said)", () => {
-  assert.equal(tasksFrom(RAMBLE, '{"tasks": ["Call David on 18 November at 10:00", "Send Paulette the invoice", "Gym daily 8"]}', NOW, TZ).via, "split");
+  assert.equal(tasksFrom(RAMBLE, '{"tasks": ["Call Alex on 18 November at 10:00", "Send Sam the invoice", "Gym daily 8"]}', NOW, TZ).via, "split");
 });
 ok("model: a date moved to the wrong task makes the plain split win", () => {
   // "tomorrow at 10" kept word for word, but "every day at 8" dropped
-  assert.equal(tasksFrom(RAMBLE, '{"tasks": ["Call David tomorrow at 10", "Send Paulette the invoice", "Gym"]}', NOW, TZ).via, "split");
+  assert.equal(tasksFrom(RAMBLE, '{"tasks": ["Call Alex tomorrow at 10", "Send Sam the invoice", "Gym"]}', NOW, TZ).via, "split");
 });
 ok("model: small added words are fine (go to the gym)", () => {
   const r = tasksFrom("um gym every day at 8 and then call the bank", '{"tasks": ["Go to the gym every day at 8", "Call the bank"]}', NOW, TZ);
@@ -129,7 +129,7 @@ ok("model: no model at all (null) uses the plain split", () => {
 ok("model: garbage, too many or empty lists fall back", () => {
   assert.equal(checkModelTasks("I could not do that", RAMBLE, NOW, TZ), null);
   assert.equal(checkModelTasks('{"tasks": []}', RAMBLE, NOW, TZ), null);
-  assert.equal(checkModelTasks(JSON.stringify({ tasks: Array.from({ length: 25 }, () => "call David") }), RAMBLE, NOW, TZ), null);
+  assert.equal(checkModelTasks(JSON.stringify({ tasks: Array.from({ length: 25 }, () => "call Alex") }), RAMBLE, NOW, TZ), null);
   assert.equal(checkModelTasks('{"tasks": ["call"]}', "", NOW, TZ), null);
 });
 ok("model: the model's split into more tasks than the plain one is accepted", () => {
@@ -144,7 +144,7 @@ ok("the Mac's instructions say the same rules (VoiceCaptureCore.swift)", () => {
 });
 
 // ---------- the review list: nothing is added without the click ----------
-const ST = () => reviewStart(["Call David tomorrow at 10", "Send Paulette the invoice", "Gym every day at 8"]);
+const ST = () => reviewStart(["Call Alex tomorrow at 10", "Send Sam the invoice", "Gym every day at 8"]);
 ok("review: Enter, a key or anything automatic adds nothing", () => {
   for (const by of ["enter", "key", "auto"] as const) {
     const r = reviewStep(ST(), { type: "addAll", by }, NOW, TZ);
@@ -155,22 +155,22 @@ ok("review: Enter, a key or anything automatic adds nothing", () => {
 ok("review: the Add all click adds every row, once", () => {
   const r = reviewStep(ST(), { type: "addAll", by: "click" }, NOW, TZ);
   assert.equal(r.add.length, 3);
-  assert.deepEqual(r.add.map((x) => x.title), ["Call David", "Send Paulette the invoice", "Gym"]);
+  assert.deepEqual(r.add.map((x) => x.title), ["Call Alex", "Send Sam the invoice", "Gym"]);
   const again = reviewStep(r.st, { type: "addAll", by: "click" }, NOW, TZ);
   assert.equal(again.add.length, 0, "a double click adds nothing more");
 });
 ok("review: edit changes the row and its date chip", () => {
   let st = ST();
-  st = reviewStep(st, { type: "edit", id: "v2", text: "Send Paulette the invoice on Friday" }, NOW, TZ).st;
+  st = reviewStep(st, { type: "edit", id: "v2", text: "Send Sam the invoice on Friday" }, NOW, TZ).st;
   const row = reviewRow(st.items[1], NOW, TZ);
-  assert.equal(row.title, "Send Paulette the invoice");
+  assert.equal(row.title, "Send Sam the invoice");
   assert.equal(row.parsed?.due, "2026-11-20");
 });
 ok("review: remove takes the row out, and it is not added", () => {
   let st = ST();
   st = reviewStep(st, { type: "remove", id: "v1" }, NOW, TZ).st;
   const r = reviewStep(st, { type: "addAll", by: "click" }, NOW, TZ);
-  assert.deepEqual(r.add.map((x) => x.title), ["Send Paulette the invoice", "Gym"]);
+  assert.deepEqual(r.add.map((x) => x.title), ["Send Sam the invoice", "Gym"]);
 });
 ok("review: removing every row leaves nothing to add", () => {
   let st = ST();
@@ -295,7 +295,7 @@ ok("flow: stopped with words: thinking, the split is asked of the Mac", () => {
 });
 ok("flow: the fake model answers: the review list, and nothing is added yet", () => {
   const base = run([status(), { type: "down", at: 1 }, { type: "started", at: 2 }, { type: "stopped", reason: "user", text: RAMBLE, at: 99 }]).st;
-  const r = run([{ type: "tasks", id: "s99", tasks: '{"tasks": ["Call David tomorrow at 10", "Send Paulette the invoice", "Gym every day at 8"]}' }], base);
+  const r = run([{ type: "tasks", id: "s99", tasks: '{"tasks": ["Call Alex tomorrow at 10", "Send Sam the invoice", "Gym every day at 8"]}' }], base);
   assert.equal(r.st.phase, "review");
   assert.equal(r.st.via, "model");
   assert.equal(r.st.review?.items.length, 3);
@@ -319,7 +319,7 @@ ok("flow: Add all only by its click; Esc in the review adds nothing", () => {
   assert.equal(esc.added.length, 0);
   assert.equal(esc.st.phase, "idle");
   const r = run([{ type: "review", a: { type: "remove", id: "v2" } }, { type: "review", a: { type: "addAll", by: "click" } }], base);
-  assert.deepEqual(r.added, ["Call David", "Gym"]);
+  assert.deepEqual(r.added, ["Call Alex", "Gym"]);
   assert.equal(r.st.phase, "idle");
   assert.equal(r.st.note, VOICE_WORDS.added(2));
 });

@@ -1,5 +1,5 @@
 // Voice capture (PS 1.65, part 2 of the developer's request for 1.65: "A microphone button in Quick add and the Add task window on
-// the Mac. Speak a ramble ('call David tomorrow at 10, send Paulette the invoice, gym every day at 8') and it becomes tidy tasks.
+// the Mac. Speak a ramble ('call Alex tomorrow at 10, send Sam the invoice, gym every day at 8') and it becomes tidy tasks.
 // Private: Apple's on-device speech recognition ... then Apple's on-device model ... splits it into tasks, with dates through the
 // parser from part 1. A review list before anything is added: each task editable, removable, then 'Add all'. Nothing is added
 // without that click.")
@@ -86,7 +86,7 @@ export function cleanSpoken(s: string): string {
 // ---------------------------------------------------------------------------------------------------------------------
 // The split without the model
 // ---------------------------------------------------------------------------------------------------------------------
-/** Words that start a new task after a plain "and" ("call David and send the invoice"). A plain "and" before anything
+/** Words that start a new task after a plain "and" ("call Alex and send the invoice"). A plain "and" before anything
  *  else stays inside the task ("buy milk and eggs"). */
 const TASK_VERBS = new Set([
   "add", "answer", "apply", "arrange", "ask", "book", "bring", "buy", "call", "cancel", "change", "check", "clean", "clear", "collect",
@@ -110,7 +110,7 @@ function onlyWhen(s: string, now: number, tz: string, opts: NlOpts): boolean {
 }
 
 /** Splits a ramble into task texts without the model. `now`, `tz` and `opts` only help to keep a date said after a comma
- *  ("call David, tomorrow at 10") with its task. */
+ *  ("call Alex, tomorrow at 10") with its task. */
 export function splitRamble(text: string, now: number | Date = 0, tz = "UTC", opts: NlOpts = {}): string[] {
   const at = typeof now === "number" ? now : now.getTime();
   let s = String(text ?? "").slice(0, MAX_TRANSCRIPT).replace(/[\r\n]+/g, ". ").replace(FILLERS, " ").replace(/\s+/g, " ").trim();

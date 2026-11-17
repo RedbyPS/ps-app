@@ -1,5 +1,5 @@
 ---
-name: a1-ps-app-public-developer
+name: ps-app-public-developer
 description: >-
   For friends who work on PS, the open source to do app (hold Tab over any app on a Mac to float your list, plus
   the Dynamic Island, panels, an Android app and a website, all one shared React web app). Uses only the public
@@ -12,7 +12,7 @@ description: >-
   three release choices (ASAP, Faster, Slower), the rules every change must follow (tests, audits, the push guard,
   no secrets, Esc closes everything, visible on/off switches, the 1Password and Signal rule), how to avoid clashes
   with other people's changes, and a port guide for building a PS replica on Windows, Linux or iPhone. Trigger on
-  /a1-ps-app-public-developer, $a1-ps-app-public-developer, "work on PS", "build PS", "change PS", "submit a PS
+  /ps-app-public-developer, $ps-app-public-developer, "work on PS", "build PS", "change PS", "submit a PS
   change", "release my PS", "my PS layer", "message the developer's AI", "check the PS inbox", "how is Jan's update going", "port PS to Windows", "PS on Linux", "PS for iPhone", "G Squad build".
   Read this BEFORE touching the PS code.
 ---
@@ -256,8 +256,8 @@ These apply to every AI working on PS through this skill. If a request breaks on
 
 ## Developer channel (talk to the other developers' AIs)
 
-`collab` below means `node ~/.claude/skills/a1-ps-app-public-developer/collab.mjs` (Codex: the same file under
-`~/.agents/skills/`). The exact commands, the questions to ask your person and troubleshooting are in
+`collab` below means `node <skills>/ps-app-public-developer/collab.mjs`, where `<skills>` is your personal skills
+folder (Claude Code: the `skills` folder in `~/.claude`; Codex: `~/.agents/skills/`). The exact commands, the questions to ask your person and troubleshooting are in
 `references/developer-channel.md`.
 
 - Run `collab hello` at the start of every session. It refreshes this skill, links you if needed, and shows new
@@ -302,8 +302,9 @@ This skill is plain Markdown and works the same in both. Nothing in it needs a t
 
 | | Claude Code | Codex |
 | --- | --- | --- |
-| Install | `cp -R ~/Projects/ps/skill/a1-ps-app-public-developer ~/.claude/skills/` (one folder per skill, named `a1-ps-app-public-developer`). After that `collab hello` keeps it up to date. | Put this folder in `~/.agents/skills/` (personal) or in `.agents/skills/` of the folder you run Codex from. A symlink to one shared copy works for both tools. Restart Codex if it does not show up. |
-| Start it | Type `/a1-ps-app-public-developer`, or ask to work on PS. | Type `$a1-ps-app-public-developer` (or pick it from `/skills`), or ask to work on PS. |
+| Install | Copy `~/Projects/ps/skill/ps-app-public-developer` into the `skills` folder in `~/.claude` (make that folder if it is missing; one folder per skill, named `ps-app-public-developer`). After that `collab hello` keeps it up to date. | Put this folder in `~/.agents/skills/` (personal) or in `.agents/skills/` of the folder you run Codex from. A symlink to one shared copy works for both tools. Restart Codex if it does not show up. |
+| Coming from the old name | Before 1.65 this skill's folder had a longer name that started with `a1-`. That copy cannot update itself to the new name: copy the new folder in once as above, then `collab hello` lists the old copy as a leftover and `collab hello --remove-leftovers` puts it in the Bin. | The same, under `~/.agents/skills/`. |
+| Start it | Type `/ps-app-public-developer`, or ask to work on PS. | Type `$ps-app-public-developer` (or pick it from `/skills`), or ask to work on PS. |
 | Older Codex, or as a backup | | Copy the lines in `codex/AGENTS.md` into `~/.codex/AGENTS.md`. They tell Codex to read this skill whenever it works in a PS clone. Never commit an `AGENTS.md` into the PS repo. |
 | Ask the person something | Ask in chat and wait (Claude Code may show a question card). | Ask in chat and wait. |
 | Workers in parallel | Subagents (one per piece). | Subagents ("spawn one agent per piece"). |

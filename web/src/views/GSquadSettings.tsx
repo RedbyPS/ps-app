@@ -31,7 +31,7 @@ export const useLooks = (): GsLooks => useSyncExternalStore(looksStore.subscribe
 /** Every sharing switch, on every account. Off = never encrypted with the squad key, never sent. */
 export function SharingList({ only }: { only?: SharePiece }) {
   const share = useShare();
-  const list = only ? SHARE_PIECES.filter((p) => p.id === only) : SHARE_PIECES.filter((p) => p.id !== "p1" || feature(P1_FEATURE));
+  const list = only ? SHARE_PIECES.filter((p) => p.id === only) : SHARE_PIECES.filter((p) => p.id !== "p1" || feature("squad-p1"));
   return (
     <div className="gs-share">
       {!only && <span className="gs-h">What you share</span>}

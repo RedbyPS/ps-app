@@ -384,7 +384,7 @@ function gather(lower: string, c: Ctx): Cand[] {
     if (!days.length) return null;
     return { part: "repeat", rep: days.length === 1 ? { every: 1, unit: "week", wd: days[0] } : { every: 1, unit: "week", days } };
   }, out);
-  scan(lower, rx(String.raw`(?:(?:every|each|on)\s+)?(?:week\s*days?|work\s*days?|business\s+days?)|${START}(?:day\s+)?(?:from\s+)?(?:${WD_RE})\s*(?:-|to|through|thru|until|–)\s*(?:${WD_RE})`), (m) => {
+  scan(lower, rx(String.raw`(?:(?:every|each|on)\s+)?(?:week\s*days?|work\s*days?|business\s+days?)|${START}(?:day\s+)?(?:from\s+)?(?:${WD_RE})\s*(?:-|to|through|thru|until|\u2013)\s*(?:${WD_RE})`), (m) => {
     const w = m[0];
     // Without every: only "weekdays" and "workdays" ("weekday" alone is an ordinary word, "3 business days" a length of time).
     if (!/^(every|each)/.test(w) && !/^(?:on\s+)?(?:week\s*days|work\s*days)$/.test(w)) return null;
@@ -635,7 +635,7 @@ export function cleanTimeRemind(v: unknown): TimeRemind | null {
   return days.length ? { at: o.at, days, tz } : null;
 }
 
-/** How many minutes before the typed time its one reminder pops up (the owner, 17 Nov 2026: "call David at 3pm" reminds once at
+/** How many minutes before the typed time its one reminder pops up (the owner, 17 Nov 2026: "call Alex at 3pm" reminds once at
  *  2:45 pm, not the 15 minute nag). */
 export const NL_REMIND_LEAD = 15;
 const hmOf = (min: number) => `${pad(Math.floor(min / 60))}:${pad(min % 60)}`;
