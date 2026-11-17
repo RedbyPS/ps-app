@@ -83,7 +83,7 @@ export function InviteModal({ client, onClose }: { client: Doc<ClientRec>; onClo
           <div className="stack tight">
             <div className="grid2" style={{ gap: 10 }}>
               <label className="field"><span>Their first name</span>
-                <input className="input" value={first} onChange={(e) => setFirst(e.target.value)} placeholder="David" autoComplete="off" />
+                <input className="input" value={first} onChange={(e) => setFirst(e.target.value)} placeholder="Alex" autoComplete="off" />
               </label>
               <label className="field"><span>Their email (becomes their username)</span>
                 <input className="input" type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="name@company.com" autoComplete="off" spellCheck={false} />

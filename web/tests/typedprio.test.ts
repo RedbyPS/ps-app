@@ -16,10 +16,10 @@ ok("Email QLA p1: P1, the word leaves the title", () => {
   assert.equal(p.title, "Email QLA");
   assert.deepEqual([p.token.start, p.token.end, p.token.raw], [10, 12, "p1"]);
 });
-ok("P2 call David: P2 at the start", () => {
-  const p = parsePrio("P2 call David")!;
+ok("P2 call Alex: P2 at the start", () => {
+  const p = parsePrio("P2 call Alex")!;
   assert.equal(p.prio, 2);
-  assert.equal(p.title, "call David");
+  assert.equal(p.title, "call Alex");
 });
 ok("mp3 files, P10, p1x and AP2P are not priorities", () => {
   for (const s of ["mp3 files", "P10", "fix P10 bug", "p1x", "AP2P", "P4 later", "P0", "p_1", "SP3 deck", "2P1"]) assert.equal(parsePrio(s), null, s);
@@ -31,7 +31,7 @@ ok("p1 then p3: the last one wins and both leave the title", () => {
   assert.equal(p.title, "then");
 });
 ok("any case, anywhere, with punctuation round it", () => {
-  assert.equal(parsePrio("Call P3 David")!.title, "Call David");
+  assert.equal(parsePrio("Call P3 Alex")!.title, "Call Alex");
   assert.equal(parsePrio("Call mum, P1")!.title, "Call mum");
   assert.equal(parsePrio("Call mum (p2)")!.title, "Call mum");
   assert.equal(parsePrio("P1: send invoice")!.title, "send invoice");

@@ -13,7 +13,7 @@ import type { Rc } from "./core/purchases";
 /** Receipts and Purchases are on: the registry (features.json, From the squad) and the switch in Settings. */
 export function useReceiptsOn(): boolean {
   const v = useVault();
-  return v.status === "unlocked" && v.role === "owner" && receiptsOn(feature(RCPT_FEATURE), settingsData(v).receipts);
+  return v.status === "unlocked" && v.role === "owner" && receiptsOn(feature("receipts"), settingsData(v).receipts);
 }
 
 /** The newest copy of every saved receipt (changes with the vault). */

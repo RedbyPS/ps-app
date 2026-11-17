@@ -97,7 +97,7 @@ export function ChecklistScreens(p: Props) {
   // The Mac's shell calls window.__psChk("rethink" | "forgot") after a choice on its card (Sources/main.swift onChk).
   useEffect(() => {
     const w = window as Window & { __psChk?: (s: unknown) => void };
-    w.__psChk = (s) => { if (feature(CHK_FEATURE)) openChkScreen(s); };
+    w.__psChk = (s) => { if (feature("checklist-reminder")) openChkScreen(s); };
     return () => { delete w.__psChk; };
   }, []);
   useLayoutEffect(() => { setHost(p.docked ? document.body : anchor.current?.closest<HTMLElement>(".tm-overlay") ?? document.body); }, [p.docked, screen]);

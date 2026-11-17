@@ -1,7 +1,7 @@
 import Foundation
 
 // Is a feature on in this build? (V1.58, multiple developers; design: ps-handover-notes/v158-multidev-design.md section 3.)
-// The one question native code asks: Features.on("id").
+// The one question native code asks: Features.on(<the feature id, written out in quotes>).
 //
 // The page works out every feature's answer (web core/features.ts: the registry, this build's profile, who is
 // signed in and their own "From the squad" switches) and sends {type: "features", on: {"<id>": true | false}}

@@ -28,7 +28,7 @@ HOME = os.path.expanduser("~")
 HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 BLOCK = [
-    r"YOUR_NAME", r"YOUR_EMAIL_NAME", r"YOUR_CLIENT_NAMES",          # fill in: anything of yours a public build must never hold
+    r"YOUR[_]NAME", r"YOUR[_]EMAIL[_]NAME", r"YOUR[_]CLIENT[_]NAMES",   # fill in: anything of yours a public build must never hold ([_] keeps this file from matching itself)
     r"-----begin [a-z ]*private key-----", r"service_role", r"\bsk_live_", r"\.drop-secret",
 ]
 REVIEW = [r"YOUR_FIRST_NAME", r"/users/[a-z0-9_.-]+/"]

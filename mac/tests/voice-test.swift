@@ -178,18 +178,18 @@ func wait(_ f: (@escaping (String?) -> Void) -> Void) -> (String?, Int) {
   return (out, calls)
 }
 var seen: (String, String)?
-let good = wait { done in VoiceSplit.run(text: "call David tomorrow at 10, send the invoice", model: { i, p, _ in seen = (i, p); return "{\"tasks\": [\"Call David tomorrow at 10\", \"Send the invoice\"]}" }, done: done) }
+let good = wait { done in VoiceSplit.run(text: "call Alex tomorrow at 10, send the invoice", model: { i, p, _ in seen = (i, p); return "{\"tasks\": [\"Call Alex tomorrow at 10\", \"Send the invoice\"]}" }, done: done) }
 ok("the model's text is handed to the page, once", good.0?.contains("Send the invoice") == true && good.1 == 1)
-ok("the model gets the rules and only the words", seen?.0 == VoiceSplit.instructions && seen?.1 == "What the person said:\ncall David tomorrow at 10, send the invoice")
+ok("the model gets the rules and only the words", seen?.0 == VoiceSplit.instructions && seen?.1 == "What the person said:\ncall Alex tomorrow at 10, send the invoice")
 ok("the rules ask for JSON and the words as said", VoiceSplit.instructions.contains("{\"tasks\":") && VoiceSplit.instructions.contains("exactly as said"))
-let none = wait { done in VoiceSplit.run(text: "call David", model: nil, done: done) }
+let none = wait { done in VoiceSplit.run(text: "call Alex", model: nil, done: done) }
 ok("no model (Apple Intelligence off, an older Mac): nil, the page splits", none.0 == nil && none.1 == 1)
 let empty = wait { done in VoiceSplit.run(text: "  \u{0007} ", model: { _, _, _ in "x" }, done: done) }
 ok("no words: the model is not asked", empty.0 == nil)
-let fails = wait { done in VoiceSplit.run(text: "call David", model: { _, _, _ in throw AssistFailure.failed }, done: done) }
+let fails = wait { done in VoiceSplit.run(text: "call Alex", model: { _, _, _ in throw AssistFailure.failed }, done: done) }
 ok("the model fails: nil", fails.0 == nil && fails.1 == 1)
 var cancelledLate = false
-let slow = wait { done in VoiceSplit.run(text: "call David", model: { _, _, c in Thread.sleep(forTimeInterval: 1.0); cancelledLate = c.isCancelled; return "late" }, timeout: 0.2, done: done) }
+let slow = wait { done in VoiceSplit.run(text: "call Alex", model: { _, _, c in Thread.sleep(forTimeInterval: 1.0); cancelledLate = c.isCancelled; return "late" }, timeout: 0.2, done: done) }
 Thread.sleep(forTimeInterval: 1.0)
 ok("too slow: nil at the time limit, the late answer is dropped and told to stop", slow.0 == nil && slow.1 == 1 && cancelledLate)
 ok("control characters are taken out, the length capped", VoiceSplit.clean("a\u{0000}b\u{001B}c") == "abc" && VoiceSplit.clean(String(repeating: "x", count: 5000)).count == 4000)

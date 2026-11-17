@@ -15,11 +15,11 @@ import * as T from "./timeest";
 const can = (s: Snapshot) => s.status === "unlocked" && s.role === "owner" && !!s.userId && s.userId !== "ps-overlay";
 /** Time spent is being measured for this person here (the feature, and Settings, Your list, Time spent). */
 export function trackOn(s: Snapshot = vaultStore.get()): boolean {
-  return can(s) && feature(T.TE_FEATURE) && T.cleanTe(settingsData(s).timeEst).track;
+  return can(s) && feature("time-estimates") && T.cleanTe(settingsData(s).timeEst).track;
 }
 /** Estimates are on (the feature, and Settings, Your list, Time estimates). */
 export function estOn(s: Snapshot = vaultStore.get()): boolean {
-  return s.status === "unlocked" && feature(T.TE_FEATURE) && T.cleanTe(settingsData(s).timeEst).est;
+  return s.status === "unlocked" && feature("time-estimates") && T.cleanTe(settingsData(s).timeEst).est;
 }
 const zone = (s: Snapshot) => overdueZone(settingsData(s).tmHomeTz);
 

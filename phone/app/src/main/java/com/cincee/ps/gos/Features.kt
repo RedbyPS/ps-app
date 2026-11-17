@@ -6,7 +6,7 @@ import org.json.JSONObject
 
 /**
  * Is a feature on in this build? (V1.58, multiple developers; design: ps-handover-notes/v158-multidev-design.md section 3.)
- * The one question native code asks: Features.on(ctx, "id").
+ * The one question native code asks: Features.on(ctx, <the feature id, written out in quotes>).
  * The page works out every feature's answer (web core/features.ts) and hands it over as
  * {"<id>": true | false} (the bridge calls [receive]); that answer wins and is kept on this phone. Before the page has
  * said anything: made by core or this build's own person, its default; made by someone else, on only when the bundled

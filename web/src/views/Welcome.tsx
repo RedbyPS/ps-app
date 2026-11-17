@@ -171,7 +171,7 @@ function WelcomePanel({ update, onDone }: { update: boolean; onDone: () => void 
   const { now, red, fitStyle, ctx } = useNow();
   const fitTheme = useFitTheme(fitStyle);
   const local = !!s.local;   // local first (V1.44): the account card says where the list lives, with Turn on sync
-  const sr = feature(SR_FEATURE);
+  const sr = feature("screen-recording");
   const deck = useMemo(() => tourDeck({ red, local, sr }), [red, local, sr]);
   const [step, setStep] = useState(resume?.step ?? 0);
   const [dir, setDir] = useState<1 | -1>(1);

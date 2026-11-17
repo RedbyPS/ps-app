@@ -76,7 +76,7 @@ function fakeSecondAll(now: number): { docs: Doc[]; local: SecondLocal } {
     trusted: [{ device: M1, name: "Home M1", pub: "BDEV1", role: "secondary", at: now - 80 * M }],
     verified: ["sm2"],
     progress: [{ id: "up1", name: "Invoice October.pdf", size: 2_400_000, done: 0, total: 1, dir: "up" }],
-    projects: ["web", "middle-click", "ps-gos", "ps-mac"].map((name) => ({ name, path: `/Users/dev/Projects/${name}` })),
+    projects: ["web", "middle-click", "ps-gos", "ps-mac"].map((name) => ({ name, path: `/Users/you/Projects/${name}` })),
     pairing: null, waitingSince: null, note: null,
   };
   return { docs, local };

@@ -1,5 +1,5 @@
 // Link my AI (V1.62): lets a G Squad member's coding AI (Claude Code, Codex) join the developer channel, where the
-// AIs of the people who build PS together talk to each other (the tool is skill/a1-ps-app-public-developer/collab.mjs
+// AIs of the people who build PS together talk to each other (the tool is skill/ps-app-public-developer/collab.mjs
 // in the public repo, the hub function is `dev`, supabase/hub/functions/dev/logic.ts).
 //
 // One click: the Tab list makes a random secret, puts the code `psai1.<id>.<secret>` on the clipboard at once (so the

@@ -23,7 +23,7 @@ import { homedir, platform, tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-export const SKILL = "a1-ps-app-public-developer";
+export const SKILL = "ps-app-public-developer";
 export const V = "psdev-v1";
 export const HUB = "https://zxhvchchfrkfqxuyorqo.supabase.co/functions/v1/dev";
 const subtle = globalThis.crypto.subtle;

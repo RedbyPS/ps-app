@@ -52,7 +52,7 @@ export function uaName(kind: DevKind, ua: string): string {
 }
 
 export const cleanName = (v: unknown): string =>
-  typeof v === "string" ? v.replace(/[\u0000-\u001f–—]/g, " ").replace(/\s+/g, " ").trim().slice(0, NAME_MAX) : "";
+  typeof v === "string" ? v.replace(/[\u0000-\u001f\u2013\u2014]/g, " ").replace(/\s+/g, " ").trim().slice(0, NAME_MAX) : "";
 
 /** A device record, checked. Null: not one. */
 export function cleanDevice(v: unknown): Device | null {

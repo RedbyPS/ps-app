@@ -41,7 +41,7 @@ export function useRecItems(): { items: RecItem[]; clients: Doc<ClientRec>[]; on
   const vaultRows = useMemo(() => [...s.docs.values()].filter((d) => d.kind === "srec").map((d) => cleanRow(d.data)).filter((r): r is NonNullable<typeof r> => !!r), [s.docs]);
   const clients = useMemo(() => [...s.docs.values()].filter((d) => d.kind === "client") as Doc<ClientRec>[], [s.docs]);
   const items = useMemo(() => mergeRows(mac?.rows ?? null, vaultRows), [mac, vaultRows]);
-  const on = feature(SR_FEATURE) && (WHERE !== "mac" || !!st?.enabled || items.length > 0);
+  const on = feature("screen-recording") && (WHERE !== "mac" || !!st?.enabled || items.length > 0);
   return { items, clients, on };
 }
 

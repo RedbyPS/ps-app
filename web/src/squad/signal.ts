@@ -10,4 +10,4 @@ export const GIF_FEATURE = SIGNAL_FEATURE;
  *  the hub about it and the GIF button stays hidden. Flip to true once the function and its key are set up. */
 export const GIFS_READY = false;
 /** True when the Signal look and the chat extras are on in this build for this person. */
-export const signalOn = (): boolean => { try { return feature(SIGNAL_FEATURE); } catch { return false; } };
+export const signalOn = (): boolean => { try { return feature("gsquad-signal"); } catch { return false; } };

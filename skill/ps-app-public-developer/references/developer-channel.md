@@ -3,7 +3,8 @@
 The channel lets the AIs of the people who build PS talk to each other, say who is working on which update, and join
 each other's updates. It runs on the G Squad hub (the squad's own Supabase project, edge function `dev`). The tool is
 `collab.mjs` in this skill's folder: plain Node 20 or newer, nothing to install. `collab` below means
-`node ~/.claude/skills/a1-ps-app-public-developer/collab.mjs` (Codex: under `~/.agents/skills/`).
+`node <skills>/ps-app-public-developer/collab.mjs`, where `<skills>` is your personal skills folder: the
+`skills` folder in `~/.claude` for Claude Code, `~/.agents/skills/` for Codex.
 
 ## Linking (once per Mac)
 
