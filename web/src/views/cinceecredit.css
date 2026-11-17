@@ -1,0 +1,8 @@
+/* "Developed by Cincee" (views/CinceeCredit.tsx, PS 1.66): the Who's Lagging credit. Small, dim, brighter under the pointer. */
+.ps-credit { display: inline-flex; align-items: baseline; gap: 3px; flex: none; font-size: 11px; font-weight: 500; letter-spacing: 0; line-height: 1.2;
+  color: currentColor; opacity: .42; text-decoration: none; white-space: nowrap; cursor: pointer; transition: opacity .15s ease-out; -webkit-user-select: none; user-select: none; }
+.ps-credit:hover, .ps-credit:focus-visible { opacity: .88; outline: none; }
+.ps-credit svg { flex: none; transform: translateY(-1px); }
+/* The first setup menu: its own row at the top left of the card. */
+.ps-credit-row { display: flex; margin: calc(-6px * var(--k-dn, 1)) 0 calc(-4px * var(--k-dn, 1)); }
+@media (prefers-reduced-motion: reduce) { .ps-credit { transition: none; } }

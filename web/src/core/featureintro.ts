@@ -12,6 +12,7 @@ import { ASSIST_WORDS } from "./assist.ts";
 import { TOUR_FOLDS, TOUR_ID, TOUR_WORDS } from "./tour.ts";
 import { APPROVE_INTRO, APPROVE_PICKS } from "./autoapprove.ts";
 import { AM_WORDS } from "./activitymon.ts";
+import { JOIN_ASK_ID, JOIN_ASK_WORDS } from "./gsquadjoin.ts";
 
 // The rules (all in nextIntro):
 //  - Not right after an update: only after about 1 minute of ACTIVE use of the to do list on this version (idle time does not
@@ -81,6 +82,18 @@ export const INTROS: IntroDef[] = [
     mark: "spark",
     tour: true,
     choice: true,   // a one button card that takes no focus and opens no guide (views/FeatureIntro.tsx)
+    updatersOnly: true,
+  },
+  {
+    // PS 1.66 (the developer, 17 Nov 2026): once after updating, people not in The G Squad and not waiting to be let in are asked to join
+    // (core/gsquadjoin.ts). Join sends the normal Ask to join; Not now ends it for good on every device. Never the developer's account.
+    id: JOIN_ASK_ID,
+    headline: JOIN_ASK_WORDS.headline,
+    ask: JOIN_ASK_WORDS.ask,
+    show: JOIN_ASK_WORDS.join,
+    later: JOIN_ASK_WORDS.notNow,
+    mark: "spark",
+    choice: true,
     updatersOnly: true,
   },
   {

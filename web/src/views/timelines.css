@@ -190,7 +190,7 @@ body.is-dragging, body.is-dragging * { cursor: grabbing !important; }
   .tl-preview { position: static; order: -1; }
 }
 @media (max-width: 600px) {
-  .tl-layer { padding: max(10px, calc(var(--safe-top, 0px) + 6px), env(safe-area-inset-top)) 0 0; align-items: end; }
+  .tl-layer { padding: max(10px, calc(var(--safe-top, 0px) + 6px), var(--sat, env(safe-area-inset-top, 0px))) 0 0; align-items: end; }
   .tl-win { width: 100%; height: 100%; border-radius: calc(24px * var(--k-rd, 1)) calc(24px * var(--k-rd, 1)) 0 0; transform-origin: 50% 100%; animation-name: tl-sheet; }
   .tl-layer.out .tl-win { animation-name: tl-unsheet; }
   .tl-head { padding: calc(14px * var(--k-dn, 1)) calc(16px * var(--k-dn, 1)) calc(12px * var(--k-dn, 1)); }

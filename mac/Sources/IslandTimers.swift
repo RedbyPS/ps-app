@@ -280,6 +280,8 @@ final class IslandTimers {
   /// From the island's state ({type:"island"}), also with the island off (then pop-up cards say it).
   func update(_ t: TimersIn, islandOn on: Bool) {
     islandOn = on
+    raw = t
+    let t = visible(t)
     let was = input
     input = t
     if t != was || model.tin != t { model.tin = t }
@@ -394,6 +396,26 @@ final class IslandTimers {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) { withAnimation(.spring(response: 0.45, dampingFraction: 0.5)) { self?.model.swell = 0 } }
       }
     }
+  }
+
+  // ---------- PS 1.66: "Hide this meeting" (a right click on the meeting bubble, or on its row in the open island) ----------
+  // That meeting only goes from the island, on this Mac, until it ends; the next meeting shows as usual. Kept with its end
+  // time (ms since 1970), so a restart keeps it and old ones fall away by themselves.
+  private var raw = TimersIn()
+  private static let hiddenKey = "island.hiddenMeets"
+  private lazy var hiddenMeets: [String: Double] = (UserDefaults.standard.dictionary(forKey: IslandTimers.hiddenKey) as? [String: Double]) ?? [:]
+  private func visible(_ t: TimersIn) -> TimersIn {
+    guard let mt = t.meet, let until = hiddenMeets[mt.id], until > nowMs else { return t }
+    var o = t; o.meet = nil; return o
+  }
+  func hideMeeting(_ mt: TMeet) {
+    let now = nowMs
+    hiddenMeets = hiddenMeets.filter { $0.value > now }
+    hiddenMeets[mt.id] = max(mt.end, now + 60_000)
+    if !test { UserDefaults.standard.set(hiddenMeets, forKey: IslandTimers.hiddenKey) }
+    psLog("PS island: a meeting hidden from the island")
+    if model.meetOpen?.id == mt.id { closeMeet() }
+    update(raw, islandOn: islandOn)
   }
 
   // ---------- the bubble and the island's buttons ----------

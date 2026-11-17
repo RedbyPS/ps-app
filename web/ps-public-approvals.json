@@ -380,5 +380,21 @@
   ],
   "by": "jan",
   "shared": true
+ },
+ "1.66": {
+  "code": "b607c6e98039",
+  "at": "2026-11-17T21:54:17.566Z",
+  "keyword": "Optimism",
+  "notes": [
+   "Phone: an Add task button now sits at the bottom right of every page.",
+   "Phone: PS has its own island at the top, and screens no longer hide under the status bar.",
+   "Phone: swiping inside Numerology and other open screens no longer flips the page behind them.",
+   "Hover the island during an upcoming meeting and the meeting stays in view; right click it to hide that meeting.",
+   "New to G Squad? PS now asks if you want to join.",
+   "The AFK timer asks the first time if you want it, like the posture reminder.",
+   "Fixes: the Purchases button opens again on the Mac, and Settings shows who made PS."
+  ],
+  "by": "red",
+  "shared": true
  }
 }

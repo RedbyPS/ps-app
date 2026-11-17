@@ -116,7 +116,7 @@
 .cv-ed-next { border-top: 1px dashed var(--line-2); padding-top: 12px; }
 .cv-ed-next.late { color: var(--bad); }
 .cv-ed-next.client { color: var(--warn); }
-.cv-edtabs { position: sticky; top: calc(64px + env(safe-area-inset-top)); z-index: 5; box-shadow: 0 6px 18px -14px rgba(0,0,0,.35); }
+.cv-edtabs { position: sticky; top: calc(64px + var(--sat, env(safe-area-inset-top, 0px))); z-index: 5; box-shadow: 0 6px 18px -14px rgba(0,0,0,.35); }
 .cv-edtabs .tab { display: inline-flex; align-items: center; }
 @media (min-width: 700px) { .cv-edtabs { justify-self: start; } }
 

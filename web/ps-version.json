@@ -1,5 +1,5 @@
 {
- "version": "1.65",
+ "version": "1.66",
  "names": {
   "1.07": "Wisdom",
   "1.08": "Abundance",
@@ -59,7 +59,8 @@
   "1.62": "Together",
   "1.63": "Kinship",
   "1.64": "Dawn",
-  "1.65": "Overdrive"
+  "1.65": "Overdrive",
+  "1.66": "Optimism"
  },
  "note": "One PS version for the Mac and the phone (the developer, 27 Oct 2026), shown as V1.07 plus its keyword. The manager bumps it once per release with `node scripts/ps-version.mjs bump` and commits this file; release scripts only read it. names: every keyword ever given, so none repeats.",
  "made": {
@@ -93,6 +94,10 @@
   },
   "1.65": {
    "by": "jan",
+   "shared": true
+  },
+  "1.66": {
+   "by": "red",
    "shared": true
   }
  }

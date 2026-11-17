@@ -233,7 +233,7 @@ html.gos .tm-add-layer .tm-add-top { min-height: 44px; }
 html.gos .tm-add-layer .tm-add-h { flex: none; white-space: nowrap; }
 /* Room under the list while the sheet is open, so the task just added can scroll up into view above it. The settled
    keyboard height only (never the per frame one), so the list is not relaid out while the keyboard slides. */
-html.gos .gos-home .tm-overlay:has(> .tm-add-layer) .tm-scroll > .tm-inner { margin-bottom: calc(var(--gos-kb-end, 0px) + 250px); }
+html.gos body:has(> .tm-add-layer) .gos-home .tm-scroll > .tm-inner {   /* PS 1.66: the sheet is on the page top now */  margin-bottom: calc(var(--gos-kb-end, 0px) + 250px); }
 html.gos .tm-add-layer .tm-add-done { max-width: calc(100% - 170px); font-size: calc(13.5px * var(--k-fs, 1)); }
 html.gos .tm-add-layer .tm-add-foot .tm-add-advbtn { gap: calc(6px * var(--k-dn, 1)); }
 html.gos .tm-add-layer .tm-add-foot .tm-add-advbtn.on { background: color-mix(in srgb, var(--k-acc, #EC4E86) 24%, transparent); }

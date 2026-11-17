@@ -351,6 +351,10 @@ final class IslandModel: ObservableObject {
   var hasContent: Bool { hasNews || editing }
   var expanded: Bool { !dragging && fs != .bar && (popping != nil || bigTimer || (lpOpen && st.lp != nil && !restOnly) || (hovering && !restOnly && hasNews && !timerOn) || (fs == .dropped && hasNews)) }
   var undoable: Bool { ticked != nil && Date().timeIntervalSince(tickedAt) < 5 }
+  /// PS 1.66 (the developer: the meeting must not disappear when the island opens on hover): the meeting the bubble shows, kept as a
+  /// row at the foot of the open island (the bubble steps aside while it is open), which grows by meetRowH for it.
+  var hoverMeet: (mode: String, mt: TMeet)? { if meetOpen == nil, case .meet(let mode, let mt) = tshow.right { return (mode, mt) }; return nil }
+  static let meetRowH: CGFloat = 38
   /// Dim over a full screen app, unless something just arrived or the pointer is on it.
   var opacity: Double { fullScreen && fs == .off && popping == nil && !hovering && !glowing ? 0.35 : 1 }
 
@@ -428,7 +432,8 @@ final class IslandModel: ObservableObject {
     let undo: CGFloat = undoable ? 34 : 0
     let rowsH: CGFloat = CGFloat(max(rows.count, 1)) * 42
     let priv: CGFloat = st.priv && !rows.isEmpty ? 42 : 0   // the private mode line on top
-    return 18 + badges + priv + rowsH + undo
+    let meet: CGFloat = hoverMeet != nil ? IslandModel.meetRowH + 8 : 0   // PS 1.66: the meeting stays in the open island
+    return 18 + badges + priv + rowsH + undo + meet
   }
 }
 
@@ -970,6 +975,7 @@ struct IslandView: View {
         }
         .frame(height: 34)
       }
+      if let hm = m.hoverMeet { meetRow(hm.mode, hm.mt) }
       if m.undoable, let t = m.ticked {
         HStack(spacing: 8) {
           if m.st.tickLeft { Image(systemName: "checkmark.circle.fill").foregroundColor(doneC) } else { undoChip }
@@ -981,6 +987,41 @@ struct IslandView: View {
       }
     }
     .padding(.horizontal, 16).padding(.top, 10).padding(.bottom, 10)
+  }
+
+  /// PS 1.66: the meeting kept in the open island: the camera, its name, "in 12m" (or "12m left"), Join when it has a link.
+  /// Right click: Hide this meeting.
+  func meetRow(_ mode: String, _ mt: TMeet) -> some View {
+    let blue = Color(red: 0.38, green: 0.65, blue: 0.98)
+    return HStack(spacing: 11) {
+      ZStack { Circle().fill(blue.opacity(0.22)); Image(systemName: "video.fill").font(.system(size: 10.5, weight: .bold)).foregroundColor(blue) }
+        .frame(width: 26, height: 26)
+      VStack(alignment: .leading, spacing: 1) {
+        Text(mt.title).font(.system(size: 13, weight: .semibold)).foregroundColor(fg).lineLimit(1).truncationMode(.tail)
+        HStack(alignment: .firstTextBaseline, spacing: 3) {
+          if mode == "now" {
+            IslandCountdown(endsAt: mt.end, short: true, size: 11.5, color: dimC)
+            Text(BubbleFit.wLeftWord).font(.system(size: 11, weight: .semibold)).foregroundColor(dimC).fixedSize()
+          } else {
+            Text(BubbleFit.wInWord).font(.system(size: 11, weight: .semibold)).foregroundColor(dimC).fixedSize()
+            IslandCountdown(endsAt: mt.start, short: true, size: 11.5, color: dimC)
+          }
+        }
+      }
+      Spacer(minLength: 4)
+      if let l = mt.link {
+        Button(action: { IslandTimers.shared.openLink(l) }) {
+          Text(TimersCore.wJoin).font(.system(size: 12, weight: .bold)).padding(.horizontal, 12).padding(.vertical, 4)
+            .background(blue).foregroundColor(.black).clipShape(Capsule())
+        }.buttonStyle(.plain)
+      }
+    }
+    .frame(height: IslandModel.meetRowH)
+    .overlay(alignment: .top) { Rectangle().fill(fg.opacity(0.1)).frame(height: 1).offset(y: -4) }
+    .contentShape(Rectangle())
+    .contextMenu { Button(BubbleFit.wHide) { IslandTimers.shared.hideMeeting(mt) } }
+    .transition(NSWorkspace.shared.accessibilityDisplayShouldReduceMotion ? .opacity : .opacity.combined(with: .offset(y: 6)))
+    .accessibilityElement(children: .combine)
   }
 
   var undoChip: some View {

@@ -5,6 +5,7 @@
 // <PhoneTilesHost /> is mounted inside the list (views/TaskMap.tsx Overlay), so every panel keeps whatever the list
 // gives it; it draws into a layer of its own over the list, only while the phone shows a page of panels. A sideways
 // swipe on it goes to the page beside, like the panes.
+import { panelOpen } from "../core/phonepanels";
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { panelElement } from "../views/EditMode";
@@ -82,6 +83,7 @@ function PanelsPage({ tiles, side, order, self, go, name, invert }: { tiles: Til
     if (!el) return;
     let sx = 0, sy = 0, mode: "?" | "x" | "y" | null = null, dx = 0;
     const start = (e: TouchEvent) => {
+      if (panelOpen()) { mode = null; return; }   // PS 1.66: never move the pages behind an open panel (core/phonepanels.ts)
       if (e.touches.length !== 1 || (e.target as Element).closest("input, textarea, [contenteditable='true'], input[type='range']")) { mode = null; return; }
       sx = e.touches[0].clientX; sy = e.touches[0].clientY; dx = 0; mode = "?";
     };

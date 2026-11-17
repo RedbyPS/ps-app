@@ -132,6 +132,9 @@ final class UpdateUI: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
       var f = window.frame
       if abs(f.height - want) > 0.5 { f.origin.y += f.height - want; f.size.height = want; window.setFrame(f, display: true) }
       if IslandColumn.shared.ids.contains("update") { present() }   // under the island: the windows after it make room
+    } else if t == "site", install {
+      // PS 1.66 "Developed by Cincee" on the install screen: cincee.com in the default browser (never inside PS). Test copies open nothing.
+      if !IS_TEST_COPY, let u = URL(string: "https://cincee.com") { NSWorkspace.shared.open(u) }
     } else if t == "click", let id = o["id"] as? String {
       clicked = o                                     // the Install click carries the typed name (Installer.swift)
       onClick?(id)

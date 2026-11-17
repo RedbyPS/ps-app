@@ -1,5 +1,5 @@
 .remcard { position: fixed; inset: 0; z-index: 99999; display: flex; align-items: center; justify-content: center; background: var(--rc-bg, #28121e); color: var(--rc-ink, #fff);
-  padding: max(24px, env(safe-area-inset-top)) 24px max(24px, env(safe-area-inset-bottom)); animation: remcard-in .38s cubic-bezier(.22, 1, .36, 1); }
+  padding: max(24px, var(--sat, env(safe-area-inset-top, 0px))) 24px max(24px, env(safe-area-inset-bottom)); animation: remcard-in .38s cubic-bezier(.22, 1, .36, 1); }
 .remcard-in { width: 100%; max-width: 420px; display: flex; flex-direction: column; align-items: stretch; gap: 14px; text-align: center; }
 .remcard-pill { align-self: center; background: var(--rc-acc, #ec4e86); color: #000; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; font-size: 14px; padding: 8px 16px; border-radius: 99px; }
 .remcard-q { font-size: 28px; font-weight: 700; line-height: 1.25; margin: 18px 0 10px; }

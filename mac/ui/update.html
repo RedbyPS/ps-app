@@ -143,6 +143,12 @@
   .nme { height: 16px; margin-top: 6px; font-size: 12px; color: #F2857E; opacity: 0; transform: translateY(-3px); transition: opacity .2s, transform .3s var(--ease); }
   .nme.on { opacity: 1; transform: none; }
   #pWelcome .big { margin-top: 14px; }
+  /* PS 1.66 "Developed by Cincee" (the same as Who's Lagging): small and dim, brighter under the pointer, a click opens cincee.com
+     in the browser (UpdateUI.swift "site"). Top left, under the window buttons, on every install page. */
+  #credit { position: absolute; left: 56px; top: 24px; z-index: 5; display: inline-flex; align-items: baseline; gap: 3px; padding: 0; border: 0; background: none;
+    font: 500 11px -apple-system, BlinkMacSystemFont, sans-serif; color: rgba(255,255,255,.38); cursor: pointer; transition: color .15s ease-out; }
+  #credit:hover { color: rgba(255,255,255,.85); }
+  #credit svg { width: 8px; height: 8px; }
 </style>
 </head>
 <body>
@@ -167,6 +173,7 @@
 
 <div id="inst" class="hidden">
   <div class="glow"></div>
+  <button id="credit" type="button" title="cincee.com">Developed by Cincee<svg viewBox="0 0 10 10" aria-hidden="true"><path d="M2.5 7.5 7.5 2.5M3.5 2.5h4v4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
   <section class="page" id="pWelcome" data-anim>
     <div class="logo">PS</div>
     <h1 id="wTitle">Install <span class="nm">PS app</span></h1>
@@ -216,6 +223,7 @@
     send(id === 'start' ? { type: 'click', id, name: $('wName').value } : id === 'finish' && askStore ? { type: 'click', id, store } : { type: 'click', id });
   };
   document.addEventListener('click', (e) => {
+    if (e.target.closest('#credit')) { send({ type: 'site' }); return; }   // PS 1.66: "Developed by Cincee" opens cincee.com in the browser
     const o = e.target.closest('[data-store]');
     if (o) { store = o.dataset.store; document.querySelectorAll('#pStore .opt').forEach((x) => { x.classList.toggle('sel', x === o); x.setAttribute('aria-checked', String(x === o)); }); return; }
     const b = e.target.closest('[data-id]'); if (b) click(b.dataset.id);

@@ -23,6 +23,7 @@ import { irepFeed } from "./mailcards";
 import { ISLAND_EVENT_MS, ISLAND_FRESH_MS, canPrivateOff, canTick, canUndo, islandState, pickEvent, type IslandCard, type IslandEvent, type IslandState, type IslandTick } from "./core/island";
 import { todayISO } from "./ui/kit";
 import { breakWindows, cleanRun, pomoIsland, pomoPrefs } from "./core/pomodoro";
+import { afkAskIsland, afkAskPatch } from "./core/afkask";
 import { STAND_LEAD_MS, standAskDue, standAskPatch, standIsland, standPrefs } from "./core/standup";
 import { meetBubblePrefs, meetIsland } from "./core/meetbubble";
 import { dndMutes } from "./core/dnd";
@@ -113,7 +114,9 @@ function sync(force = false) {
   // PS 1.65 Low power mode (core/lowpower.ts): the leaf, and what is asleep for its card. The island itself stays fully active.
   const lps = lowPower.state();
   const lp = lps.on ? { names: asleepNames(lps, lowPower.feeds()), why: lps.why } : null;
-  send({ ...shown, meets, pomo, stand, meet, welcome, workout, fit: fitIslandPart(now), lp }, force);
+  // PS 1.66: the AFK timer's one question (core/afkask.ts): its words while it is still due, for the Mac's AFK card (Afk.swift).
+  const afkAsk = afkAskIsland(st);
+  send({ ...shown, meets, pomo, stand, meet, welcome, workout, fit: fitIslandPart(now), lp, afkAsk }, force);
 }
 function fitWorkouts(s: Snapshot): { id: string; data: FitWorkout }[] {
   const out: { id: string; data: FitWorkout }[] = [];
@@ -122,10 +125,18 @@ function fitWorkouts(s: Snapshot): { id: string; data: FitWorkout }[] {
 }
 function send(state: object, force: boolean) {
   const json = JSON.stringify(state);
+  if (json !== last || !localState) { localState = state; localSubs.forEach((f) => f()); }   // PS 1.66: the phone's in-app island (gos/PhoneIsland.tsx)
   if (!force && json === last) return;
   last = json;
   post({ type: "island", state });
 }
+/** PS 1.66: the island state for the island drawn inside PS on the phone (gos/PhoneIsland.tsx), the same one the shell gets. */
+let localState: object | null = null;
+const localSubs = new Set<() => void>();
+export const islandLocal = {
+  subscribe(f: () => void) { localSubs.add(f); return () => { localSubs.delete(f); }; },
+  get: () => localState,
+};
 
 /** A tick or an Undo on the island. Only for a task that exists and is in the right state. */
 export function islandMessage(m: { type?: string; action?: string; id?: string }): boolean {
@@ -139,6 +150,12 @@ export function islandMessage(m: { type?: string; action?: string; id?: string }
     const st = settingsData(s);
     const patch = standAskPatch(m.id, st.standup);
     if (patch && (st.standAsk !== true || patch.standup)) void saveSettings(patch).then(() => sync(true));
+    return true;
+  }
+  // PS 1.66 the AFK timer's question (ps-mac Afk.swift): Turn off or Keep it on. Saved once; the Mac switches its timer off itself.
+  if (m.action === "afkAsk") {
+    const patch = afkAskPatch(m.id);
+    if (patch && settingsData(s).afkAsk !== true) void saveSettings(patch).then(() => sync(true));
     return true;
   }
   // PS 1.60 Welcome back: Done with the ticked ids (a JSON list in `id`). Each is ticked like a tick on the island.

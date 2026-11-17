@@ -241,7 +241,7 @@ input, textarea, select { font: inherit; color: inherit; }
 .toast .btn { background: color-mix(in srgb, var(--bg) 16%, transparent); color: var(--bg); }
 
 /* app chrome */
-header.top { position: sticky; top: 0; z-index: 20; background: color-mix(in srgb, var(--bg) 86%, transparent); backdrop-filter: saturate(1.4) blur(12px); border-bottom: 1px solid var(--line); padding-top: env(safe-area-inset-top); }
+header.top { position: sticky; top: 0; z-index: 20; background: color-mix(in srgb, var(--bg) 86%, transparent); backdrop-filter: saturate(1.4) blur(12px); border-bottom: 1px solid var(--line); padding-top: var(--sat, env(safe-area-inset-top, 0px)); }
 header.top .wrap { display: flex; align-items: center; gap: 14px; height: 60px; }
 .brand { display: flex; align-items: center; gap: 9px; font-weight: 800; font-size: 17px; letter-spacing: -.01em; text-decoration: none; color: var(--ink); flex: none; }
 .brand .logo { width: 28px; height: 28px; }

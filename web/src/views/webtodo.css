@@ -20,7 +20,7 @@ html.web-todo .nt-launch { display: none; }   /* the website's notes button: the
 
 /* ---------- the list: the floating layout ---------- */
 .tm-overlay.tm-docked.tm-web {
-  --web-top: calc(60px + env(safe-area-inset-top, 0px));
+  --web-top: calc(60px + var(--sat, env(safe-area-inset-top, 0px)));
   position: fixed; inset: var(--web-top) 0 0 0; z-index: 1; overflow: hidden;
   display: block; width: auto; min-height: 0; margin: 0; padding: 0; border-radius: 0; box-shadow: none;
   background: color-mix(in srgb, var(--k-base, #0B0709) calc(var(--tm-tint, .58) * 60%), transparent);

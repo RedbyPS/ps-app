@@ -20,6 +20,8 @@ import { GosMacs } from "./GosMacs";
 import { projectHost } from "../mobile/link";
 import { changeProject } from "../mobile/MobileSettings";
 import { appBase, isStandalone } from "../mobile/platform";
+import { setPhonePref, usePhonePref } from "./phoneprefs";
+import { nativeIslandOn } from "./PhoneIsland";
 
 const setP = (patch: Partial<GosPrefs>) => { haptic("press"); gos.setPrefs(patch); };
 /** A body of old sheet pieces: their card look, without the sheet's own section heading (the row names it). */
@@ -127,6 +129,16 @@ export const PHONE_CONTROLS: Controls = {
         {needOverlay && <><Note>It needs one permission, called Display over other apps.</Note><PermBtn which="overlay" text="Allow Display over other apps" /></>}
         {needUsage && <><Note>On your build it stays away from 1Password and Signal. To know when they are open it needs Usage access.</Note><PermBtn which="usage" text="Allow Usage access" /></>}
       </div>} open={on} />;
+  },
+  // PS 1.66: two switches kept on this phone only (gos/phoneprefs.ts).
+  "phone-inapp-island": function InAppIsland({ e }: RowProps) {
+    const on = usePhonePref("island"), g = useGos();
+    return <SetRow e={e} right={<Switch on={on} onChange={(v) => { haptic("press"); setPhonePref("island", v); }} label={e.name} />}
+      body={nativeIslandOn(g) ? <Note>The Dynamic island over every app is on, so that one shows inside PS too and this one waits.</Note> : undefined} open={on && nativeIslandOn(g)} />;
+  },
+  "phone-add-button": function AddButton({ e }: RowProps) {
+    const on = usePhonePref("addButton");
+    return <SetRow e={e} right={<Switch on={on} onChange={(v) => { haptic("press"); setPhonePref("addButton", v); }} label={e.name} />} />;
   },
   "phone-haptics": function Haptics({ e }: RowProps) {
     const p = useGos().prefs;
