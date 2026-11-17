@@ -345,7 +345,7 @@
 .gsw.narrow .gsw-hero-orb { width: 92px; height: 92px; }
 .gsw.narrow .gsw-hero h2 { font-size: calc(28px * var(--k-fs, 1)); }
 /* The phone: under the status bar, above the home bar; the keyboard pushes the chat's box up (the page resizes). */
-.gsw.phone { padding-top: max(var(--safe-top, 0px), env(safe-area-inset-top, 0px)); padding-bottom: env(safe-area-inset-bottom, 0px); }
+.gsw.phone { padding-top: max(var(--safe-top, 0px), var(--sat, env(safe-area-inset-top, 0px))); padding-bottom: env(safe-area-inset-bottom, 0px); }
 .gsw.phone .gsw-side, .gsw.phone .gsw-main { animation-name: gswPhone; }
 @keyframes gswPhone { from { opacity: 0; transform: translateX(14px); } }
 .gsw.phone .gsw-row { min-height: 76px; }

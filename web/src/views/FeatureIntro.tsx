@@ -42,6 +42,9 @@ import { saveSettings } from "../core/actions";
 import { cleanShareOpts } from "../core/squadshare";
 import { P1_FEATURE, p1Default } from "../core/squadp1";
 import { squadStore } from "../squad/engine";
+import { squadNow, squadOp } from "../squad/mirror";
+import { isRedAccount } from "../core/account";
+import { JOIN_ASK_ID, joinAskProbe } from "../core/gsquadjoin";
 import type { Snapshot } from "../core/vault";
 import logoPng from "../assets/ps-icon.png";
 import { sleepState } from "../sleepmode/engine";
@@ -134,6 +137,13 @@ const DONE_PROBES: Record<string, (can: boolean, s: Snapshot) => Promise<"done" 
     if (who !== "open") return who;
     return tourListFor(s).length ? "open" : "unknown";
   },
+  // PS 1.66 Join The G Squad ask: once after updating, only for people not in it and not waiting to be let in; never the developer's account.
+  [JOIN_ASK_ID]: async (_can, s) => {
+    const v = squadNow();
+    const unlocked = s.status === "unlocked";
+    return joinAskProbe({ red: isRedAccount(s), owner: unlocked && s.role === "owner", loaded: v.loaded, inSquad: v.in, stage: v.auto?.stage ?? null,
+      updater: updaterProbe(JOIN_ASK_ID, s) });
+  },
   // V1.62 the new app logo: only people updating from an earlier version, once per person (Ok on any device ends it everywhere).
   "new-logo-162": async (_can, s) => updaterProbe("new-logo-162", s),
   // Screen recording (12b): shown only to people who said No or have not answered. Yes retires it. Asks the Mac for its saved choice only (nothing from macOS).
@@ -193,6 +203,13 @@ const CHOICES: Record<string, (yes: boolean, s: Snapshot, keep: string[]) => voi
       const before = settingsData(s).approveOff;
       void saveSettings({ approveOff: approveOffAfter(before, sent) }).catch(() => { /* this Mac has it; the others ask themselves */ });
     }
+  },
+  // PS 1.66 Join The G Squad ask: Join sends the normal Ask to join (the same as Join on the G Squad screen; the admin still lets them in).
+  // Both answers end it on every device of the person (introsDone), so Not now never asks again.
+  [JOIN_ASK_ID]: (yes, s) => {
+    if (yes) squadOp({ op: "rejoin" });
+    const done = cleanDone(settingsData(s).introsDone);
+    if (!done.includes(JOIN_ASK_ID)) void saveSettings({ introsDone: [...done, JOIN_ASK_ID] }).catch(() => { /* this device still never shows it again */ });
   },
   "squad-p1": (yes, s) => { void saveSettings({ squadShare: { ...cleanShareOpts(settingsData(s).squadShare), p1: yes } }).catch(() => { /* asks again later */ }); },
 };

@@ -1688,7 +1688,7 @@ final class App: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMess
     case "lowpower:get" where fromMain:         // and macOS Low Power Mode right now
       LowPower.shared.tellOs()
     case "island" where fromMain:               // the Dynamic Island's state (src/island.ts, Island.swift)
-      if let st = msg["state"] as? [String: Any] { Island.shared.fromPage(st); SetupIsland.shared.islandState(st); AssistIsland.shared.islandState(st) }
+      if let st = msg["state"] as? [String: Any] { Island.shared.fromPage(st); SetupIsland.shared.islandState(st); AssistIsland.shared.islandState(st); Afk.shared.islandState(st) }
     case "setupIsland" where fromMain || fromOverlay:   // the setup menu opened or closed (views/Welcome.tsx, SetupIsland.swift)
       SetupIsland.shared.menu(open: msg["menu"] as? Bool ?? false)
     case "island:intro" where fromOverlay:               // PS 1.60: a "Did you know?" intro asks to come out of the island (views/FeatureIntro.tsx)

@@ -150,6 +150,11 @@ final class BubbleWindow {
     p.collectionBehavior = IslandPlace.spaces
     p.ignoresMouseEvents = false
     p.contentView = IslandHost(rootView: BubbleView(m: m, tap: { IslandTimers.shared.tapBubble($0) }))
+    // PS 1.66: a right click on the meeting gives "Hide this meeting" (that meeting only; the next one shows as usual).
+    p.dragHook = { [weak self] e in
+      guard e.type == .rightMouseDown, let self else { return false }
+      return self.rightClick(e)
+    }
     if test { p.alphaValue = 0 }
     win = p
     return p
@@ -184,6 +189,21 @@ final class BubbleWindow {
     } else if m.b != b || !m.shown {
       withAnimation(anim) { m.b = b; m.shown = true }
     }
+  }
+  private var menuTarget: IslandMenuTarget?
+  private func rightClick(_ e: NSEvent) -> Bool {
+    guard m.shown, case .meet(_, let mt) = m.b, let view = win?.contentView else { return false }
+    let t = IslandMenuTarget()
+    menuTarget = t
+    let menu = NSMenu()
+    menu.autoenablesItems = false
+    let it = NSMenuItem(title: BubbleFit.wHide, action: #selector(IslandMenuTarget.run(_:)), keyEquivalent: "")
+    it.target = t
+    t.actions[it] = { IslandTimers.shared.hideMeeting(mt) }
+    menu.addItem(it)
+    NSMenu.popUpContextMenu(menu, with: e, for: view)
+    menuTarget = nil
+    return true
   }
   func hide() {
     guard let w = win, w.isVisible, hideWork == nil else { return }

@@ -508,7 +508,9 @@ final class Afk: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
   func frameFor(_ m: Mode) -> NSRect {
     let v = (m == .full || m == .gear) ? home.visibleFrame : home.visibleFrame
     switch m {
-    case .full: return NSRect(x: v.midX - Afk.size.width / 2, y: v.maxY - Afk.size.height - 6, width: Afk.size.width, height: Afk.size.height)
+    case .full:
+      let h = Afk.size.height + (asking ? Afk.askH : 0)   // PS 1.66: the one question sits under the buttons
+      return NSRect(x: v.midX - Afk.size.width / 2, y: v.maxY - h - 6, width: Afk.size.width, height: h)
     case .gear:
       let h = min(Afk.gearSize.height, v.height - 12)
       return NSRect(x: v.midX - Afk.gearSize.width / 2, y: v.maxY - h - 6, width: Afk.gearSize.width, height: h)
@@ -688,6 +690,8 @@ final class Afk: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
     }
   }
   private func send(_ state: [String: Any]) {
+    var state = state
+    state["ask"] = asking ? (askWords ?? [:]) as Any : NSNull()
     if let d = try? JSONSerialization.data(withJSONObject: state), let s = String(data: d, encoding: .utf8) {
       if ready { web?.evaluateJavaScript("window.__afk.set(\(s))", completionHandler: nil) } else { queued = s }
     }
@@ -696,14 +700,62 @@ final class Afk: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
     setUp()
     guard let panel else { return }
     kind = c.watcher == true ? "ended" : "afk"
+    let want: Mode = mode == .gear ? .gear : (c.passive == true && kind == "afk" ? (mode == .pop ? .pop : .mini) : .full)   // an open pop-up stays open: the pointer decides
+    // PS 1.66: the first full AFK card (and the first after updating) asks once whether to keep the AFK timer.
+    let wasAsking = asking
+    if !asking, kind == "afk", want == .full, askWords != nil, testDir == nil, !IS_TEST_COPY, !UserDefaults.standard.bool(forKey: Afk.askedKey) {
+      asking = true
+      psLog("PS afk: asking once whether to keep the AFK timer")
+    }
     send(["kind": kind, "start": c.start.timeIntervalSince1970 * 1000, "back": c.back.map { $0.timeIntervalSince1970 * 1000 } ?? NSNull(),
           "threshold": prefs.threshold, "lastWatch": lastWatch])
-    let want: Mode = mode == .gear ? .gear : (c.passive == true && kind == "afk" ? (mode == .pop ? .pop : .mini) : .full)   // an open pop-up stays open: the pointer decides
     present(want, animate: animate)
+    if asking != wasAsking { refit() }
+  }
+
+  // ---------- PS 1.66: the AFK timer asks once (web core/afkask.ts; the same question as the posture reminder's) ----------
+  // The page tells the words while the question is still due for the person (the island state's afkAsk, synced settings), nil once
+  // answered on any device. Turn off switches this Mac's AFK timer off (its own setting); Keep it on just carries on. Either answer is
+  // saved by the page for every device, and kept here too. A card that goes without an answer (Back in the game, Esc) asks again
+  // with the next card. Main thread.
+  private var askWords: [String: String]?
+  private(set) var asking = false
+  private static let askH: CGFloat = 80
+  private static let askedKey = "afk.askAnswered"
+  func islandState(_ st: [String: Any]) {
+    if let a = st["afkAsk"] as? [String: Any] {
+      func t(_ k: String) -> String { String(((a[k] as? String) ?? "").prefix(80)) }
+      let w = ["title": t("title"), "off": t("off"), "keep": t("keep")]
+      askWords = w.values.contains("") ? nil : w
+    } else {
+      askWords = nil
+      if asking { asking = false; if ready { web?.evaluateJavaScript("window.__afk.ask(null)", completionHandler: nil) }; refit() }   // answered elsewhere
+    }
+  }
+  private func answerAsk(_ a: String) {
+    guard asking, a == "off" || a == "keep" else { return }
+    asking = false
+    if testDir == nil && !IS_TEST_COPY { UserDefaults.standard.set(true, forKey: Afk.askedKey) }
+    psLog("PS afk: question answered \(a)")
+    Island.shared.onAction?("afkAsk", a)
+    if a == "off" { handle(["on": false]) } else { refit() }
+  }
+  /// The full card grows or shrinks for the question, its top edge staying put.
+  private func refit() {
+    guard let panel, panel.isVisible, mode == .full else { return }
+    let to = frameFor(.full)
+    if testDir != nil { panel.setFrame(to, display: true); return }
+    NSAnimationContext.runAnimationGroup { ctx in
+      ctx.duration = 0.45
+      ctx.timingFunction = CAMediaTimingFunction(controlPoints: 0.22, 1, 0.36, 1)
+      panel.animator().setFrame(to, display: true)
+    }
   }
   /// "Watcher mode ended" while the developer was at the Mac: no clock, Back in the game or Extend.
   private func showNotice() {
     setUp()
+    let dropAsk = asking; asking = false   // the question belongs to the AFK card only
+    defer { if dropAsk { refit() } }
     kind = "notice"
     send(["kind": kind, "start": (notice ?? Date()).timeIntervalSince1970 * 1000, "back": NSNull(), "threshold": prefs.threshold, "lastWatch": lastWatch])
     present(.full, animate: true)
@@ -711,6 +763,8 @@ final class Afk: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
   /// The Watcher card (from the Tab list badge): time left, Extend or End watcher.
   private func showWatching(_ until: Date) {
     setUp()
+    let dropAsk = asking; asking = false   // the question belongs to the AFK card only
+    defer { if dropAsk { refit() } }
     kind = "watching"
     send(["kind": kind, "until": until.timeIntervalSince1970 * 1000, "start": Date().timeIntervalSince1970 * 1000, "back": NSNull(), "threshold": prefs.threshold, "lastWatch": lastWatch])
     present(.full, animate: true)
@@ -743,6 +797,7 @@ final class Afk: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
     }
   }
   private func hide() {
+    asking = false   // gone without an answer: the next card asks again
     guard let panel, panel.isVisible else { return }
     let screen = home
     let away = frame(on: screen, hidden: true)
@@ -804,6 +859,7 @@ final class Afk: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
     case "lookReset":
       ui.look = Look(); ui.invisible = false; saveUI(); sendLook(); applyAlpha()
     case "endWatcher": endWatcherNow()
+    case "ask:off", "ask:keep": answerAsk(String(m.dropFirst(4)))
     default:
       if m.hasPrefix("watch:"), let n = Int(m.dropFirst(6)) { startWatcher(n) }
       else if m.hasPrefix("look:"), let d = m.dropFirst(5).data(using: .utf8), let o = try? JSONSerialization.jsonObject(with: d) as? [String: Any] {
@@ -932,7 +988,18 @@ final class Afk: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
   .gb button{border:0;border-radius:99px;padding:8px 14px;font-weight:800;font-size:12.5px;color:#fff;cursor:pointer}
   #gdone{background:linear-gradient(135deg,#8B5CF6,#EC4E86)}
   #greset{background:rgba(255,255,255,.08);box-shadow:inset 0 0 0 1px rgba(255,255,255,.22)}
-  @media (prefers-reduced-motion:reduce){#card,#card::before,.pill i,.back #btn,.fade{animation:none;transition:none}}
+  /* PS 1.66: the one question under the buttons (the posture reminder's look). */
+  #ask{display:none;position:absolute;left:18px;right:18px;bottom:12px;padding-top:10px;border-top:1px solid rgba(255,255,255,.14)}
+  body.full[data-kind=afk][data-ask="1"] #ask{display:block;animation:fade .45s ease both}
+  body.full[data-kind=afk][data-ask="1"] .acts{bottom:94px}
+  body[data-pick="1"] #ask{display:none}
+  #ask p{margin:0 0 8px;font-size:12.5px;color:rgba(255,255,255,.62);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  #ask .ar{display:inline-flex;gap:8px}
+  #ask button{border:1px solid rgba(255,255,255,.25);background:transparent;color:#fff;border-radius:99px;padding:6px 14px;font:600 12px -apple-system,sans-serif;cursor:pointer;transition:background .15s,transform .15s}
+  #ask button:hover{background:rgba(255,255,255,.1)}
+  #ask button:active{transform:scale(.96)}
+  #ask button span{pointer-events:none}
+  @media (prefers-reduced-motion:reduce){#card,#card::before,.pill i,.back #btn,.fade,#ask{animation:none;transition:none}}
   </style></head><body class="full" data-kind="afk"><div id="card">
   <div class="top"><span class="pill"><i></i><span id="tag">AFK</span></span><span id="title"></span></div>
   <div class="tools"><button id="inv"><span id="invl">Invisible</span></button><button id="gear" title="Stopwatch look"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg></button></div>
@@ -941,6 +1008,7 @@ final class Afk: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
     <button id="wpick"><span id="wpl">Remind me in 1 hour</span></button>
     <div class="row"><button id="wless" class="sec"><span>Shorter</span></button><button id="wmore" class="sec"><span>Longer</span></button><button id="wcancel" class="sec"><span>Cancel</span></button></div></div>
   <div class="acts"><button id="alt" class="sec"><span id="altl">Passive</span></button><button id="wat" class="sec"><span>Watcher</span></button><button id="ext" class="sec"><span>Extend</span></button><button id="endw" class="sec"><span>End watcher</span></button><button id="btn"><span>Back in the game</span></button></div>
+  <div id="ask"><p id="aq"></p><div class="ar"><button id="aoff" type="button"><span id="aol"></span></button><button id="akeep" type="button"><span id="akl"></span></button></div></div>
   <div id="gearv"><div class="gh"><b>Stopwatch look</b><button id="gdone" class="chip on">Done</button></div>
     <div class="prev"><div id="pv"><span id="pvc">0:00</span></div></div>
     <div class="gr"><span>Outline</span><button class="chip" data-k="outline" data-v="1">On</button><button class="chip" data-k="outline" data-v="0">Off</button></div>
@@ -1023,6 +1091,10 @@ final class Afk: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
     document.getElementById('inv').onclick=function(){inv=!inv;applyLook();post('invisible:'+(inv?1:0))};
     document.getElementById('btn').onclick=function(){post('back')};
     document.getElementById('endw').onclick=function(){post('endWatcher')};
+    function askSet(a){if(a&&a.title){put(document.getElementById('aq'),a.title);put(document.getElementById('aol'),a.off);put(document.getElementById('akl'),a.keep)}
+      var v=a&&a.title?'1':'';if((document.body.dataset.ask||'')!==v)document.body.dataset.ask=v}
+    document.getElementById('aoff').onclick=function(){post('ask:off')};
+    document.getElementById('akeep').onclick=function(){askSet(null);post('ask:keep')};
     alt.onclick=function(){post(mode==='full'?'passive':'full')};
     function pick(on){picking=on;document.body.dataset.pick=on?'1':'';draw()}
     document.getElementById('wat').onclick=function(){wmin=(st&&st.lastWatch)||60;pick(true)};
@@ -1045,7 +1117,8 @@ final class Afk: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
     document.addEventListener('mouseup',function(){down=null},true);
     document.addEventListener('click',function(e){if(dragged){e.stopPropagation();e.preventDefault();dragged=false}},true);
     window.__afk={
-      set:function(s){st=s;draw()},
+      set:function(s){st=s;askSet(s.ask);draw()},
+      ask:function(a){askSet(a)},
       look:function(l,i){look=l;inv=!!i;applyLook()},
       mode:function(m){if(m===mode)return;mode=m;document.body.className=m;if(m!=='full'&&picking)pick(false);
         [document.querySelector('.top'),clock,since,ret,document.querySelector('.acts')].forEach(function(e){e.classList.remove('fade');void e.offsetWidth;e.classList.add('fade')});applyLook();draw()},

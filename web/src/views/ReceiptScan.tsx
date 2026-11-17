@@ -31,6 +31,16 @@ export const RS_WORDS = {
 const cx = (...c: (string | false | null | undefined)[]) => c.filter(Boolean).join(" ");
 
 /** Esc (everywhere) and Back (the phone) close the topmost screen. */
+/** Where the receipt screens (Purchases, the check screen, the scanner) are drawn. PS 1.66 fix (the developer: "on the Mac app the Purchases
+ *  button cannot be clicked"): the Tab list is its own layer over the page (.tm-overlay, z-index 90) and these screens were drawn on
+ *  the page's body below it (z-index 70 and 80), so Purchases opened BEHIND the list: nothing seemed to happen, and while the list
+ *  was kept up the Mac did not count the screen as part of the list either (TaskMap.tsx sendRects only looks inside it). They now
+ *  open inside the list's layer when one is up (the Mac and the website's floating list); the phone keeps the body, where they work. */
+export function receiptHost(): HTMLElement {
+  if (GOS) return document.body;
+  return document.querySelector<HTMLElement>(".tm-overlay:not(.tm-docked)") ?? document.body;
+}
+
 export function useCloseKeys(on: boolean, close: () => void) {
   const ref = useRef(close);
   ref.current = close;
@@ -90,7 +100,7 @@ export function ReceiptCheck({ start, photo, photoId, id, from, warns, at, onClo
     finally { setBusy(false); }
   };
   const del = async () => { if (!id) return; setBusy(true); try { await removeReceipt(id); onSaved?.(); onClose(); } catch (e) { setErr(e instanceof Error ? e.message : ""); setBusy(false); } };
-  const root = document.body;
+  const root = receiptHost();
   return createPortal(
     <div className="rs-layer" role="dialog" aria-modal="true" aria-label={title} onMouseDown={(e) => e.stopPropagation()}>
       <div className="rs-dim" onClick={() => { if (!changed && !busy) onClose(); }} />
@@ -235,7 +245,7 @@ export function ReceiptScan({ onClose }: { onClose: () => void }) {
         <button type="button" className={cx("rs-shoot", phase === "reading" && "busy")} onClick={() => void shoot()} disabled={cam !== "on" || phase !== "cam"} aria-label={RS_WORDS.read}>{phase === "reading" ? <span className="rs-spin" aria-hidden="true" /> : RS_WORDS.read}</button>
         <button type="button" className="rs-b" onClick={() => { stopCam(); setShot({ photo: "", start: blankDraft(cur), warns: [], from: "typed" }); setPhase("check"); }}>{RS_WORDS.typeIt}</button>
       </div>
-    </div>, document.body);
+    </div>, receiptHost());
 }
 
 export type { Receipt };

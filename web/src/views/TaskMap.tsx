@@ -1877,7 +1877,9 @@ function AddTask({ prio, clients, docked }: { prio: Doc<Todo>[]; clients: Client
   const open = useAddOpen() === owner;
   const btn = useRef<HTMLButtonElement>(null);
   const [host, setHost] = useState<HTMLElement | null>(null);
-  useLayoutEffect(() => { setHost(docked ? document.body : btn.current?.closest<HTMLElement>(".tm-overlay") ?? null); }, [docked]);
+  // PS 1.66: on a phone the sheet is drawn at the top of the page, so the round Add task button (gos/GosLayer.tsx) opens it over
+  // any full screen panel too, never under one. The look's colours live on the page root, so it looks the same.
+  useLayoutEffect(() => { setHost(docked || document.documentElement.classList.contains("gos") ? document.body : btn.current?.closest<HTMLElement>(".tm-overlay") ?? null); }, [docked]);
   return (
     <>
       <span className="tm-add" style={{ ["--tm-addc" as string]: color, ["--tm-addink" as string]: addInkOn(color) }}>

@@ -46,6 +46,10 @@ import { setDeviceNameHint } from "../devicebeat";
 import { PhoneEditMount } from "./PhoneEditMode";
 import { useFlip } from "./flip";
 import { noteGymScreen } from "../squad/presence";
+import { panelOpen } from "../core/phonepanels";
+import { PhoneIsland } from "./PhoneIsland";
+import { usePhonePref } from "./phoneprefs";
+import type { MomentOpen } from "../core/phoneisland";
 
 type Pane = "plan" | "list" | "inbox";
 // PS Fitness is a pop up over any of them since V1.29 (fitness/FitnessPop.tsx). V1.56: "page:<id>" is a page of panels
@@ -208,6 +212,14 @@ export function GosLayer() {
   const dockRef = useRef<HTMLElement>(null);
   useFlip(dockRef, `${pl.nav.items.join()}|${pl.nav.align}|${pl.nav.edge}`, ".gos-dock-btn[data-flip]");
   const list = useMemo(() => <Overlay onClose={() => {}} hint="Tap a task to work on it. Hold one to lift it, then drag." />, []);
+  // PS 1.66 the round Add task button (bottom right on every page and panel) and the island inside PS. Each has its own switch
+  // in Settings, This phone (gos/phoneprefs.ts); both on by default.
+  const fabOn = usePhonePref("addButton");
+  useEffect(() => {
+    const r = document.documentElement;
+    if (fabOn) r.dataset.gosFab = ""; else delete r.dataset.gosFab;
+    return () => { delete r.dataset.gosFab; };
+  }, [fabOn]);
 
   const owner = s.status === "unlocked" && s.role === "owner";
   // The mobile web app has no fingerprint: its sign in screen offers Change project instead (src/mobile/).
@@ -234,6 +246,24 @@ export function GosLayer() {
     if (it.id === "gsquad") { later(() => openGSquad(true)); return; }
     if (it.id === "goals") { later(() => window.dispatchEvent(new Event("ps-open-goals"))); return; }
     if (it.sel) later(() => document.querySelector<HTMLElement>(`.gos-home ${it.sel}`)?.click());
+  };
+  // From anywhere: Quick add opens straight away. The Vault pages have no list under them, so it goes back to the list first.
+  const addNow = () => {
+    primeSfx();   // the buzz came on the press already
+    if (view === "vault") { setView("list"); window.setTimeout(() => openAddTask("tab"), 140); } else openAddTask("tab");
+  };
+  // A tap on the island: the page or screen its moment belongs to.
+  const openFrom = (o: MomentOpen) => {
+    primeSfx();
+    if (o === "gsquad") { openGSquad(true, "chat"); return; }
+    if (o === "gym") { fitPop.open(); return; }
+    if (o.startsWith("task:")) {
+      const id = o.slice(5);
+      if (view !== "list") setView("list");
+      window.setTimeout(() => window.dispatchEvent(new CustomEvent("ps-open-task", { detail: id })), 300);
+      return;
+    }
+    go(o as View);
   };
   return createPortal(
     <>
@@ -263,6 +293,12 @@ export function GosLayer() {
       )}
       {(view === "list" || view === "plan") && <ThumbRow dnd={dnd} />}
       {view === "inbox" && <div className="gos-thumb">{dnd}</div>}
+      <PhoneIsland hidden={view === "vault" || settingsOpen || menu || !!book || (view === "plan" && !!show)} onOpen={openFrom} />
+      {fabOn && (
+        <button type="button" className="gos-fab" onPointerDown={() => haptic("press")} onClick={addNow} aria-label="Add a task">
+          <svg {...sv} width={28} height={28} strokeWidth={2.5}><path d="M12 5v14M5 12h14" /></svg>
+        </button>
+      )}
       {!g.online && <div className="gos-offline" role="status">Offline. Your saved copy is open</div>}
       {red && <BgProblemCard />}
       {/* The navbar (V1.56: its buttons, their order, its edge and its place come from the phone layout). */}
@@ -421,6 +457,7 @@ function Swipe({ pane, order, onPane, invert, children }: { pane: Pane; order: s
     const el = ref.current!;
     let sx = 0, sy = 0, dx = 0, mode: "?" | "x" | "y" | null = null;
     const start = (e: TouchEvent) => {
+      if (panelOpen()) { mode = null; return; }   // PS 1.66: a full screen panel is open, the pages behind it stay put (core/phonepanels.ts)
       if (e.touches.length !== 1 || (e.target as Element).closest(".tm-add-layer, .dx-layer, .cs-layer, .ms-layer, .nt-win, input, textarea, [contenteditable='true'], input[type='range'], .tm-clocks, .gt-wrap")) { mode = null; return; }
       if (pane === "list" && (e.target as Element).closest(".tm-scroll, .tl-dots")) { mode = null; return; }   // the list's own pages (V1.55)
       sx = e.touches[0].clientX; sy = e.touches[0].clientY; dx = 0; mode = "?";

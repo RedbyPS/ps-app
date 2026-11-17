@@ -20,6 +20,7 @@ import { settingsRests } from "../core/screenrest";
 import { restBehind } from "../ui/screenrest";
 import { sfx } from "../ui/sfx";
 import { morph } from "./DimensionX";
+import { CinceeCredit } from "./CinceeCredit";
 import "./macsettings.css";
 import "./moresettings.css";
 import "./settingsscreen.css";
@@ -322,7 +323,7 @@ export function SettingsScreen({ owner, ctx, controls, onGo, phone = false }: {
                 ? <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M15 6l-6 6 6 6" /></svg>
                 : <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M4 14h6v6M20 10h-6V4M14 10l7-7M3 21l7-7" /></svg>}
             </button>
-            <div className="cs-title"><h2>{title}</h2></div>
+            <div className="cs-title"><h2>{title}</h2><CinceeCredit /></div>
             <AssistBotButton />
             {!narrow && version}
             {(!narrow || !inside || searching) && (

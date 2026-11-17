@@ -349,6 +349,8 @@ export function startMobileWeb() {
   addEventListener("pageshow", seen);
   addEventListener("online", () => { state = { ...state, online: true }; subs.forEach((f) => f()); });
   addEventListener("offline", () => { state = { ...state, online: false }; subs.forEach((f) => f()); });
+  // PS 1.66: the island drawn inside the app (gos/PhoneIsland.tsx) reads the same island state; there is no shell to post it to.
+  startIsland(() => {});
 }
 
 // ---------- asks from the page ----------

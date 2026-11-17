@@ -493,6 +493,7 @@ export interface Settings {
   welcomeBack?: Partial<import("./welcomeback").WelcomePrefs>;   // Welcome back on the Mac island after being away (core/welcomeback.ts, PS 1.60): on, minutes
   workoutMac?: Partial<import("./workoutsummary").SummaryPrefs>;   // Workout summary on the Mac after a workout on the phone (core/workoutsummary.ts, PS 1.60): on
   postureAsk?: boolean;          // PS 1.65: the first posture pop-up's question ("Do you want to turn the posture reminder off?") was seen; asked once per person
+  afkAsk?: boolean;              // PS 1.66: the AFK timer's question ("Do you want to turn the AFK timer off?") was answered; asked once per person
   standAsk?: boolean;            // V1.59: the first stand-up's question ("Do you want to turn stand-up reminders off?") was seen; asked once per person
   dnd?: Dnd;                     // PS Do Not Disturb (core/dnd.ts, the developer 30 Oct 2026): the moon top right of the Tab list; muted cards are held, never lost
   calChoices?: import("./calpick").CalChoices;   // which of the Mac's calendars are Show only or Off (core/calpick.ts, 15 Nov 2026); unlisted = Meetings

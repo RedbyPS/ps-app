@@ -1,0 +1,47 @@
+/* The island inside PS on the phone (PS 1.66, gos/PhoneIsland.tsx). A black pill just below the status bar, centred, in the row
+   of the menu button, so it never covers the clock and never takes a tap meant for a header: it sits under every full screen
+   panel (they draw above z 44) and steps aside while one is open. Grows into a wider card for a moment and shrinks back on a
+   spring, like the Mac's. Only width, height, transform and opacity move; reduced motion: no movement. */
+.gos-isl {
+  --isl-spring: cubic-bezier(.34, 1.3, .5, 1);
+  --isl-w: min(220px, calc(100vw - 150px));
+  --isl-h: 38px;
+  position: fixed; z-index: 44; top: calc(var(--gos-top, 0px) + 8px); left: 50%;
+  width: var(--isl-w); height: var(--isl-h); margin-left: calc(var(--isl-w) / -2);
+  border-radius: 999px; background: #000; color: #f5f5f7; box-shadow: 0 10px 28px rgba(0, 0, 0, .42), 0 0 0 1px rgba(255, 255, 255, .06);
+  transform-origin: 50% 0; overflow: hidden; contain: layout paint;
+  transition: width .5s var(--isl-spring), height .5s var(--isl-spring), margin-left .5s var(--isl-spring), border-radius .5s var(--isl-spring), opacity .25s ease, transform .3s ease;
+  animation: gos-isl-in .55s var(--isl-spring) backwards;   /* backwards, not both: the step aside rule below must win once it has landed */
+  font-family: var(--k-font, "Inter Variable", Inter, system-ui, -apple-system, sans-serif);
+}
+.gos-isl.big { --isl-w: min(340px, calc(100vw - 136px)); --isl-h: 52px; border-radius: 24px; }
+.gos-isl.out { animation: gos-isl-out .38s cubic-bezier(.5, 0, .75, .3) both; pointer-events: none; }
+.gos-isl-b { all: unset; box-sizing: border-box; display: flex; align-items: center; gap: 10px; width: 100%; height: 100%; padding: 0 14px 0 10px; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.gos-isl-b:active { transform: scale(.97); transition: transform .12s ease; }
+.gos-isl-b:focus-visible { outline: 2px solid rgba(255, 255, 255, .7); outline-offset: -3px; border-radius: inherit; }
+.gos-isl-ic { flex: none; display: grid; place-items: center; width: 26px; height: 26px; border-radius: 50%; color: var(--isl-acc, #f5f5f7); background: color-mix(in srgb, var(--isl-acc, #f5f5f7) 18%, transparent); }
+.gos-isl.big .gos-isl-ic { width: 32px; height: 32px; }
+.gos-isl-txt { flex: 1; min-width: 0; display: grid; gap: 1px; animation: gos-isl-text .38s .08s ease both; }
+.gos-isl-txt b, .gos-isl-txt em { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.gos-isl-txt b { font-size: 13px; font-weight: 700; letter-spacing: -.01em; }
+.gos-isl-txt em { font-style: normal; font-size: 12px; color: rgba(245, 245, 247, .66); }
+.gos-isl.big .gos-isl-txt b { font-size: 14px; }
+.gos-isl-c { flex: none; font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--isl-acc, #f5f5f7); }
+/* A colour per kind of moment (the dot, the icon's ring and the countdown). */
+.gos-isl.t-squad { --isl-acc: #a78bfa; }
+.gos-isl.t-mail { --isl-acc: #60a5fa; }
+.gos-isl.t-rem { --isl-acc: #fbbf24; }
+.gos-isl.t-fit { --isl-acc: #facc15; }
+.gos-isl.t-meet { --isl-acc: #4ade80; }
+.gos-isl.t-calm { --isl-acc: #fb7185; }
+.gos-isl.t-plain { --isl-acc: #f5f5f7; }
+/* Steps aside (shrinks to nothing, takes no taps) while something else owns the top: the tour's card (it hangs where the island
+   is), the menu, Settings and every full screen panel drawn inside the list (those share the list's layer, under the island). */
+html.gos body:has(.fi-layer, .gos-menu.open, .gs-win, .nu-layer, .dx-layer, .cs-win, .tl-layer, .sp-layer, .ms-layer, .nt-win, .tm-add-layer, .gsw, .sm-overlay, .rb-layer, .pc-layer, .rs-layer, .fit-pop-layer, .sb-layer .sb-win, .gos-sheet-wrap, .pe-room, .tm-pop-wrap.open) .gos-isl {
+  opacity: 0; transform: scale(.6); pointer-events: none; }
+@keyframes gos-isl-in { from { opacity: 0; transform: scale(.55); } 60% { opacity: 1; } to { opacity: 1; transform: none; } }
+@keyframes gos-isl-out { from { opacity: 1; transform: none; } to { opacity: 0; transform: scale(.5); } }
+@keyframes gos-isl-text { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) {
+  .gos-isl, .gos-isl.out, .gos-isl-txt { animation: none; transition: none; }
+}

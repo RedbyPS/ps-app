@@ -12,7 +12,7 @@ import { receiptScan } from "../gos/receiptscan";
 import { fmtMoney, type Receipt } from "../core/receipts";
 import { byMonth, byShop, clickSort, defaultQuery, leftOut, mainCurrency, monthCompare, recent, shopsOf, tableRows, topItems, type Rc, type SortKey, type TableQuery } from "../core/purchases";
 import { flushOrphans, useReceiptCurrency, useReceipts, useReceiptsOn } from "../receipts";
-import { ReceiptCheck, ReceiptScan, ReceiptTyped, useCloseKeys } from "./ReceiptScan";
+import { ReceiptCheck, ReceiptScan, ReceiptTyped, receiptHost, useCloseKeys } from "./ReceiptScan";
 import { draftOf } from "../core/receipts";
 import "./purchases.css";
 
@@ -203,5 +203,5 @@ export function PurchasesScreen({ onClose }: { onClose: () => void }) {
       {sub === "scan" && <ReceiptScan onClose={() => setSub(null)} />}
       {sub === "type" && <ReceiptTyped onClose={() => setSub(null)} />}
       {sub && typeof sub === "object" && <ReceiptCheck id={sub.id} at={sub.r.at} from={sub.r.src} start={draftOf({ ...sub.r, total: sub.r.total }, sub.r.note ?? "")} photoId={sub.r.ph} onClose={() => setSub(null)} />}
-    </div>, document.body);
+    </div>, receiptHost());
 }

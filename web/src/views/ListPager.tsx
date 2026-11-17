@@ -18,6 +18,7 @@
 // - for the first use tips (another chat): window events "ps-page-swiped" {from, to, how} after a page lands, and
 //   "ps-list-created" {id, name} when a new list is there.
 // Everything is saved in settings (one change-only write each), so the Mac, the website and the phone match.
+import { panelOpen } from "../core/phonepanels";
 import { MWEB, haptic as gosHaptic } from "../gos/bridge";
 import * as pd from "../core/pagedots";
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
@@ -341,6 +342,7 @@ let tg: Touch | null = null;
 function onDown(e: PointerEvent) {
   if (e.pointerType === "mouse" || !e.isPrimary || tg || overviewOn()) return;
   if (overOf(e.target) !== "list") return;
+  if (panelOpen()) return;   // PS 1.66: a full screen panel is open over the list: its pages stay put (core/phonepanels.ts)
   const p = pagerFor(e.target);
   if (!p || p.count() < 2) return;
   tg = { pid: e.pointerId, x0: e.clientX, y0: e.clientY, owner: null, pager: p, samples: [] };

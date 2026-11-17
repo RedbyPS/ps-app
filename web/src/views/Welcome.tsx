@@ -45,6 +45,7 @@ import { StoreBox } from "./LocalFirst";
 import { SetupLooks, SetupLooksDoneButton } from "./SetupLooks";
 import { registerSetup, type SetupDetail } from "../setuphook";
 import type { Settings } from "../core/model";
+import { CinceeCredit } from "./CinceeCredit";
 import "./whatsnew.css";
 import "./welcome.css";
 
@@ -267,6 +268,7 @@ function WelcomePanel({ update, onDone }: { update: boolean; onDone: () => void 
       <div className="wt-dim" aria-hidden="true" />
       <section className={`wt-card wn-card${summary || looks ? " sum" : ""}${at === 0 && !looks ? " intro" : ""}${card ? " two" : ""}${looks ? " lk" : ""}`} role="dialog" aria-modal="true" aria-labelledby="wt-title">
         <div className="wn-glow" aria-hidden="true" />
+        <div className="ps-credit-row"><CinceeCredit /></div>
         {at > 0 && !looks && (
           <div className="wt-prog" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={prog.pct} aria-label={`${pw.done}, ${pw.left}`}>
             <div className="wt-bar"><i style={{ transform: `scaleX(${Math.max(0.02, prog.pct / 100)})` }} /></div>

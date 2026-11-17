@@ -54,6 +54,8 @@ enum BubbleFit {
     }
   }
   static let wLeftWord = "left", wInWord = "in"
+  /// PS 1.66: the meeting's right click menu (the bubble, and its row in the open island): this meeting only goes away.
+  static let wHide = "Hide this meeting"
 
   /// The widest TimersCore.shortLeft can show from `ms` down to zero. Digits are monospaced, so the width only depends
   /// on the shape: "59s" is wider than "1m", "59m" wider than "5m", "1h 59m" wider than "1h 5m".
