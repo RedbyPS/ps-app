@@ -126,6 +126,8 @@ export function decide(p: LpPrefs, os: { mac: boolean; phone: boolean }, feature
 /** Is this feed asleep in this state? Alarms keep going while their switch is on. Unknown feeds sleep. */
 export function feedAsleep(on: boolean, prefs: LpPrefs, feed: LpFeed | undefined): boolean {
   if (!on) return false;
+  // PS 1.65 (the developer): screen time keeps counting in Low power mode. It stays on the Mac and uses no network.
+  if (feed?.id === "screentime") return false;
   if (feed?.group === "alarms") return !prefs.alarms;
   return true;
 }

@@ -65,7 +65,7 @@ removed in Edit mode (top left), but that only hides them; the switches below ar
 | Volume mixer | Turn each app up, down or off. Only touches apps you change. | Leave the sliders alone, or remove the button in Edit mode. |
 | Audio priority (1.65, replaces the Headphones auto switch) | Two lists in the volume mixer, Speakers and Microphones, of every device this Mac has seen. Drag them into your order: PS uses the top one that is connected, each list on its own, when devices connect or go, at launch and after sleep. A pick you make in macOS is never fought. | On by default. Settings, Mac, Audio priority. |
 | AirPods card | Hands the AirPods play button back to Spotify or Music. | Off by default. Settings, Mac, "AirPods card". |
-| Force Touch middle click | A firm click acts as a middle click. | Off by default. Settings, Keyboard and Tab. |
+| Force Touch middle click | A firm click acts as a middle click. | On by default. Settings, Keyboard and Tab. |
 | Lock and Touch ID | Lock PS; unlock with your fingerprint or passphrase. | Use it or not. |
 | Sleep mode | A full screen clock and alarm for the night. | Starts only when you start it. |
 | Sentry mode | Covers and guards the Mac while you are away. | Starts only when you start it. "Keep awake with the lid closed" and "Restart if not unlocked" are inside it. |

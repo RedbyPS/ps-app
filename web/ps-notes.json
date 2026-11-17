@@ -286,5 +286,20 @@
    "Rewind: PS now keeps a private, encrypted history of your year for a recap on 1 January. You can turn it off in Settings.",
    "Fixes: Timelines cards no longer pile on top of each other."
   ]
+ },
+ "1.65": {
+  "en": [
+   "Activity monitor: see what is using your Mac, live, in a new screen next to Network.",
+   "Speak your tasks: talk, and PS turns it into tasks, on your Mac only.",
+   "Type dates naturally: 'call David Friday 3pm' sets the day, the time and a reminder.",
+   "Time estimates: PS learns how long your tasks take and tells you when your day is too full.",
+   "Settings assistant: tell the island what you want, and it changes the setting and shows you where it lives.",
+   "Low power mode: one leaf button puts background work to sleep and keeps your list running.",
+   "Receipts: scan a receipt on your phone and see your spending in the new Purchases screen. It all stays on your devices.",
+   "Posture and checklist reminders, and a different background for each device.",
+   "G Squad looks like Signal now, with private messages, group chats and profile pictures.",
+   "Notifications stack into one card, Proton Mail joins Client emails, and a short tour shows what is new.",
+   "Also: skip just tomorrow's alarm, set your speaker and microphone order, and the middle click now fixes itself."
+  ]
  }
 }

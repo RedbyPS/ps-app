@@ -81,8 +81,8 @@ ok("a card PS cannot answer gives nothing (no thread, no sender address)", () =>
   assert.equal(M.ctxFromGmail("m:x", { ...rep, from: "nobody" }, client), null);
 });
 ok("Instantly card: From is the inbox the lead wrote to, reply_to_uuid is the email answered", () => {
-  const c = M.ctxFromLead("n:e9", { id: "e9", threadId: "th", from: "lena@acme-co.example", fromName: "Lena Park", account: "Boss@Outreach.example", at: rep.date, subject: "Re: quick idea", opening: "Sounds good" })!;
-  assert.equal(c.via, "instantly"); assert.equal(c.account, "boss@outreach.example"); assert.equal(c.emailId, "e9"); assert.equal(c.first, "Lena"); assert.equal(c.company, "Acme-co");
+  const c = M.ctxFromLead("n:e9", { id: "e9", threadId: "th", from: "lena@acme-co.example", fromName: "Lena Park", account: "The developer@Outreach.example", at: rep.date, subject: "Re: quick idea", opening: "Sounds good" })!;
+  assert.equal(c.via, "instantly"); assert.equal(c.account, "red@outreach.example"); assert.equal(c.emailId, "e9"); assert.equal(c.first, "Lena"); assert.equal(c.company, "Acme-co");
   assert.equal(M.ctxFromLead("n:x", { id: "x", from: "lena@acme.example" }), null, "no sending inbox: nothing");
 });
 

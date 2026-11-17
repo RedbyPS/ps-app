@@ -19,7 +19,7 @@ export function visibleRadar(_p0?: any, _p1?: any, _p2?: any, ..._more: any[]): 
 export function tidyRadarState(_p0?: any, _p1?: any, ..._more: any[]): { [k: string]: any; handled?: any; snoozed?: any } { return _v2; }
 export type RadarSide = any;
 export type RadarKind = any;
-export type RadarItem = { [k: string]: any; key: any; side: "me" | "them"; kind: "project" | "client-email" | "fup-replied" | "instantly" | "gmail-prospect" | "sweep" | "proposal" | "invoice" | "quiet"; channel: "Gmail" | "Instantly" | "Vault" | "Stats"; name: any; company?: any; email?: any; subject?: any; said?: any; since: any; url?: any; clientId?: any; replyId?: any; amount?: any; note?: any; noDraft?: any };
+export type RadarItem = { [k: string]: any; key: any; side: "me" | "them"; kind: "client-email" | "fup-replied" | "instantly" | "gmail-prospect" | "sweep" | "proposal" | "invoice" | "project" | "quiet"; channel: "Gmail" | "Instantly" | "Vault" | "Stats"; name: any; company?: any; email?: any; subject?: any; said?: any; since: any; url?: any; clientId?: any; replyId?: any; amount?: any; note?: any; noDraft?: any };
 export type RadarState = { [k: string]: any; handled?: any; snoozed?: any };
 export type FupLead = { [k: string]: any; id: any; name: any; firstName?: any; fullName?: any; email: any; cc: any[]; account: any; threadId?: any; subject?: any; status: any; stage?: any; lastSentAt?: any; lastType?: any; resumeOn?: any; parked?: any; deferralQuote?: any; timezone?: any; location?: any; siteUrl?: any; declined?: any; declineReason?: any; ooo?: any; exempt?: any; travel?: any; events: any[] };
 export type FupPin = { [k: string]: any; email: any; name: any; company?: any; since: any; said?: any; repliedFrom?: any; title: any };

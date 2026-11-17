@@ -5,7 +5,7 @@
 // What stays here, small:
 // - HPRef and HPPrefs: how Headphones mode saved its lists on this Mac ("hpmode.prefs"), read once when Audio priority
 //   starts for the first time, so the order the person had becomes the start of the new one (APCore.migrate).
-// - HeadphonesMode.claims: the developer's own AirPods routing (his layer's AutoRoute.swift) asks it whether PS handles
+// - HeadphonesMode.claims: the developer's own AirPods routing (AutoRoute.swift) asks it whether PS handles
 //   these AirPods; with Audio priority on, it does (output and microphone), so the two never switch against each other.
 import AppKit
 import CoreAudio

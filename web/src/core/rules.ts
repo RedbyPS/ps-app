@@ -12,7 +12,7 @@ const _v2: any = [];
 export function cleanRules(_p0?: any, ..._more: any[]): any[] { return _v0; }
 export function moveRule(_p0?: any, _p1?: any, _p2?: any, ..._more: any[]): any[] { return _v1; }
 export function placeRule(_p0?: any, _p1?: any, _p2?: any, ..._more: any[]): any[] { return _v2; }
-export function checkOutcome(_p0?: any, _p1?: any, ..._more: any[]): "waiting" | "end" | "nuke" { return "waiting"; }
+export function checkOutcome(_p0?: any, _p1?: any, ..._more: any[]): "end" | "nuke" | "waiting" { return "end"; }
 export function needsCheck(_p0?: any, ..._more: any[]): boolean { return false; }
 export type Rule = { [k: string]: any; id: any; text: any; createdAt: any };
 export const RULE_MAX: number = 0;

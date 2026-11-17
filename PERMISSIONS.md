@@ -99,9 +99,9 @@ notice there, where Turn off switches them off on every one of your Macs. A choi
 ## Login Items: PS Middle Click
 
 - **What it is**: a small separate helper that turns a Force Touch click into a middle click.
-- **When it asks**: only when you switch on "Force Touch middle click". It then needs its own Device Control and
-  Data Access entry.
-- **Turn it off**: Settings, Keyboard and Tab, "Force Touch middle click" (off by default).
+- **When it asks**: only when you click "Open Privacy & Security" under "Force Touch middle click". Until then it
+  waits quietly. It needs its own Device Control and Data Access entry.
+- **Turn it off**: Settings, Keyboard and Tab, "Force Touch middle click" (on by default).
 
 ## Microphone and Speech Recognition (Speak your tasks)
 

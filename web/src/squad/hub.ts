@@ -28,7 +28,9 @@ function limited(f: Fetcher): Fetcher {
 }
 
 /** Low power mode (core/lowpower.ts): every call to the G Squad hub throws while G Squad is asleep, so nothing pings it. */
-export function hubAwake() { if (lowPower.asleep("gsquad")) throw new HubError(0, "low power mode"); }
+// PS 1.65 (the developer): a message the person sends by hand (squad chat or a DM) still goes out in Low power mode. Nothing that polls does.
+const BY_HAND = new Set(["c_post", "d_post"]);
+export function hubAwake(act?: string) { if (act && BY_HAND.has(act)) return; if (lowPower.asleep("gsquad")) throw new HubError(0, "low power mode"); }
 
 export interface HubIdent { member: string; priv: string }
 

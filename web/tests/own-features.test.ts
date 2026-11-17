@@ -29,29 +29,55 @@ const answers = (account: "red" | "other" | null, mine?: Record<string, boolean>
   return F.featureAnswers(F.registry(), F.whoFor(P.profile(), account), mine);
 };
 
-ok("The developer's layer profile: others' shared features on, Client emails on, WhatsApp off as 1.61 left it, Screen recording at its default", () => {
+ok("The developer's layer profile: others' shared features on, Client emails on, WhatsApp off as 1.61 left it, Receipts on (1.65), Screen recording at its default", () => {
   assert.equal(layerProfile.name, "red");
   assert.equal(layerProfile.othersShared, "on");
-  assert.deepEqual(layerProfile.features, { "client-emails": true, whatsapp: false, "second-computer": true });   // PS 1.65: Second Computer stays on on the developer's account
+  assert.deepEqual(layerProfile.features, { "client-emails": true, whatsapp: false, receipts: true, "second-computer": true, "auto-approve-defaults": false, "audio-priority": false });   // PS 1.65: Second Computer stays on on the developer's account
   assert.equal(layerProfile.rules.tabOverProtectedApps, false, "the 1Password and Signal rules are untouched");
   assert.equal(layerProfile.rules.islandOverProtectedApps, false);
 });
 
 ok("Jan's 1.60 features are all in core's registry (14 of them)", () => {
-  assert.deepEqual(jans.map((f) => f.id).sort(), ["client-emails", "feature-intros", "fitness-island", "gsquad-island-reply", "gsquad-newlook", "gsquad-notify", "gym-scan-better",
-    "island-moments", "remind-push", "remind-ring", "screen-recording", "welcome-back", "whatsapp", "workout-summary"]);
+  // PS 1.65: Jan has added more since (1.63, 1.65), so this checks the 1.60 ones are still there.
+  const have = new Set(jans.map((f) => f.id));
+  for (const id of ["client-emails", "feature-intros", "fitness-island", "gsquad-island-reply", "gsquad-newlook", "gsquad-notify", "gym-scan-better",
+    "island-moments", "remind-push", "remind-ring", "screen-recording", "welcome-back", "whatsapp", "workout-summary"]) assert.ok(have.has(id), id);
 });
 
 ok("The developer's build, the developer's account: every one of Jan's default on features is on, and Client emails", () => {
   P.setBuildForTests(redBuild);
   const a = answers("red");
-  for (const id of jansOn) if (id !== "whatsapp") assert.equal(a[id], true, id);
+  for (const id of jansOn) if (!["whatsapp", "auto-approve-defaults", "audio-priority"].includes(id)) assert.equal(a[id], true, id);   // PS 1.65: two kept off in his layer (below)
   assert.equal(a["client-emails"], true);
   assert.equal(a.whatsapp, false, "WhatsApp needs his own Meta setup: off in his build, as 1.61 left it");
   assert.equal(a["screen-recording"], true, "Screen recording at its default; nothing records until he says yes in its own setup");
   assert.equal(a.campaigns, false, "core's features keep core's values");
   assert.equal(a["notebook-looks"], false);
   assert.equal(F.feature("island-moments"), true, "feature() agrees");
+  P.setBuildForTests(undefined);
+});
+
+ok("PS 1.65: every one of Jan's 1.65 features is in the registry, shared, default on, and on for the developer's own account (Receipts too), except Auto approve defaults and Audio priority", () => {
+  const ids165 = ["checklist-reminder", "device-backgrounds", "fuller-history", "gsquad-dm", "gsquad-pieces", "gsquad-v3", "notif-stack",
+    "posture-reminder", "proton-bridge", "receipts", "whats-new-tour",
+    // PS 1.65, #38 to #59
+    "time-estimates", "settings-assistant", "sentry-sleep-auto", "tz-focus", "nl-dates", "activity-monitor", "alarm-once", "low-power", "voice-capture"];
+  const reg = F.cleanRegistry(core);
+  for (const id of ids165) {
+    const f = reg.find((x) => x.id === id);
+    assert.ok(f, id);
+    assert.equal(f.owner, "jan", id); assert.equal(f.scope, "shared", id); assert.equal(f.default, "on", id);
+  }
+  P.setBuildForTests(redBuild);
+  const a = answers("red");
+  for (const id of ids165) assert.equal(a[id], true, id);
+  assert.equal(answers("red", { receipts: false }).receipts, false, "his own Off still wins");
+  // The developer's layer keeps two of Jan's 1.65 defaults off until the developer decides: Auto approve starting on in AI and Sleep mode (#38),
+  // and Audio priority (#48), so his AirPods Max switch (AutoRoute.swift) works exactly as before until he turns it on.
+  assert.equal(a["auto-approve-defaults"], false, "Auto approve stays off by default for the developer");
+  assert.equal(a["audio-priority"], false, "Audio priority off for the developer until he switches it on");
+  assert.equal(answers("red", { "audio-priority": true })["audio-priority"], true, "his own On wins");
+  assert.equal(a["second-computer"], true, "Second Computer on for the developer");
   P.setBuildForTests(undefined);
 });
 
