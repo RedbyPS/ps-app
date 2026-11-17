@@ -19,7 +19,7 @@ export function trackOn(s: Snapshot = vaultStore.get()): boolean {
 }
 /** Estimates are on (the feature, and Settings, Your list, Time estimates). */
 export function estOn(s: Snapshot = vaultStore.get()): boolean {
-  return s.status === "unlocked" && feature("time-estimates") && T.cleanTe(settingsData(s).timeEst).est;
+  return s.status === "unlocked" && feature(T.TE_FEATURE) && T.cleanTe(settingsData(s).timeEst).est;
 }
 const zone = (s: Snapshot) => overdueZone(settingsData(s).tmHomeTz);
 

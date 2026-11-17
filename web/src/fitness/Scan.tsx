@@ -5,6 +5,7 @@
 // the frame, goes to the phone's reader (src/gos/gymscan.ts, ps-gos GymScan.kt) and is dropped once read. Nothing is
 // saved or sent. The matching is pure and tested (scan-logic.ts). Where the phone's reader is missing, or the camera
 // is off, the developer can type what the label says instead.
+import { feature } from "../core/features";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { appName } from "../core/appname";
@@ -42,8 +43,8 @@ export function newExFor(x: LibEx | null, own: { name: string; exId: string | nu
   };
 }
 
-/** Gym scan is on (Fitness settings, default on) and this device can read a label (the phone app). */
-export const scanOn = (prefs: FitPrefs) => prefs.scan !== false && gymScan.available();
+/** Gym scan is on (the feature "gym-scan-better" and Fitness settings, both default on) and this device can read a label (the phone app). */
+export const scanOn = (prefs: FitPrefs) => feature("gym-scan-better") && prefs.scan !== false && gymScan.available();
 
 /** A search box for exercises with a clear Scan button inside it (V1.60). Tap Scan, point the phone at the machine's label, and
  *  the exercise's name lands in the search. Anywhere an exercise is searched. Without a label reader (the Mac, the website) or

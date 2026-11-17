@@ -3,7 +3,7 @@
 // steps back too): What you share, Your name, Notifications, Appearance, Leave the squad. Every sharing switch
 // lives here (and on the join screen), so a stranger's PS shows them all.
 import { PictureEdit, v3On } from "./GSquadV3";
-import { useEffect, useState, useSyncExternalStore, type ReactNode } from "react";
+import { useEffect, useMemo, useState, useSyncExternalStore, type ReactNode } from "react";
 import { settingsData } from "../core/select";
 import { feature } from "../core/features";
 import { P1_FEATURE } from "../core/squadp1";
@@ -27,11 +27,17 @@ export function useShare(): ShareOpts {
 }
 export const setShare = (piece: SharePiece, on: boolean) => { sfx.click(); squadOp({ op: "share", piece, on }); };
 export const useLooks = (): GsLooks => useSyncExternalStore(looksStore.subscribe, looksStore.get, looksStore.get);
+/** The look the G Squad screen draws: the person's own choice, or Classic where "G Squad new look" (feature "gsquad-newlook",
+ *  default on) is switched off. Settings keeps showing the stored choice. */
+export const useShownLooks = (): GsLooks => {
+  const l = useLooks(), on = feature("gsquad-newlook");
+  return useMemo(() => (on || l.look !== "new" ? l : { ...l, look: "classic" }), [l, on]);
+};
 
 /** Every sharing switch, on every account. Off = never encrypted with the squad key, never sent. */
 export function SharingList({ only }: { only?: SharePiece }) {
   const share = useShare();
-  const list = only ? SHARE_PIECES.filter((p) => p.id === only) : SHARE_PIECES.filter((p) => p.id !== "p1" || feature("squad-p1"));
+  const list = only ? SHARE_PIECES.filter((p) => p.id === only) : SHARE_PIECES.filter((p) => p.id !== "p1" || feature(P1_FEATURE));
   return (
     <div className="gs-share">
       {!only && <span className="gs-h">What you share</span>}

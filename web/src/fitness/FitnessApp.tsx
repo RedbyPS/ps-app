@@ -5,6 +5,7 @@
 // top left corner on every screen, opening every section with an icon and one line; on a wide Mac the same list as a
 // slim bar down the left. Every screen has a title and a Back; Back, Esc and the phone's back gesture go one step.
 // First launch on a device shows "Pick your look" once (Settings > Look opens it again). The look sits on the root.
+import { feature } from "../core/features";
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { useLookActive } from "../looks/engine";
 import { useFitness } from "./store";
@@ -66,7 +67,7 @@ export function FitnessApp({ desk = false, onBack, backLabel = `Back to ${appNam
   useEffect(() => { try { localStorage.setItem(STYLE_KEY, style); } catch { /* storage off */ } }, [style]);
   useEffect(() => { rest.setSound(v.prefs.sound !== false); }, [v.prefs.sound]);
   // V1.60 the phone's island in workouts (fitisland.ts): the two switches, and start listening to the scan and the rest.
-  useEffect(() => { fitIslandPrefs({ on: islandOn(v.prefs), sound: islandSoundOn(v.prefs) }); startFitIsland(); }, [v.prefs.island, v.prefs.islandSound]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { fitIslandPrefs({ on: feature("fitness-island") && islandOn(v.prefs), sound: islandSoundOn(v.prefs) }); startFitIsland(); }, [v.prefs.island, v.prefs.islandSound]); // eslint-disable-line react-hooks/exhaustive-deps
   // A PS look other than the default (Settings > Appearance) dresses Fitness too: its own looks wait under the default.
   const lookOn = useLookActive();
   const ownTheme = useFitTheme(style);

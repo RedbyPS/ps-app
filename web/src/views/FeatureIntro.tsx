@@ -124,7 +124,7 @@ function tourListFor(s: Snapshot): TourStep[] {
 const tourAgainAsked = (): boolean => { try { return localStorage.getItem(AGAIN_KEY) === "1"; } catch { return false; } };
 /** The intros the tour replaces show on their own only while the tour is switched off (then nothing is folded). */
 const foldedUnlessTour = (read: (can: boolean, s: Snapshot) => Promise<"done" | "open" | "unknown">) =>
-  async (can: boolean, s: Snapshot): Promise<"done" | "open" | "unknown"> => (feature("whats-new-tour") && feature("feature-intros") ? "done" : read(can, s));
+  async (can: boolean, s: Snapshot): Promise<"done" | "open" | "unknown"> => (feature(TOUR_FEATURE) && feature("feature-intros") ? "done" : read(can, s));
 const DONE_PROBES: Record<string, (can: boolean, s: Snapshot) => Promise<"done" | "open" | "unknown">> = {
   // PS 1.65 the tour: updaters only (a first install has nothing "new" to be shown), once per person (Done on any device ends it everywhere),
   // never with "Show first use tips" off, and only when at least one step applies. "Show the tour again" (Settings, About) asks for it.
@@ -140,7 +140,7 @@ const DONE_PROBES: Record<string, (can: boolean, s: Snapshot) => Promise<"done" 
   // PS 1.63 Priority 1 with the squad: shared by default (opt out). A person who already answered is done. Everyone else (new or existing)
   // sees the same one notice once they are in a squad. This probe NEVER saves anything: only a click on the card saves (CHOICES below).
   "squad-p1": async (_can, s) => {
-    if (!feature("squad-p1")) return "unknown";
+    if (!feature(P1_FEATURE)) return "unknown";
     const todo = p1Default(squadStore.get().in, cleanShareOpts(settingsData(s).squadShare));
     return todo === "keep" ? "done" : todo === "tell" ? "open" : "unknown";
   },
@@ -153,7 +153,7 @@ const DONE_PROBES: Record<string, (can: boolean, s: Snapshot) => Promise<"done" 
   // PS 1.65 Posture reminder: only while the feature is on and the person has not switched it off; Ok ends it for good.
   "posture-165": foldedUnlessTour(async (_can, s) => (feature("posture-reminder") && posturePrefs(settingsData(s).posture).on ? "open" : "unknown")),
   // PS 1.65 Checklist reminder: shown only while the feature is on; Ok ends it for good.
-  "checklist-165": foldedUnlessTour(async () => (feature("checklist-reminder") ? "open" : "unknown")),
+  "checklist-165": foldedUnlessTour(async () => (feature(CHK_FEATURE) ? "open" : "unknown")),
   // PS 1.65 stacked notifications: only on the Mac, and only while its switch is on.
   "notif-stack-165": foldedUnlessTour(async () => (PS && feature("notif-stack") ? "open" : "unknown")),
   // PS 1.65 Activity monitor: only on a Mac with the feature on and the person's own switch on; Ok ends it for good.
