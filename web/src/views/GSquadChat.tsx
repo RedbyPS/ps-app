@@ -26,7 +26,7 @@ import { About, ChatComposer, sendChat, useComposer, type ReplyDraft } from "./G
 import { replySnippet } from "../core/squadchat";
 import { EmojiPicker, GifImage, GifPicker, ReactBar } from "./GSquadPickers";
 import { MsgText, v3On } from "./GSquadV3";
-import { bubbleShape } from "../core/gsmsg";
+import { bubbleShape, nearBottom } from "../core/gsmsg";
 import "./gschat.css";
 import "./gssignal.css";
 
@@ -222,6 +222,15 @@ export function ChatPanel({ hold = true, convKey }: { hold?: boolean; convKey?: 
     el.scrollTo({ top: el.scrollHeight, behavior: placed.current ? "smooth" : "instant" });   // the first time straight to the newest, then gliding
     if (v.lines.length) placed.current = true;
   }, [v.lines.length, v.lines.at(-1)?.id, v.votes.length, v.note, about, editing, c.reply]);
+  // Quality pass: the list's own height changes too (the box grows to a second line, the emoji panel docks, the window is resized).
+  // At the newest message, stay there, so the last message never ends up cut off at the bottom.
+  useEffect(() => {
+    const el = list.current;
+    if (!el || typeof ResizeObserver !== "function") return;
+    const ro = new ResizeObserver(() => { if (atBottom.current) el.scrollTop = el.scrollHeight; });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
 
   const convKind = v.convs?.find((x) => x.id === v.activeConv)?.kind;
   const words = convWords(convKind);
@@ -230,7 +239,7 @@ export function ChatPanel({ hold = true, convKey }: { hold?: boolean; convKey?: 
   const items = useMemo(() => groupChat(v.lines, { gapMs: looks.look === "new" ? GROUP_GAP_MS : Infinity }), [v.lines, looks.look]);
   return (
     <div className={`gc${sig ? " sig" : ""}${convKind === "dm" ? " dm" : ""}`} ref={root}>
-      <div ref={list} className="gc-list" onScroll={(e) => { const el = e.currentTarget; atBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40; }}>
+      <div ref={list} className="gc-list" onScroll={(e) => { atBottom.current = nearBottom(e.currentTarget); }}>
         {votes.map((x) => <VoteBox key={x.id} v={x} />)}
         {v.note && <p className="gc-note">{v.note}</p>}
         {v.more && <button type="button" className="gc-older" onClick={() => { atBottom.current = false; chatOp({ op: "older" }); }}>Show older messages</button>}

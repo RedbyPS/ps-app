@@ -5,7 +5,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import * as P from "../src/core/squadpieces.ts";
-import { MAIN_PAGE, SLOTS, addPanel, cleanLayout, emptyLayout, gallery, isOptIn, onPage, kindOf } from "../src/core/tablayout.ts";
+import { MAIN_PAGE, SLOTS, addPanel, cleanLayout, drawsBare, emptyLayout, gallery, isOptIn, onPage, kindOf } from "../src/core/tablayout.ts";
 import { INTROS } from "../src/core/featureintro.ts";
 import type { BoardView } from "../src/core/squadboard.ts";
 
@@ -218,4 +218,11 @@ ok("review fix: FEATURES.md has no merge markers", () => {
 ok("no em or en dashes in the new files", () => {
   for (const f of ["core/squadpieces.ts", "views/SquadPieces.tsx", "views/squadpieces.css", "squad/chathold.ts"]) assert.doesNotMatch(src(f), /[–—]/, f);
 });
+ok("quality pass: without Edit mode (the website To-do page, the phone) an opt in original draws nothing, its copies and other panels do", () => {
+  for (const id of P.PIECE_IDS) { assert.equal(drawsBare(id), false, id); assert.equal(drawsBare(id + ".k3f9a2b1"), true, id); }
+  assert.equal(drawsBare("clocks"), true);
+  assert.equal(drawsBare("squadp1"), true);
+  assert.match(src("views/EditMode.tsx"), /if \(!c\) return drawsBare\(id\) \? <>\{children\}<\/> : null;/);
+});
+
 console.log(`${n} passed`);

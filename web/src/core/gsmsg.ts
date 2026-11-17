@@ -36,3 +36,9 @@ export function sideRadii(shape: Shape, round = 18, small = 4): [number, number]
 }
 /** The picture of a member sits beside the LAST bubble of a group (messages from others only). */
 export const showsAvatar = (mine: boolean, last: boolean): boolean => !mine && last;
+
+/** Quality pass: the list counts as "at the newest message" when its bottom is within `slack` px. While it is, a change in the
+ *  list's own height (the box grows to a second line, a reply quote or the emoji panel opens, the window is resized) keeps the
+ *  newest message in view instead of letting it slide under the bottom edge. */
+export const nearBottom = (m: { scrollHeight: number; scrollTop: number; clientHeight: number }, slack = 40): boolean =>
+  m.scrollHeight - m.scrollTop - m.clientHeight < slack;

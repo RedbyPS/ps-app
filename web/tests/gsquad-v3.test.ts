@@ -216,4 +216,13 @@ await ok("DMs and groups are hidden while the hub has no dm function", () => {
   assert.match(src("views/GSquadV3.tsx"), /dm: chat\.dm === true/);
   assert.match(w, /chatConv\.kind === "group" && <button/);       // the group card only for a group
 });
+await ok("quality pass: at the newest message the chat stays there when its own height changes (the box grows, the window is resized)", () => {
+  assert.equal(M.nearBottom({ scrollHeight: 1000, scrollTop: 700, clientHeight: 300 }), true);
+  assert.equal(M.nearBottom({ scrollHeight: 1000, scrollTop: 661, clientHeight: 300 }), true);
+  assert.equal(M.nearBottom({ scrollHeight: 1000, scrollTop: 600, clientHeight: 300 }), false);
+  assert.equal(M.nearBottom({ scrollHeight: 200, scrollTop: 0, clientHeight: 300 }), true);   // a short chat is always at the bottom
+  const c = readFileSync(new URL("../src/views/GSquadChat.tsx", import.meta.url), "utf8");
+  assert.match(c, /new ResizeObserver\(\(\) => \{ if \(atBottom\.current\) el\.scrollTop = el\.scrollHeight; \}\)/);
+  assert.match(c, /atBottom\.current = nearBottom\(e\.currentTarget\)/);
+});
 console.log(`${n} passed`);

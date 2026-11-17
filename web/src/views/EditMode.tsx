@@ -30,7 +30,7 @@ import { createPortal } from "react-dom";
 import { PS, psPost } from "../ps";
 import { saveTabLayout } from "../core/actions";
 import {
-  addPanel, canHide, cfgOf, isOptIn, dropPage, gallery, hideSlot, isCopy, isWide, kindOf, moveSlot, onPage, outOf, pageOf, pullOut, pushIn, putOnPage, resetLayout,
+  addPanel, canHide, cfgOf, drawsBare, isOptIn, dropPage, gallery, hideSlot, isCopy, isWide, kindOf, moveSlot, onPage, outOf, pageOf, pullOut, pushIn, putOnPage, resetLayout,
   sameLayout, setCfg, setSize, sizeOf, slotInfo, slotLabel, slotStyle, followStyle, snapRect, toPos, fromPos, MAIN_PAGE, SIZE_MAX, SIZE_MIN, EDGE,
   type InstCfg, type Rect, type TabLayout,
 } from "../core/tablayout";
@@ -176,7 +176,7 @@ export function Slot({ id, children }: { id: string; children: ReactNode }) {
   const d = useDrag();
   const f = useFresh();
   if (!isCopy(id)) made.set(id, children);   // V1.56: on the phone too (no Edit mode there), for its pages of panels
-  if (!c) return <>{children}</>;
+  if (!c) return drawsBare(id) ? <>{children}</> : null;   // PS 1.65: a G Squad piece original is on no page, here either (the website To-do page drew all five)
   const here = shownHere(c, id);
   const p = c.layout.pos[id];
   // V1.58 smooth page swipe (views/pagelayer.ts): which page it belongs to (none for the gear and Tab and Lock, on

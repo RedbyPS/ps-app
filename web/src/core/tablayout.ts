@@ -103,6 +103,8 @@ export const slotLabel = (id: string) => KNOWN.get(kindOf(id))?.label ?? id;
 export const slotInfo = (id: string) => KNOWN.get(kindOf(id));
 /** Off the page by default: only copies of it are ever drawn (the original is not on any page). */
 export const isOptIn = (id: string) => !isCopy(id) && !!KNOWN.get(id)?.optIn;
+/** Drawn where there is no Edit mode (the website, the phone's own page): every panel but an opt in original, which is on no page. */
+export const drawsBare = (id: string) => !isOptIn(id);
 export const isWide = (id: string) => WIDE.has(kindOf(id));
 /** Can it be taken off the screen? A copy always can; of the originals all but the gear and Tab and Lock. */
 export const canHide = (id: string) => KNOWN.has(kindOf(id)) && (isCopy(id) || !KNOWN.get(id)!.keep);
