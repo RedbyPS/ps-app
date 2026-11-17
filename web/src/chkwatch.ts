@@ -70,7 +70,7 @@ function tick() {
   const unlocked = s.status === "unlocked";
   const st = unlocked ? settingsData(s) : null;
   const cfg = cleanChk(st?.chkRemind);
-  const enabled = unlocked && feature("checklist-reminder") && cfg.on;
+  const enabled = unlocked && feature(CHK_FEATURE) && cfg.on;
   if (testing) return;
   // Off (the feature or the switch): nothing is worked out, the count stays fresh (the tabLists over every task is not run for nothing).
   if (!enabled) {

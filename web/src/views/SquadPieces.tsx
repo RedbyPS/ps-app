@@ -20,7 +20,7 @@ import { sfx } from "../ui/sfx";
 import { Slot, useShownHere } from "./EditMode";
 import { ChatPanel } from "./GSquadChat";
 import { openGSquad } from "./GSquad";
-import { useLooks } from "./GSquadSettings";
+import { useShownLooks } from "./GSquadSettings";
 import { ConvRow, openConv, useConvs, v3On } from "./GSquadV3";
 import { Avatar } from "./SquadAvatar";
 import "./gswin.css";
@@ -36,7 +36,7 @@ const psFs = () => { try { return parseFloat(document.documentElement.style.getP
 /** The frame every piece sits in: the window's own look (light or dark, colours, size) without the window, so a piece reads like a
  *  piece of the same G Squad. head: the title; opens: the window section a click on the title opens (null: no link). */
 function Piece({ title, opens, v, children, cls = "", extra }: { title: string; opens: string | null; v: SquadView; children: ReactNode; cls?: string; extra?: ReactNode }) {
-  const looks = useLooks();
+  const looks = useShownLooks();
   const shown = useShownHere();
   if (!shown) return null;
   const style = { ...looksVars(looks, psFs()) } as CSSProperties;

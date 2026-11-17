@@ -57,7 +57,7 @@ export function startP1(h: P1Hooks) {
   let hadRec = false, working = false, again = false, lastPull = 0, lastTick = Date.now();
   const myTodos = (): Doc<Todo>[] => docs<Todo>("todo").filter((d) => d.ws === null);
   const owner = () => { const s = vaultStore.get(); return s.status === "unlocked" && s.role === "owner" && s.userId !== "ps-overlay" && s.userId !== "dev"; };
-  const sharing = () => !!h.rec() && feature("squad-p1") && p1On(cleanShareOpts(settingsData(vaultStore.get()).squadShare));
+  const sharing = () => !!h.rec() && feature(P1_FEATURE) && p1On(cleanShareOpts(settingsData(vaultStore.get()).squadShare));
 
   /** The clock on your own tasks (core/squadp1.ts p1Stamps). Runs after every change of your tasks. */
   async function reconcile() {
@@ -68,7 +68,7 @@ export function startP1(h: P1Hooks) {
       // Opted out (switch off, feature off, or left the squad) takes every start off, so turning it on again starts a fresh 24 hours.
       const inSquad = !!h.rec();
       if (inSquad) hadRec = true;
-      const wants = feature("squad-p1") && p1On(cleanShareOpts(settingsData(vaultStore.get()).squadShare));
+      const wants = feature(P1_FEATURE) && p1On(cleanShareOpts(settingsData(vaultStore.get()).squadShare));
       const leftSquad = !inSquad && hadRec;
       if (leftSquad) hadRec = false;
       const stamps = p1Stamps(myTodos(), { active: wants && inSquad, opted: wants && (inSquad || !leftSquad), now: Date.now() });
@@ -96,7 +96,7 @@ export function startP1(h: P1Hooks) {
     const now = Date.now();
     const st = settingsData(vaultStore.get());
     const notify = st.squadNotify !== false && st.tmNotify !== false;
-    const seeing = notify && p1PanelOn(feature("squad-p1"), st);
+    const seeing = notify && p1PanelOn(feature(P1_FEATURE), st);
     if (!seeing) { if (getSince()) setSince(null); }
     else if (!getSince()) setSince(new Date(now).toISOString());   // nothing from before this moment alerts: an update never fires old deadlines at once
     const start = readLedger();
@@ -119,7 +119,7 @@ export function startP1(h: P1Hooks) {
   /** The window is closed but the panel is on: read the hub's changes now and then (the same small read the window does). */
   function quietPull(now: number) {
     if (!h.rec() || h.isOpen() || !navigator.onLine) return;
-    if (!p1PanelOn(feature("squad-p1"), settingsData(vaultStore.get()))) return;
+    if (!p1PanelOn(feature(P1_FEATURE), settingsData(vaultStore.get()))) return;
     if (document.visibilityState === "hidden" && !PS_PAGE) return;
     if (now - lastPull < QUIET_PULL_MS) return;
     lastPull = now;

@@ -13,7 +13,7 @@ import { convWords } from "../core/gsconv";
 import { composeStore } from "../squad/chatopen";
 import { badgeText, type ChatLine, type ChatVoteView } from "../squad/chatview";
 import { clockTime, groupChat, GROUP_GAP_MS } from "../squad/chatgroups";
-import { looksStore } from "../squad/looks";
+import { useShownLooks } from "./GSquadSettings";
 import { startChat } from "../squad/chatengine";
 import { signalOn } from "../squad/signal";
 import { emojiOnly, emojiSize, placeIn, whoLine } from "../squad/chatreact";
@@ -143,7 +143,7 @@ export function ChatPanel({ hold = true, convKey }: { hold?: boolean; convKey?: 
   const v = useChat();
   const list = useRef<HTMLDivElement>(null);
   const atBottom = useRef(true);
-  const looks = useSyncExternalStore(looksStore.subscribe, looksStore.get);
+  const looks = useShownLooks();
   const c = useComposer({ onSent: () => { atBottom.current = true; }, convKey });
   const { about, editing } = c;
   const sig = signalOn();

@@ -2,6 +2,7 @@
 // owner private records, encrypted like everything else in PS (zero knowledge: the server sees ciphertext).
 // put() writes to this device first (its outbox), so the gym with no signal loses nothing; the vault sends
 // the changes once there is signal, and the mergers below join two devices' copies (core/fitness.ts).
+import { feature } from "../core/features";
 import { useMemo } from "react";
 import { moveEx, planFromWorkout, swapEx } from "./gym-logic";
 import type { Doc } from "../core/model";
@@ -111,13 +112,15 @@ export async function startDay(opts: { dayId?: string | null; week?: number; fre
   const w = startWorkout(p, day, week, v.workouts, new Date(), todayISO(), DEVICE, v.prefs);
   return queue(() => put<FitWorkout>("fwork", w, { ws: null }));
 }
+/** New sets start at the last weight: the feature "gym-scan-better" and Fitness settings, both default on. */
+const startLastOn = () => feature("gym-scan-better") && fitnessNow().prefs.startLast !== false;
 export const setPatch = (id: string, exId: string, setId: string, patch: Partial<FitSet>) => editWorkout(id, (w, at) => patchSet(w, exId, setId, patch, at));
 export const setNote = (id: string, exId: string, setId: string, text: string) => editWorkout(id, (w, at) => setComment(w, exId, setId, text, at));
-export const setAdd = (id: string, exId: string) => editWorkout(id, (w, at) => addSet(w, exId, at, fitnessNow().workouts.filter((x) => x.id !== id), fitnessNow().prefs.startLast !== false));
+export const setAdd = (id: string, exId: string) => editWorkout(id, (w, at) => addSet(w, exId, at, fitnessNow().workouts.filter((x) => x.id !== id), startLastOn()));
 /** Add set (same kg and reps as the last set) or Drop set (20 percent lighter, tagged DROP). Returns the new set's id. */
 export function setExtra(id: string, exId: string, drop: boolean, step: number): string {
   const setId = uidF();
-  void editWorkout(id, (w, at) => extraSet(w, exId, setId, drop, step, at, fitnessNow().workouts.filter((x) => x.id !== id), fitnessNow().prefs.startLast !== false));
+  void editWorkout(id, (w, at) => extraSet(w, exId, setId, drop, step, at, fitnessNow().workouts.filter((x) => x.id !== id), startLastOn()));
   return setId;
 }
 export const setRemove = (id: string, exId: string, setId: string) => editWorkout(id, (w, at) => removeSet(w, exId, setId, at));

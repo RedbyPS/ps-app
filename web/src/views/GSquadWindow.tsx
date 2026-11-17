@@ -31,7 +31,7 @@ import { todayISO } from "../ui/kit";
 import { sfx } from "../ui/sfx";
 import { MembersButton, MembersList } from "./GSquadMembers";
 import { GroupCard, NewGroupCard } from "./GSquadGroups";
-import { SettingsIcon, SquadSettings, useLooks } from "./GSquadSettings";
+import { SettingsIcon, SquadSettings, useShownLooks } from "./GSquadSettings";
 import { ConvAvatar, ConvRow, openConv, useConvs, v3On, v3Op } from "./GSquadV3";
 import { clampWin, dragWin, floats, readWin, saveWin, type WinSize } from "../core/gswinsize";
 import "./gswin.css";
@@ -102,7 +102,7 @@ export function GSquadWindow({ anchor, onClose, v, props, asked, onAsked, Icon, 
   const ids = useMemo(() => [...tabs.map((t) => t.id), "settings"], [tabs]);
   const chat = useChat();
   const gym = useGymSquad();
-  const looks = useLooks();
+  const looks = useShownLooks();
   const [vw, setVw] = useState(() => window.innerWidth);
   const [vh, setVh] = useState(() => window.innerHeight);
   const [tab, setTab] = useState<string>(() => firstSection({ asked, waiting: v.in ? v.waiting : 0, last: lastSection, ids }));

@@ -66,7 +66,7 @@ export function squadMenuItems(id: string, t: Todo, clients: ClientRec[], toggle
   const v = squadNow();
   if (!v.in) return [];
   // PS 1.63 Priority 1: a P1 you share with the squad (the Priority 1 switch) can be hidden from it, one task at a time.
-  const hide = p1HideItem(t, { featureOn: feature("squad-p1"), shareP1: shareOn(cleanShareOpts(settingsData(vaultStore.get()).squadShare), "p1") });
+  const hide = p1HideItem(t, { featureOn: feature(P1_FEATURE), shareP1: shareOn(cleanShareOpts(settingsData(vaultStore.get()).squadShare), "p1") });
   const p1Line: SquadMenuItem[] = hide ? [{ key: "g", label: hide.label, hint: "G", run: () => { sfx.click(); squadOp({ op: "task", id, sqOff: hide.sqOff }); } }] : [];
   // Task sharing switched off: say so, and offer to switch it on and share this one task.
   if (!tasksOn()) return [...p1Line, { key: "s", label: "Share with G Squad (task sharing is off: this turns it on)", hint: "S",

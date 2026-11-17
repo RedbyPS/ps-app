@@ -19,6 +19,7 @@
 // phone's shade), and sent again the moment DND ends or that kind is let through. No chime while sounds are muted.
 // Which sound, and whether a kind makes one at all, is the developer's pick in Settings, Notifications (core/notelook.ts, V1.36):
 // by default chats and leads chime (Glass) and client emails stay quiet, as before. One sound per look, the newest card's.
+import { feature } from "./core/features";
 import { pokeCardsAfterSave, vaultStore } from "./core/vault";
 import { settingsData } from "./core/select";
 import { saveSettings, setReplyRemind, setReplySeen } from "./core/actions";
@@ -94,7 +95,7 @@ function sync(force = false) {
   const mailOn = mailOnSnap(s);
   if (mailOn && !st.mailCardsSince) { void saveSettings({ mailCardsSince: new Date().toISOString() }); return; }   // first run: start from now
   if (mailOn && !st.leadCards?.since) { void saveSettings({ leadCards: { since: new Date().toISOString() } }); return; }   // the same for Instantly replies
-  const waOn = waOnSnap(s), waPrefs = prefsOf(st);
+  const waOn = feature("whatsapp") && waOnSnap(s), waPrefs = prefsOf(st);   // the feature "whatsapp" (default on) and its switch
   if (waOn && !waPrefs.since) { void saveWaPrefs({ since: new Date().toISOString() }); return; }   // first run: start from now
   if (waiting.length) { const w = waiting; waiting = []; w.forEach((a) => apply(a.id, a.action)); }
   // The next reminded card: back on time here, and the phone shell wakes this page for it.

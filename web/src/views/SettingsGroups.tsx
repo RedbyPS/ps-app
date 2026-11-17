@@ -114,10 +114,10 @@ export function SettingsHost({ st, gen, owner }: { st: Settings; gen: GenProps; 
   // Reply from PS is for people whose PS shows client email cards (Gmail replies or Who emails me records).
   const mail = mailOnSnap(v);   // the Client emails switch (core/mailswitch.ts); it was "has email records" before 1.60
   const mailC = mailCan(v);
-  const sr = feature("screen-recording");   // PS 1.60: the Screen recording group shows only where the feature is on in this build
+  const sr = feature(SR_FEATURE);   // PS 1.60: the Screen recording group shows only where the feature is on in this build
   const pf = feature("posture-reminder");   // PS 1.65: the Posture Reminder group shows only where the feature is on
-  const ck = feature("checklist-reminder");   // PS 1.65: the Checklist Reminder group shows only where the feature is on
-  const te = feature("time-estimates");   // PS 1.65: the time estimate rows show only where the feature is on
+  const ck = feature(CHK_FEATURE);   // PS 1.65: the Checklist Reminder group shows only where the feature is on
+  const te = feature(TE_FEATURE);   // PS 1.65: the time estimate rows show only where the feature is on
   const ctx = useMemo(() => ({ red, where: settingsWhere(), mail, mailCan: mailC, sr, pf, ck, te, shell: GOS ? "gos" as const : MWEB ? "mweb" as const : undefined }), [red, mail, mailC, sr, pf, ck, te]);
   return (
     <GenContext.Provider value={{ gen, st }}>

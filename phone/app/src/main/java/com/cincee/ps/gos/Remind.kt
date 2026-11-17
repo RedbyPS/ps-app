@@ -165,7 +165,7 @@ object Remind {
     /** May it ring? Not under PS Do Not Disturb or the phone's own, and only when a notification can be shown. */
     private fun ringAllowed(c: Context): Boolean {
         val phoneDnd = runCatching { nm(c).currentInterruptionFilter != NotificationManager.INTERRUPTION_FILTER_ALL }.getOrDefault(false)
-        return can(c) && !phoneDnd && !Dnd.mutes(c, "followup") && Features.told(c)?.get("remind-ring") != false   // the switch in Settings, on unless the person turned it off
+        return can(c) && !phoneDnd && !Dnd.mutes(c, "followup") && (Features.told(c)?.containsKey("remind-ring") != true || Features.on(c, "remind-ring"))   // the feature "remind-ring" and its switch in Settings: the page's answer once it gave one, on until then
     }
     private fun ring(c: Context, r: RemItem, now: Long, from: String) {
         sp(c).edit().putString("ringId", r.id).putLong("ringStart", now).apply()

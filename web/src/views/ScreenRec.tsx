@@ -368,7 +368,7 @@ export function ScreenRecSettings() {
   useEffect(() => { askScreenRec(); }, []);
   if (!PS) return null;
   if (!st) return <div className="sr-set"><span className="sr-hint">{SR_WORDS.noList}</span></div>;
-  if (!settingsShows({ ps: PS, st }) && !feature("screen-recording")) return null;
+  if (!settingsShows({ ps: PS, st }) && !feature(SR_FEATURE)) return null;
   const s = st.settings;
   const on = st.enabled;
   return (
