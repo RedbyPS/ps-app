@@ -20,6 +20,9 @@ WORK="${RUNNER_TEMP:-$(mktemp -d)}/gsquad-mac"
 KC="$WORK/gsquad-signing.keychain-db"
 KEY="$CORE/mac/signing/update-ed25519.key"
 rm -rf "$WORK"; mkdir -p "$WORK/in" "$OUT"
+# publish.sh reads "$OUT/ps-update.json" with node require(), which takes a relative path for a package name
+# ("Cannot find module 'signed/ps-release/ps-update.json'" in the 1.68 run), so the out folder is made absolute.
+OUT="$(cd "$OUT" && pwd)"
 OLD_KCS=""
 cleanup() {
   # Put the runner's own keychain list back before the throwaway keychain goes.

@@ -200,6 +200,14 @@ jobs:
         with:
           ref: ${{ needs.claim.outputs.sha }}
           persist-credentials: false
+      # The signing script comes from main (owner protected), not from the tag, so a fix to it also works when an
+      # older tag is built again with workflow_dispatch (1.68 failed on a script the tag already had).
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          path: signer
+          sparse-checkout: .github/scripts
+          persist-credentials: false
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: mac-unsigned
@@ -209,7 +217,7 @@ jobs:
           GSQUAD_MAC_CERT_P12: ${{ secrets.GSQUAD_MAC_CERT_P12 }}
           GSQUAD_MAC_CERT_PASSWORD: ${{ secrets.GSQUAD_MAC_CERT_PASSWORD }}
           GSQUAD_UPDATE_KEY: ${{ secrets.GSQUAD_UPDATE_KEY }}
-        run: bash .github/scripts/gsquad-sign-mac.sh . in/mac-unsigned.tgz signed
+        run: bash signer/.github/scripts/gsquad-sign-mac.sh . in/mac-unsigned.tgz signed
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: mac-signed
