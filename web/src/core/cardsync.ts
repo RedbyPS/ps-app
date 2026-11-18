@@ -13,8 +13,22 @@ import { mergeMailRules } from "./mailrules.ts";
 import { mergeMailReply } from "./mailreply.ts";
 import { mergePicks } from "./devicebg.ts";
 
-export function mergeSettings(local: Settings, remote: Settings): Settings {
-  const out: Settings = { ...local };
+// PS 1.68 (Jan, 18 Nov 2026: "on every single update it resets my things ... it deletes all of it and moves it all on the
+// main page", and "sometimes it's resetting my settings"). The cause: every device writes the WHOLE settings record from
+// its own copy, and this merger used to keep that whole copy. A device that had been closed for a while (the phone, a
+// second Mac, a website tab) wakes up after an update, writes one small thing at once (What's new seen, the setup menu,
+// the tips), and its old copy of everything else went up with it: the pages made since on the Mac (tmPages), so every
+// panel on them fell back to the main page, and any setting changed elsewhere went back to its old value. Now the
+// device says which settings it really changed (`changed`, from settingsWrite below): only those come from its copy,
+// everything else stays as the server has it. Without `changed` (a change kept from before a restart whose list was
+// lost) it does what it always did.
+export function mergeSettings(local: Settings, remote: Settings, changed?: ReadonlySet<string>): Settings {
+  let out: Settings = { ...local };
+  if (changed) {
+    const o = { ...remote } as Record<string, unknown>, l = local as unknown as Record<string, unknown>;
+    for (const k of changed) { if (k in l && l[k] !== undefined) o[k] = l[k]; else delete o[k]; }
+    out = o as unknown as Settings;
+  }
   const lead = mergeLeadState(local.leadCards, remote.leadCards);
   if (lead) out.leadCards = lead;
   const chat = mergeChatDone(local.chatDone, remote.chatDone);
@@ -28,6 +42,18 @@ export function mergeSettings(local: Settings, remote: Settings): Settings {
   const picks = mergePicks(local.tmBgDev, remote.tmBgDev);   // a background for each device (PS 1.65): per device, the later pick wins
   if (picks) out.tmBgDev = picks;
   return out;
+}
+
+/** One settings save (core/actions.ts saveSettings): the record to write and the settings it really changes (a value the
+ *  same as before is no change, so the other device's newer value of it wins). base: this device's copy, or null when
+ *  the account has no settings record here yet: then only the change is written, never the defaults, so the record that
+ *  is about to arrive keeps every choice in it (core/select.ts folds two records by time, the newer one's keys win).
+ *  fresh: the first download is done and there really is no record (a new account): the defaults go in as before. */
+export function settingsWrite(base: Settings | null | undefined, patch: Partial<Settings>, defaults: Settings, fresh = false): { data: Settings; changed: string[] } {
+  const b = (base ?? {}) as Record<string, unknown>, p = patch as Record<string, unknown>;
+  // A key set to undefined takes that setting away (as it always did): a change too, when there was one.
+  const changed = Object.keys(p).filter((k) => JSON.stringify(p[k]) !== JSON.stringify(b[k]));
+  return { data: (base ? { ...defaults, ...base, ...patch } : { ...(fresh ? defaults : {}), ...patch }) as Settings, changed };
 }
 
 /** What one page run remembers of the cards the developer dismissed on it (src/mailcards.ts), so a Dismiss lost on the way

@@ -30,7 +30,7 @@ import { createPortal } from "react-dom";
 import { PS, psPost } from "../ps";
 import { saveTabLayout } from "../core/actions";
 import {
-  addPanel, canHide, cfgOf, drawsBare, isOptIn, dropPage, gallery, hideSlot, isCopy, isWide, kindOf, moveSlot, onPage, outOf, pageOf, pullOut, pushIn, putOnPage, resetLayout,
+  addPanel, canHide, cfgOf, drawsBare, isOptIn, dropPage, gallery, hideSlot, isCopy, isWide, keepClear, kindOf, moveSlot, onPage, outOf, pageOf, pullOut, pushIn, putOnPage, resetLayout,
   sameLayout, setCfg, setSize, sizeOf, slotInfo, slotLabel, slotStyle, followStyle, snapRect, toPos, fromPos, MAIN_PAGE, SIZE_MAX, SIZE_MIN, EDGE,
   type InstCfg, type Rect, type TabLayout,
 } from "../core/tablayout";
@@ -68,6 +68,8 @@ function setEditing(on: boolean) {
   if (next === "leaving") window.setTimeout(() => { if (phase === "leaving") { phase = "off"; emit(); } }, reducedMotion() ? 0 : 560);
 }
 const reducedMotion = () => typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
+/** PS 1.68: the overview's own way out (the row glides home, then Done), for the Edit button that stays in its corner. */
+let leaveHook: (() => void) | null = null;
 
 // ---------- the layout: the vault's copy, or the one just changed here until the vault catches up ----------
 let pending: TabLayout | null = null;
@@ -230,10 +232,11 @@ function CopyAt({ id }: { id: string }) {
 }
 
 // ---------- the Edit button, top left ----------
-export function EditButton({ kept, onKeep, shown, red, saved, st, onSettings }: { kept: boolean; onKeep: (on: boolean, stay?: boolean) => void; shown: boolean; red: boolean; saved: TabLayout; st?: Settings; onSettings?: (patch: Partial<Settings>) => void }) {
+export function EditButton({ ready = true, kept, onKeep, shown, red, saved, st, onSettings }: { ready?: boolean; kept: boolean; onKeep: (on: boolean, stay?: boolean) => void; shown: boolean; red: boolean; saved: TabLayout; st?: Settings; onSettings?: (patch: Partial<Settings>) => void }) {
   const ph = usePhase();
   const keptBefore = useRef(false);
   const start = () => {
+    if (!ready) return;   // PS 1.68: the account's own layout is not in yet (core/tablayout.ts layoutReady)
     editSfx("edit-in");
     keptBefore.current = kept;
     if (!kept) onKeep(true);   // the list stays up while you move things, with Tab let go
@@ -255,16 +258,18 @@ export function EditButton({ kept, onKeep, shown, red, saved, st, onSettings }: 
   useEffect(() => () => { flush(); if (phase !== "off") { setDrag(null); phase = "off"; emit(); } }, []);
   return (
     <>
-      {ph === "off" && (
-        <div className="ed-corner" onMouseDown={(e) => e.stopPropagation()}>
-          <button type="button" className="ed-btn" onClick={start} title="Arrange pages, panels and buttons">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <path d="M4 20h4L19 9l-4-4L4 16v4z" /><path d="M13.5 6.5l4 4" />
-            </svg>
-            Edit
-          </button>
-        </div>
-      )}
+      {/* PS 1.68 (Jan, 18 Nov 2026: "when I click edit the edit button goes away so I don't see where edit is"): the
+          button stays in its place while editing, lit, so nothing is put under it (its spot is taken, core/tablayout.ts
+          keepClear); a click on it finishes, the same as Done. */}
+      <div className={`ed-corner${ph === "off" ? "" : " ed-corner-live"}`} onMouseDown={(e) => e.stopPropagation()} onPointerDown={(e) => { if (ph !== "off") e.stopPropagation(); }}>
+        <button type="button" className={`ed-btn${ph === "off" ? "" : " on"}`} disabled={ph === "off" && !ready} aria-pressed={ph !== "off"}
+          onClick={() => { if (ph === "off") start(); else if (ph === "on") { sfx.click(); (leaveHook ?? done)(); } }} title="Arrange pages, panels and buttons">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M4 20h4L19 9l-4-4L4 16v4z" /><path d="M13.5 6.5l4 4" />
+          </svg>
+          Edit
+        </button>
+      </div>
       {ph !== "off" && createPortal(<Overview red={red} saved={saved} leaving={ph === "leaving"} onDone={done} st={st} onSettings={onSettings} />, document.body)}
     </>
   );
@@ -417,7 +422,10 @@ function Overview({ red, saved, leaving, onDone, st, onSettings }: { red: boolea
   useEffect(() => { const f = () => { setVw(window.innerWidth); setVh(window.innerHeight); }; window.addEventListener("resize", f); return () => window.removeEventListener("resize", f); }, []);
   // Leaving (Done, Esc, a click): the row glides home while the card grows back to the whole screen.
   const flying = useRef(false);
+  const leaveRef = useRef(() => {});
+  useEffect(() => { leaveHook = () => leaveRef.current(); return () => { leaveHook = null; }; }, []);
   const leave = () => { if (exiting.current) return; exiting.current = true; cam.edge = 0; cam.ticks = false; if (!flying.current) editSfx("edit-out"); if (cam.glide?.to !== 0) camGlide(0, undefined, 1, 440); onDone(); };   // home before the card is full size (560 ms)
+  leaveRef.current = leave;
   // Esc: the calendar menu, a question, the gallery, then out. Never waits on anything.
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
@@ -1074,6 +1082,15 @@ function measure(): Box[] {
   }
   return out;
 }
+/** PS 1.68: the Edit button's rectangle in the page's own coordinates (its spot is taken while editing). */
+function cornerRect(): Rect | null {
+  const ov = overlayEl();
+  const el = ov?.querySelector<HTMLElement>(".ed-corner .ed-btn");
+  if (!ov || !el) return null;
+  const o = ov.getBoundingClientRect(), s = o.width / (ov.offsetWidth || 1);
+  const r = el.getBoundingClientRect();
+  return r.width > 0 && r.height > 0 ? toPage(r, o, s) : null;
+}
 /** The page beside (or + card) under the pointer, if any. */
 function dropTargetAt(x: number, y: number): string | null {
   for (const el of document.elementsFromPoint(x, y)) {
@@ -1196,12 +1213,14 @@ export function EditLayer({ saved }: { saved: TabLayout }) {
     // Out in the room (on the way to a page further along): a chip follows the pointer; let go here and it goes back.
     if (offCard(e)) { el.classList.add("ed-away"); setGhost({ x: e.clientX, y: e.clientY, label: slotLabel(g.id) }); guides(null, null); return; }
     if (ghost) setGhost(null);
-    const others = boxes.filter((x) => x.id !== g.id && !x.inner).map((x) => x.r);
+    const corner = slotInfo(g.id)?.keep ? null : cornerRect();   // PS 1.68: the Edit button's spot is taken (the gear sits beside it)
+    const others = [...boxes.filter((x) => x.id !== g.id && !x.inner).map((x) => x.r), ...(corner ? [corner] : [])];
     const { w, h } = room();
     const sn = snapRect({ ...g.base, left: g.base.left + dx, top: g.base.top + dy }, others, w, h);
-    el.style.translate = `${sn.left - g.base.left}px ${sn.top - g.base.top}px`;
-    g.at = { ...g.base, left: sn.left, top: sn.top };
-    guides(sn.gx, sn.gy);
+    const k = keepClear({ ...g.base, left: sn.left, top: sn.top }, corner, w, h);
+    el.style.translate = `${k.left - g.base.left}px ${k.top - g.base.top}px`;
+    g.at = { ...g.base, left: k.left, top: k.top };
+    guides(k.left === sn.left ? sn.gx : null, k.top === sn.top ? sn.gy : null);
   };
   const end = (e: React.PointerEvent) => {
     const g = live.current;
@@ -1222,7 +1241,7 @@ export function EditLayer({ saved }: { saved: TabLayout }) {
       const card = document.querySelector<HTMLElement>(`[data-ov-page="${CSS.escape(page)}"]`)?.getBoundingClientRect();
       const left = card ? (e.clientX - card.left) / s - g.grab.x : w / 2 - wPx / 2;
       const top = card ? (e.clientY - card.top) / s - g.grab.y : h / 3;
-      const pos = toPos({ left: Math.max(EDGE, left), top: Math.max(EDGE, top), width: wPx, height: hPx }, w, h);
+      const pos = toPos(keepClear({ left: Math.max(EDGE, left), top: Math.max(EDGE, top), width: wPx, height: hPx }, cornerRect(), w, h), w, h);
       return putOnPage(moveSlot(l, id, { ...pos, w: Math.round(wPx / zz), h: Math.round(hPx / zz) }, time), id, page, time);
     };
     const pageFor = (t: string) => {

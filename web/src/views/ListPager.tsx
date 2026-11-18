@@ -44,11 +44,13 @@ import "./listpager.css";
 
 const GOS = import.meta.env.MODE === "gos";
 const reduced = () => typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
-const save = (patch: Partial<Settings>) => void taskMapActions.looks(patch);
+// PS 1.68: every page change here writes the whole list of pages from what this list shows. Before the account's own
+// pages are in (core/tablayout.ts layoutReady) that would be an empty list over the real one, so nothing is written.
+const save = (patch: Partial<Settings>) => { if (ctx.ready === false) return; void taskMapActions.looks(patch); };
 const emit = (name: string, detail: object) => { try { window.dispatchEvent(new CustomEvent(name, { detail })); } catch { /* no window */ } };
 
 // ---------- what the list shows right now (the Overlay sets it on every draw) ----------
-type Ctx = { lists: TabLists; full: string[]; pages: ListPage[]; order: string[]; names: ListNames; groups: TaskGroup[]; dir: SwipeDir; todos: Doc<Todo>[]; st: Settings };
+type Ctx = { lists: TabLists; full: string[]; pages: ListPage[]; order: string[]; names: ListNames; groups: TaskGroup[]; dir: SwipeDir; todos: Doc<Todo>[]; st: Settings; ready?: boolean };
 let ctx: Ctx = { lists: { p1: [], prio: [], ranked: [], daily: [], groups: new Map() }, full: [], pages: [], order: [MAIN], names: {}, groups: [], dir: "push", todos: [], st: {} as Settings };
 export function setListCtx(c: Ctx) { ctx = c; }
 /** What the list shows right now (Dimension X's Lists view and AI Inbox read it while they draw). */
