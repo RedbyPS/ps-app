@@ -400,7 +400,6 @@ export const SETTINGS: SetEntry[] = [
   // ---------- G Squad ----------
   { id: "gs-share", group: "gsquad", name: "What you share", line: "Choose what your squad can see. Anything off is never sent. Task sharing starts off.", words: ["squad", "friends", "share", "sharing", "leaderboard", "privacy", "group", "g squad", "task sharing", "share tasks", "money", "screen time", "working"] },
   // Open source build: PS joins The G Squad by itself unless this is Off (core/offswitches.ts, squad/autoengine.ts).
-  { id: "gs-auto-join", group: "gsquad", name: "Join The G Squad automatically", line: "PS app joins The G Squad by itself after you sign in. Off: it never joins unless you press Join.", words: ["squad", "g squad", "join", "auto join", "automatically", "friends", "group", "off"] },
   // V1.58 multiple developers (views/FromTheSquad.tsx, core/features.ts): other people's shared features, each with a switch.
   { id: "squad-features", group: "gsquad", name: "From the squad", line: "Features your friends made and shared. Switch each one on or off.", words: ["squad", "g squad", "friends", "features", "shared", "from the squad", "switch", "extras", "add ons", "made by", "developers", "turn on", "turn off"] },
   { id: "gs-money", group: "gsquad", name: "Money you made", line: "Add last month's amount at the top of the Leaderboard. No pop-up asks for it.", go: "gsquad", words: ["money", "income", "earnings", "made", "amount", "last month", "revenue", "leaderboard"] },

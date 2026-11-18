@@ -14,7 +14,7 @@ export const THE_SQUAD = NAME;
 /** What the G Squad screen shows before you are in, one at a time:
  *  - "joining": on the way in (PS joined by itself and is getting the squad key)
  *  - "asked":   V1.57, waiting for the admin to let you in (with the check code)
- *  - "left":    you left on purpose (Join again)
+ *  (PS 1.68 one squad for everyone: no "left" and no "off" any more, nobody leaves and nobody has to join)
  *  - "removed": the admin took you out, or said no
  *  - "full":    200 people (V1.55, was 30)
  *  - "error":   the hub could not be reached (with the reason and Try again) */
@@ -30,7 +30,6 @@ export const SETTINGS_PAGES = [
   { id: "notify", title: "Notifications", line: "Message cards, sound, Do Not Disturb" },
   { id: "looks", title: "Appearance", line: "Light or dark, colour, bubbles, text size, background" },
   { id: "ai", title: "Link my AI", line: "Let your AI talk to your friends' AIs" },
-  { id: "leave", title: "Leave the squad", line: "Take your shared things off" },
 ] as const;
 export type SettingsPage = (typeof SETTINGS_PAGES)[number]["id"];
 export const isSettingsPage = (v: unknown): v is SettingsPage => SETTINGS_PAGES.some((p) => p.id === v);

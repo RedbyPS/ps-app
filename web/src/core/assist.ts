@@ -72,7 +72,6 @@ export const CHANGEABLE: Record<string, ChangeSpec> = {
   // Plain switches saved with the other settings (each reads and saves exactly like its row in views/SettingsGroups.tsx).
   "ps-presence": { kind: "toggle", ...plain("psPresence") },
   "fuller-history": { kind: "toggle", ...plain("taskHistory") },
-  "gs-auto-join": { kind: "toggle", ...plain("squadAutoJoin") },
   "tips-show": { kind: "toggle", ...plain("tipsShow") },
   "typed-prio": { kind: "toggle", ...plain("tmTypedPrio") },
   "invert-swipe": { kind: "toggle", read: (s) => s.swipeInvert === true, patch: (_s, v) => ({ swipeInvert: v as boolean }) },

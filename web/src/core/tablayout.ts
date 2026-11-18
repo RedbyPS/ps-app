@@ -18,7 +18,7 @@ export type SlotPos = { x: number; y: number; w: number; h: number };
  *  "g:<feed>": another Google calendar the developer linked to this panel; "m:<account>": one account of the Mac's Calendar).
  *  of: a button dragged out of a panel (the Meetings panel's three) remembers the panel it came from.
  *  open (V1.57): a Time zones panel kept open by a click (unset: it opens on hover only), each copy on its own. */
-export type InstCfg = { cal?: string; of?: string; open?: boolean };
+export type InstCfg = { cal?: string; of?: string; open?: boolean; /** PS 1.68: how many people the Squad Priority 1 panel shows (1 to 12) */ rows?: number };
 /** V1.55 adds, all optional so a record from before reads exactly as it did (core/tablayout.ts migration note):
  *  extra: the copies added from the Add panel gallery (ids "<kind>.<random>"), page: the page each panel sits on
  *  (unset: the main page), size: its size (unset: 1), cfg: its own settings. */
@@ -156,6 +156,7 @@ export function cleanLayout(v: unknown): TabLayout {
     const q = x as Record<string, unknown>, c: InstCfg = {};
     if (typeof q.cal === "string" && CAL.test(q.cal) && kindOf(id) === "meetings") c.cal = q.cal;
     if (q.open === true && kindOf(id) === "clocks") c.open = true;
+    if (typeof q.rows === "number" && Number.isInteger(q.rows) && q.rows >= 1 && q.rows <= 12 && kindOf(id) === "squadp1") c.rows = q.rows;
     if (typeof q.of === "string" && isCopy(id) && KNOWN.get(kindOf(id))!.inner && real(q.of) && kindOf(q.of) === KNOWN.get(kindOf(id))!.inner) c.of = q.of;
     return Object.keys(c).length ? c : null;
   });

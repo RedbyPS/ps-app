@@ -269,4 +269,14 @@ ok("a gym saved for the night gives a plan with night times only, the default on
   assert.equal(G.gymPlan(G.gymPrefs(undefined, true), now, tz, []).time, "08:00", "an unsaved gym is the default, which is why it must not be handed over before the settings load");
 });
 
+ok("PS 1.68 Fitness loads faster: a pull opens its sealed rows at once and a pull asked for during a pull runs right after", async () => {
+  const { readFileSync } = await import("node:fs");
+  const g = readFileSync(new URL("../src/squad/gym.ts", import.meta.url), "utf8");
+  const pull = g.slice(g.indexOf("async function pull()"), g.indexOf("function keepPulling"));
+  for (const what of ["cardsOpen", "rowsOpen", "postsOpen", "exOpen"]) assert.match(pull, new RegExp(`const ${what} = await Promise\\.all\\(`), what);
+  assert.doesNotMatch(pull, /for \(const [a-z]+ of p\.(rows|posts|ex|members)\) \{[^}]*await /, "no open one after another");
+  assert.match(pull, /if \(pulling\) \{ pullAgain = true; return; \}/);
+  assert.match(pull, /finally \{ pulling = false; if \(pullAgain\) \{ pullAgain = false; void pull\(\); \} \}/);
+});
+
 console.log(`\n${n} gym tests passed`);

@@ -11,8 +11,8 @@ type Fetcher = Parameters<typeof hubDir>[1];
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** The hub's answer to joining, on your pending join (it now has your member id). `start`: make the first key. */
-export async function autoJoin(who: string, p: Pending, fetcher?: Fetcher): Promise<{ pending: Pending; start: boolean; key: boolean; gen: number }> {
-  const r = await hubAutoJoin(p.sign, p.box.pub, who, fetcher);
+export async function autoJoin(who: string, p: Pending, fetcher?: Fetcher, acct?: { token: string; anon: string } | null): Promise<{ pending: Pending; start: boolean; key: boolean; gen: number }> {
+  const r = await hubAutoJoin(p.sign, p.box.pub, who, fetcher, acct);
   if (!UUID.test(r.squad) || !UUID.test(r.member)) throw new HubError(500, "bad answer");
   return { pending: { ...p, squadId: r.squad.toLowerCase(), memberId: r.member.toLowerCase() }, start: r.start === true, key: r.key === true, gen: r.gen };
 }

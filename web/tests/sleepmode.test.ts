@@ -730,4 +730,20 @@ ok("V1.52 settings: the AI Sentry mode button row, on a Mac only, in Customise a
   assert.ok(st.includes('case "sentry-restart": return { body: <SentryRestartSleepSetting /> };'));
   assert.ok(!/[\u2013\u2014]/.test(e!.line + e!.name));
 });
+ok("PS 1.68: an unanswered sleep is logged by itself (at the next Sleep press, or 3 hours after waking), never over a typed one", () => {
+  const open = { at: "2026-11-17T21:30:00.000Z", tz: TB, woke: "2026-11-18T04:00:00.000Z" };
+  const woke = at("2026-11-18T04:00:00Z");
+  assert.equal(M.unsavedLog(open, woke + 60 * 60_000, null), null, "an hour after waking: the card may still be answered");
+  const log = M.unsavedLog(open, woke + 3 * 3_600_000, null)!;
+  assert.ok(log && log.src === "sleepmode", "3 hours after waking: logged");
+  assert.equal(log.day, "2026-11-18");
+  assert.ok(M.unsavedLog(open, woke + 60_000, null, true), "the next Sleep press logs it at once");
+  assert.equal(M.unsavedLog(open, woke + 5 * 3_600_000, { src: "manual" }), null, "a sleep typed by hand is never replaced");
+  assert.ok(M.unsavedLog(open, woke + 5 * 3_600_000, { src: "sleepmode" }), "an earlier Sleep mode one for that date is");
+  assert.equal(M.unsavedLog({ at: open.at, tz: TB }, woke + 5 * 3_600_000, null), null, "not woken yet: nothing");
+  assert.equal(M.unsavedLog(null, woke, null), null);
+  const e = readFileSync(new URL("../src/sleepmode/engine.ts", import.meta.url), "utf8");
+  assert.match(e, /if \(live\(openSleep\(\)\)\) return;\n  await logUnsaved\(true\);/, "before a new sleep writes over it");
+  assert.match(e, /void logUnsaved\(\); \}\);/, "and on every vault change");
+});
 console.log(`\n${n} passed`);

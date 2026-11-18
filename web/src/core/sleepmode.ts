@@ -577,3 +577,21 @@ export function wokeElsewhere(o: { at: string; woke?: string | null } | null, he
   const w = Date.parse(o.woke);
   return Number.isFinite(w) && w > since;
 }
+
+// ---------- PS 1.68: a night is never lost (Jan 18 Nov 2026: "Sleep in G Squad says there is no sleep, but I do sleep with it") ----------
+// After Wake up and I'm up, the sleep waited in the open record for the Sleep log card's Save. A card closed with Esc, never
+// answered, or gone with the Tab list left it there, and the next night's Sleep press wrote over it: no sleep in the Sleep log,
+// so G Squad (which shares from the Sleep log) said there was none. Now an unanswered sleep is logged by itself: at the next
+// Sleep press at once, or LOG_UNSAVED_MS after waking. "Don't log" still logs nothing; a sleep typed by hand is never replaced.
+export const LOG_UNSAVED_MS = 3 * 3_600_000;
+export function unsavedLog(open: { at: string; tz: string; woke?: string | null; breaks?: SleepBreak[] | null } | null | undefined, now: number,
+  had: { src?: string } | null | undefined, force = false): SleepLog | null {
+  if (!open?.woke) return null;
+  const woke = Date.parse(open.woke);
+  if (!Number.isFinite(woke) || woke > now + 60_000) return null;
+  if (!force && now - woke < LOG_UNSAVED_MS) return null;
+  const p = propose(open, woke);
+  if (!p?.log) return null;
+  if (had && had.src !== "sleepmode") return null;
+  return p.log;
+}

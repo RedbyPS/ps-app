@@ -132,8 +132,11 @@ export function hubAskStatus(sign: KeyPair, fetcher?: Fetcher) {
   return hubCall<AskStatus>({ member: "", priv: sign.priv }, "ask_status", { sign: sign.pub }, fetcher);
 }
 /** V1.49: into The G Squad at once, signed with your new key. who: your join id (core/squadauto.ts whoHash). */
-export function hubAutoJoin(sign: KeyPair, box: string, who: string, fetcher?: Fetcher) {
-  return hubCall<{ squad: string; member: string; gen: number; start: boolean; key: boolean }>({ member: "", priv: sign.priv }, "auto_join", { sign: sign.pub, box, who }, fetcher);
+/** PS 1.68: acct, your vault session and the vault's public key, so the hub can check once that you are a PS account and let you
+ *  straight in (never stored or logged there). Without it (a project of your own) the admin lets you in, as before. */
+export function hubAutoJoin(sign: KeyPair, box: string, who: string, fetcher?: Fetcher, acct?: { token: string; anon: string } | null) {
+  return hubCall<{ squad: string; member: string; gen: number; start: boolean; key: boolean; admitted?: boolean }>({ member: "", priv: sign.priv }, "auto_join",
+    { sign: sign.pub, box, who, ...(acct ? { vault: acct.token, anon: acct.anon } : {}) }, fetcher);
 }
 export function hubAskCancel(sign: KeyPair, fetcher?: Fetcher) {
   return hubCall<{ ok: true }>({ member: "", priv: sign.priv }, "ask_cancel", { sign: sign.pub }, fetcher);

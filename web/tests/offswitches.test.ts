@@ -22,29 +22,22 @@ ok("on unless switched off: missing, true and odd values are on, only false is o
   }
 });
 
-ok("G Squad: Off never starts a join and shows its own step", () => {
-  assert.equal(Q.shouldJoin(false, null), true, "default: joins as before");
-  assert.equal(Q.shouldJoin(false, null, true), true);
-  assert.equal(Q.shouldJoin(false, null, false), false);
-  assert.equal(Q.shouldJoin(false, { v: 1 }, false), false);
+ok("G Squad (PS 1.68 one squad for everyone): the old Off switch and a left no longer keep anyone out, only Take out does", () => {
+  assert.equal(Q.shouldJoin(false, null), true);
+  assert.equal(Q.shouldJoin(false, null, false), true, "the old Off is not read");
+  assert.equal(Q.shouldJoin(false, { v: 1, left: true }, false), true);
+  assert.equal(Q.shouldJoin(false, { v: 1, removed: true }), false);
   assert.equal(Q.shouldJoin(true, null, true), false);
-  assert.equal(Q.autoStage(null, null), "joining");
-  assert.equal(Q.autoStage(null, null, false), "off");
-  assert.equal(Q.autoStage(null, "error", false), "off");
-  assert.equal(Q.autoStage({ v: 1, left: true }, null, false), "left", "leaving on purpose still says so");
+  assert.equal(Q.autoStage(null, null, false), "joining");
+  assert.equal(Q.autoStage(null, "error", false), "error");
+  assert.equal(Q.autoStage({ v: 1, left: true }, null, false), "joining");
   assert.equal(Q.autoStage({ v: 1, removed: true }, null, false), "removed");
-});
-ok("G Squad: the engine checks the switch before joining and before the 3 minute wait; Join turns it back on", () => {
   const e = rd("../src/squad/autoengine.ts");
-  assert.match(e, /function autoOn\(\) \{ return squadAutoOn\(settingsData\(vaultStore\.get\(\)\)\.squadAutoJoin\); \}/);
-  const notIn = e.slice(e.indexOf("async function notIn"), e.indexOf("function restart"));
-  assert.ok(notIn.indexOf("if (!autoOn())") > -1 && notIn.indexOf("if (!autoOn())") < notIn.indexOf("newPending("), "checked before any join");
-  const restart = e.slice(e.indexOf("function restart"), e.indexOf("// ---------- what the engine tells"));
-  assert.ok(restart.indexOf("if (!autoOn()) return;") > -1 && restart.indexOf("if (!autoOn()) return;") < restart.search(/setInterval|lpInterval\(/), "no 3 minute wait while off");
-  assert.match(e, /if \(!autoOn\(\)\) await saveSettings\(\{ squadAutoJoin: true \}\)/);
-  assert.match(e, /autoStage\(join\.rec, problem\?\.kind \?\? null, autoOn\(\)\)/);
+  assert.match(e, /function autoOn\(\) \{ return true; \}/);
+  assert.doesNotMatch(e, /squadAutoJoin/);
   const v = rd("../src/views/GSquad.tsx");
-  assert.ok(/stage === "off" &&/.test(v) && />Join<\/button>/.test(v), "the G Squad screen has a Join button while off");
+  assert.ok(!/stage === "off"|stage === "left"|Join again/.test(v), "no Join or Join again on the G Squad screen");
+  assert.ok(!/gs-auto-join/.test(rd("../src/core/settingsindex.ts")), "no Join automatically switch in Settings");
 });
 
 ok("Presence: the private channel is joined only while the switch is on", () => {
@@ -94,14 +87,14 @@ ok("the synced switches survive the save path (ps.ts cleanLooks keeps them)", ()
   for (const k of ["squadAutoJoin", "psPresence", "tipsShow"]) assert.ok(new RegExp(`if \\(typeof p\\.${k} === "boolean"\\) o\\.${k} = p\\.${k};`).test(ps), k);
   assert.match(ps, /o\.updateEvery = cleanUpdateEvery\(p\.updateEvery\)/);
   const g = rd("../src/views/SettingsGroups.tsx");
-  assert.match(g, /"gs-auto-join": function GsAutoJoin[^\n]*field="squadAutoJoin"/);
+  assert.doesNotMatch(g, /"gs-auto-join"/, "PS 1.68 one squad for everyone: no Join automatically row");
   assert.match(g, /"ps-presence": function PsPresence[^\n]*field="psPresence"/);
   assert.match(g, /"tips-show": function TipsShow[^\n]*field="tipsShow"/);
 });
 
 ok("every new row is in Settings for everyone it applies to (never the developer only)", () => {
   const rows: [string, string, string][] = [
-    ["gs-auto-join", "gsquad", "Join The G Squad automatically"], ["ps-presence", "privacy", "Tell the website PS app is open"],
+    ["ps-presence", "privacy", "Tell the website PS app is open"],
     ["tips-show", "about", "Show first use tips"], ["phone-screen-time", "time", "Track my screen time"],
     ["helper-remind", "privacy", "Remind me to set up the restart helper"],
   ];
@@ -110,9 +103,9 @@ ok("every new row is in Settings for everyone it applies to (never the developer
     assert.ok(e, id); assert.equal(e.group, group, id); assert.equal(e.name, name, id); assert.ok(!e.red, `${id} is not the developer only`);
   }
   assert.match(I.settingById("ps-presence")!.line, /Lets the website know PS app is open on this Mac/);
-  for (const ctx of [RED_MAC, FRIEND_MAC]) for (const id of ["gs-auto-join", "ps-presence", "tips-show", "helper-remind", "island", "update-every"]) assert.ok(visible(id, ctx), `${id} on a Mac`);
-  for (const id of ["gs-auto-join", "ps-presence", "tips-show", "update-every"]) assert.ok(visible(id, FRIEND_WEB), `${id} on the website`);
-  for (const id of ["gs-auto-join", "tips-show", "phone-screen-time", "update-every"]) assert.ok(visible(id, FRIEND_GOS), `${id} on the phone`);
+  for (const ctx of [RED_MAC, FRIEND_MAC]) for (const id of ["ps-presence", "tips-show", "helper-remind", "island", "update-every"]) assert.ok(visible(id, ctx), `${id} on a Mac`);
+  for (const id of ["ps-presence", "tips-show", "update-every"]) assert.ok(visible(id, FRIEND_WEB), `${id} on the website`);
+  for (const id of ["tips-show", "phone-screen-time", "update-every"]) assert.ok(visible(id, FRIEND_GOS), `${id} on the phone`);
   assert.equal(I.settingById("helper-remind")!.parent, "security");
 });
 console.log(`\noffswitches: ${n} checks passed`);

@@ -19,7 +19,7 @@ ok("V1.49 not in yet: one stage at a time, joining unless something says otherwi
   for (const st of ["joining", "left", "removed", "full", "error"] as const) assert.equal(S.notInStage({ in: false, auto: { stage: st } }), st);
 });
 ok("Squad settings: six simple pages in a fixed order (V1.62 adds Link my AI)", () => {
-  assert.deepEqual(S.SETTINGS_PAGES.map((p) => p.id), ["share", "name", "notify", "looks", "ai", "leave"]);
+  assert.deepEqual(S.SETTINGS_PAGES.map((p) => p.id), ["share", "name", "notify", "looks", "ai"]);
   assert.equal(S.isSettingsPage("looks"), true);
   assert.equal(S.isSettingsPage("create"), false);
 });

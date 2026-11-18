@@ -42,6 +42,16 @@ function cleanP1Rows(v: unknown): SquadView["p1"] {
     return { id: str(x.id, 60), member: str(x.member, 40), t: str(x.t, 300), s: str(x.s, 40), x: x.x === true, ...(typeof x.xa === "string" ? { xa: x.xa.slice(0, 40) } : {}) }; })
     .filter((r) => r.id && r.member && r.t && Number.isFinite(Date.parse(r.s)));
 }
+/** PS 1.68 the Squad Priority 1 board (core/squadp1board.ts P1Person), shape and length checked. */
+function cleanP1Board(v: unknown): SquadView["p1b"] {
+  if (!Array.isArray(v)) return undefined;
+  const n = (x: unknown) => (typeof x === "number" && Number.isFinite(x) && x >= 0 ? Math.min(1e13, Math.round(x)) : 0);
+  return arr(v, 40).map((p) => { const x = p as Record<string, unknown>; const s = (x.stats ?? {}) as Record<string, unknown>;
+    const rate = typeof s.rate === "number" && s.rate >= 0 && s.rate <= 100 ? Math.round(s.rate) : null;
+    return { member: str(x.member, 40), name: str(x.name, 60), me: x.me === true, place: Number.isInteger(x.place) && (x.place as number) > 0 ? Math.min(999, x.place as number) : null,
+      rows: (cleanP1Rows(arr(x.rows, 12)) ?? []).slice(0, 12), stats: { hits: n(s.hits), total: n(s.total), rate, streak: n(s.streak), from: n(s.from) } }; })
+    .filter((p) => p.member);
+}
 /** From the state PS hands the Tab list (null while locked). Checked lightly: shapes and lengths only. */
 export function setSquadMirror(v: unknown) {
   const o = (v && typeof v === "object" ? v : null) as Record<string, unknown> | null;
@@ -58,6 +68,8 @@ export function setSquadMirror(v: unknown) {
     friend: cleanFriendView(o.friend),
     ai: cleanAiView(o.ai),
     p1: cleanP1Rows(o.p1),
+    p1b: cleanP1Board(o.p1b),
+    p1since: typeof o.p1since === "string" && Number.isFinite(Date.parse(o.p1since)) ? o.p1since.slice(0, 40) : undefined,
   };
   if (o) mirrorSet = true;
   if (JSON.stringify(next) === JSON.stringify(mirror)) return;

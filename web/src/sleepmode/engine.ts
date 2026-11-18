@@ -19,7 +19,7 @@ import { fitnessNow, savePrefs } from "../fitness/store";
 import { saveSleep, sleepNow } from "../fitness/sleep-store";
 import { usual, type SleepLog } from "../core/sleep";
 import { breakOpen, breakStage, buildPlan, moreOpen, pauseOpen, propose, resumeOpen, sleepModeOf, timeoutOpen, timerOpen, todayTasks, upOpen, wakeCard, wokeElsewhere,
-  type SleepPlan } from "../core/sleepmode";
+  type SleepPlan, unsavedLog } from "../core/sleepmode";
 import { okWakeIn, wakeInAt, type SleepTimer } from "../core/sleepwake";
 import type { OpenSleep } from "../core/fitness";
 import { onSleepSquad, sleepSquadNow } from "./squad";
@@ -167,6 +167,7 @@ export async function goToSleep(opt?: { wakeIn?: number | null }) {
 }
 async function recordAsleep(since: number) {
   if (live(openSleep())) return;
+  await logUnsaved(true);   // PS 1.68: last night, still waiting for its Save, goes into the Sleep log before this one starts
   const timer = pendingTimer && Date.parse(pendingTimer.at) > since ? pendingTimer : null;
   pendingTimer = null;
   await savePrefs({ sleepOpen: { at: new Date(since).toISOString(), tz: homeTz(), ...(timer ? { timer } : {}) } }).catch((e) => sleepLog(`went to sleep not saved (${errText(e)})`));
@@ -461,6 +462,24 @@ async function holdWakeLock() {
 function releaseWakeLock() { const l = lock; lock = null; if (l && !l.released) void l.release().catch(() => {}); if (st.wakeLock !== "none") set({ wakeLock: "off" }); }
 
 let started = false;
+/** PS 1.68 (core/sleepmode.ts unsavedLog): a woken sleep nobody saved or discarded is logged by itself. */
+let logging = false;
+async function logUnsaved(force = false) {
+  if (logging) return;
+  const o = openSleep();
+  if (!o?.woke) return;
+  const day = propose(o, Date.parse(o.woke))?.log?.day;
+  const log = unsavedLog(o, Date.now(), day ? sleepNow().days.get(day) : null, force);
+  if (!log && !(force && o.woke)) return;
+  logging = true;
+  try {
+    if (log) await saveSleep(log);
+    await savePrefs({ sleepOpen: null });
+    if (st.woke) set({ woke: null });
+    sleepLog(log ? "an unanswered sleep was logged by itself" : "an unanswered sleep could not be logged (a hand typed one stays)");
+  } catch (e) { sleepLog(`unanswered sleep not logged (${errText(e)})`); }
+  finally { logging = false; }
+}
 export function startSleepEngine() {
   if (started) return;
   if (WHERE === "mac" && !psInOverlay()) return;   // PS: only the Tab list page runs it (the main page never draws the button)
@@ -474,7 +493,7 @@ export function startSleepEngine() {
     // The browser drops the wake lock when the page is hidden; it is asked for again when it comes back.
     document.addEventListener("visibilitychange", () => { if (st.here && document.visibilityState === "visible" && (!lock || lock.released)) void holdWakeLock(); });
   }
-  vaultStore.subscribe(() => { refreshPlan(); flushWoke(); flushBreak(); flushWakeIn(); endIfWokeElsewhere(); sendAlarms(); });
+  vaultStore.subscribe(() => { refreshPlan(); flushWoke(); flushBreak(); flushWakeIn(); endIfWokeElsewhere(); sendAlarms(); void logUnsaved(); });
   lpInterval("alarms", sendAlarms, 30_000);   // PS 1.65: Sleep mode alarms ring in Low power mode while Keep reminders ringing is on
   sendAlarms();
   // V1.43 breaks: checked every 10 seconds; a browser also notes the last touch or key (the last moment of activity).

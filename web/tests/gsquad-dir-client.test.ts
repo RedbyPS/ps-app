@@ -142,7 +142,7 @@ ok("screen: an error says so with Try again; joining, left, removed and full eac
   assert.match(s, /Could not reach \{THE_SQUAD\}/);
   assert.match(s, />Try again</);
   assert.match(s, /Getting you into \{THE_SQUAD\}/);
-  assert.match(s, />Join again</);
+  assert.doesNotMatch(s, />Join again</, "PS 1.68 one squad for everyone: no Join again");
   assert.ok(!/opens soon|ClaimCard/.test(s));
   assert.ok(!/[\u2013\u2014]/.test(s), "no em or en dashes");
 });

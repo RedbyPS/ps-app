@@ -118,6 +118,16 @@ export const INTROS: IntroDef[] = [
     choice: true,
   },
   {
+    // PS 1.68 Squad Priority 1 board (core/squadp1board.ts, Jan 18 Nov 2026): one Ok ends it for good (a `choice` with one button:
+    // nothing opens, nothing takes focus). Only for people in the squad with the feature on (views/FeatureIntro.tsx DONE_PROBES).
+    id: "squad-p1-board-168",
+    headline: "Squad Priority 1 is now a leaderboard",
+    ask: "One row per person: time left, hit rate and streak. Hover any number to see what it means.",
+    show: "Ok",
+    mark: "spark",
+    choice: true,
+  },
+  {
     // PS 1.64 (the developer approved these exact words, 16 Nov 2026): G Squad replies and the members list. One Ok ends it for good
     // (a `choice` with one button: nothing opens). Only for people in a squad (views/FeatureIntro.tsx DONE_PROBES).
     id: "gsquad-reply-164",
