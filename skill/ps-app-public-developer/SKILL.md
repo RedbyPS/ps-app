@@ -155,8 +155,10 @@ Every change is one of two kinds. Ask the person which, before you start, if the
 
 **Releasing to everyone (V1.62).** Friends can finish a release themselves, without the owner. This works once
 the owner has switched G Squad builds on (`gh variable get GSQUAD_RELEASES --repo RedbyPS/ps-app` prints `on`) and
-given the person the Maintain role. Then they merge the update's pull requests and make the shared claim
-(`references/layers-and-versions.md`). GitHub checks, builds, signs and publishes the release to every friend's PS.
+said that this person may release (Write access is enough, no Maintain role needed). Then their update's pull
+requests merge, one release pull request sets the version and the What's new words, and they make the shared claim.
+The exact steps, with the traps found on the first friend release: `references/layers-and-versions.md`, "A friend's
+shared release, step by step". GitHub checks, builds, signs and publishes the release to every friend's PS.
 The signing keys exist only as GitHub secrets, never on anyone's machine.
 
 Release rules (every time):
@@ -212,8 +214,9 @@ These apply to every AI working on PS through this skill. If a request breaks on
    `v<version>` to RedbyPS/ps-app. Never make a `v*` tag by hand, never move or delete one, never `--force`. A
    claim is public and permanent, so it needs the person's yes like any push. Release names are never used twice
    and are never "Truth". A pull request never edits `web/ps-version.json`, `web/ps-notes.json` or
-   `web/ps-public-approvals.json`: the What's new words in a G Squad build are only words the owner approved, so
-   suggest your line in the pull request text instead.
+   `web/ps-public-approvals.json`, with ONE exception: the release pull request of a person the owner lets release,
+   which edits exactly those three files and nothing else (`references/layers-and-versions.md`). Otherwise suggest
+   your What's new line in the pull request text.
 7. **The 1Password and Signal rule. Two separate rules, one per build, never one shared switch:**
    - In the **PUBLIC / G Squad build**, the Tab overlay works over 1Password and Signal, and this must be proven
      on the real 1Password and Signal apps, not only in tests. The island shows over them too.
