@@ -225,6 +225,17 @@ export const CONTROLS: Controls = {
     const mine = cleanSwitches(settingsData(v).squadFeatures);
     return <SetRow e={e} right={<OnOff label={e.name} on={feature("voice-capture")} ready={v.status === "unlocked"} set={(on) => save({ squadFeatures: { ...mine, "voice-capture": on } })} />} />;
   },
+  // PS 1.68 streaks and private mode ending with the meeting: the same switches as in From the squad (squadFeatures).
+  "task-streaks": function TaskStreaksRow({ e }) {
+    const v = useVault();
+    const mine = cleanSwitches(settingsData(v).squadFeatures);
+    return <SetRow e={e} right={<OnOff label={e.name} on={feature("task-streaks")} ready={v.status === "unlocked"} set={(on) => save({ squadFeatures: { ...mine, "task-streaks": on } })} />} />;
+  },
+  "private-ends": function PrivateEndsRow({ e }) {
+    const v = useVault();
+    const mine = cleanSwitches(settingsData(v).squadFeatures);
+    return <SetRow e={e} right={<OnOff label={e.name} on={feature("private-ends")} ready={v.status === "unlocked"} set={(on) => save({ squadFeatures: { ...mine, "private-ends": on } })} />} />;
+  },
   "nl-remind": function NlRemind({ e }) {
     const v = useVault();
     return <SetRow e={e} right={<OnOff label={e.name} on={settingsData(v).tmNlRemind !== false} ready={v.status === "unlocked"} set={(on) => save({ tmNlRemind: on })} />} />;

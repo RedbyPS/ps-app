@@ -595,7 +595,7 @@ export async function toggleTodo(id: string) {
   // are done with it; unticking it unticks the ones it ticked.
   if (d) {
     const p = tickPatch(d.data, now());
-    const subs = tickParentSubs(d.data.subtasks, !!p.done, now());
+    const subs = tickParentSubs(d.data.subtasks, !!p.done, now(), d.data.type === "daily");   // PS 1.68: each mini task's streak too
     await updateTodo(id, subs ? { ...p, subtasks: subs } : p);
     // Time spent (core/timesave.ts): a tick ends the task's clock and keeps what it took; an untick takes that back. Never awaited.
     if (p.done) void clockFinish(id); else void clockUntick(id);
@@ -658,7 +658,7 @@ export function subtaskOp(id: string, op: SubOp): Promise<void> {
   const run = async () => {
     const d = doc<Todo>(id);
     if (!d) return;
-    await put<Todo>("todo", { ...d.data, subtasks: applySubOp(d.data.subtasks, op, now()) }, { id, ws: null });
+    await put<Todo>("todo", { ...d.data, subtasks: applySubOp(d.data.subtasks, op, now(), d.data.type === "daily") }, { id, ws: null });
   };
   const p = subLane.then(run, run);
   subLane = p.catch(() => {});

@@ -174,7 +174,10 @@ export function fakeDocs(): Doc[] {
   for (const h of toHours(fakeTimeline(), "mac", lineAt).map((x) => ({ ...x, upTo: Math.min(x.upTo, Date.now() - 6 * 60_000) }))) push("stline", null, h);
   for (const h of toHours(fakePhoneTimeline(), "gos", lineAt)) push("stline", null, h);
   // Fictional repeats and streaks, so the gold numbers and repeat tags show in dev.
-  const stretch = push("todo", null, { title: "Stretch for ten minutes", type: "daily", done: false, order: 3, createdAt: d(-9), source: "manual", streak: 6, bestStreak: 6 } satisfies Todo);
+  const stretch = push("todo", null, { title: "Stretch for ten minutes", type: "daily", done: false, order: 3, createdAt: d(-9), source: "manual", streak: 6, bestStreak: 6,
+    // PS 1.68: mini tasks with their own streaks (the flame on each one from 2 in a row).
+    subtasks: [{ id: "st1", title: "Neck and shoulders", done: true, doneAt: d(0), streak: 7, streakTicked: true, bestStreak: 7 },
+      { id: "st2", title: "Hamstrings", done: false, streak: 6, bestStreak: 11 }, { id: "st3", title: "Hips", done: false, streak: 1, bestStreak: 3 }] } satisfies Todo);
   // V1.55: an Annoying 15 min reminder on that task, every day 18:00 to 21:00 (the bell on its row).
   push("remind", null, { v: 1, at: 1, state: {}, gone: {}, list: [{ id: "devtask1", on: true, label: "", text: "", at: "18:00", until: "21:00", days: [0, 1, 2, 3, 4, 5, 6], tz: "",
     snooze: 15, later: "", yes: "Done", word: "", click: true, bg: "#0f1b2d", accent: "#3b82f6", sound: "none", vol: 0.8, edited: 1, task: stretch },

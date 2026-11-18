@@ -261,6 +261,17 @@ export const INTROS: IntroDef[] = [
     mark: "spark",
     choice: true,
   },
+  {
+    // PS 1.68 (Jan, 18 Nov 2026: "every day you click on it and you complete it it adds a streak"): streaks on repeating tasks and
+    // their mini tasks (core/repeat.ts streakWords, core/subtasks.ts). One Ok ends it for good. Only while the feature is on
+    // (views/FeatureIntro.tsx DONE_PROBES). Words wait for the owner's approval.
+    id: "task-streaks-168",
+    headline: "Streaks on repeating tasks",
+    ask: "Tick a repeating task, or each mini task under it, and a small flame counts how many times in a row you did it.",
+    show: "Ok",
+    mark: "spark",
+    choice: true,
+  },
 ];
 
 /** The widths of the intro card and the guide grown out of the island (points). */
