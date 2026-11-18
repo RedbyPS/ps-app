@@ -251,9 +251,14 @@ new words for that number from `web/ps-notes.json`, but only if `web/ps-public-a
   (`git reset --soft upstream/main`, one commit, `git push --force-with-lease=refs/heads/<branch>:<old sha>`).
 - **Never put the person's own city, time zone, name or company in tests or comments.** The owner's private word list
   has them (1.68 was blocked by a test that used the person's home time zone). Use a neutral zone with the same offset.
-- **The keyed jobs check out the CLAIMED commit**, scripts included. A fix to the release scripts on `main` does not
-  help a rebuild of a tag claimed before the fix: that rebuild runs the old scripts. After such a fix, release the
-  same code under the next number instead of rebuilding the old tag (or the owner changes the workflow).
+- **The keyed jobs check out the CLAIMED commit**, but since 1.68 (pull request 73) sign mac takes its signing script
+  from `main`. So when the owner fixes the signing script, the same tag can be built again: the owner (or anyone with
+  the rights) starts the "G Squad release" workflow by hand (workflow_dispatch) for that version. Do not claim a new
+  number for it. Any other release script still comes from the claimed commit: a fix there needs the next number,
+  unless the owner moves that script to `main` the same way.
+- **How 1.68 really went:** claimed by the friend, sign mac failed (relative output path), the owner's AI fixed the
+  two protected files (pull request 73) and started the run again by hand, and it published. A friend with Write
+  access needs the owner only when a protected release file breaks.
 - **Read the failed step to the end.** 1.68's sign mac got past signing (the keychain fix worked) and failed one
   step later, on a relative path given to `node -e require(...)`. Each failure may be a new one: send the owner's AI
   the exact error line and the cause, not only "sign mac failed".
