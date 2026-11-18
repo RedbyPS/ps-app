@@ -32,6 +32,7 @@ import { fitIslandPart } from "./fitness/fitisland";
 import { welcomeDoneIds, welcomeIsland, type WelcomeIn } from "./core/welcomeback";
 import { pendingSummary, summaryPrefs } from "./core/workoutsummary";
 import { feature } from "./core/features";
+import { privatePatch } from "./core/privateends";
 import type { FitWorkout } from "./core/fitness";
 import { workoutPatch } from "./fitness/store";
 import { asleepNames, lowPower } from "./core/lowpower.ts";
@@ -173,7 +174,7 @@ export function islandMessage(m: { type?: string; action?: string; id?: string }
   // PS 1.65 Low power mode: the leaf card's Wake everything.
   if (m.action === "lowPowerWake") { lowPower.wakeAll(); return true; }
   if (m.action === "privateOff") {
-    if (canPrivateOff(shown, settingsData(s).privateMode)) void saveSettings({ privateMode: false }).then(() => sync(true));
+    if (canPrivateOff(shown, settingsData(s).privateMode)) void saveSettings(privatePatch(false, Date.now())).then(() => sync(true));
     return true;
   }
   if (typeof m.id !== "string") return true;

@@ -41,6 +41,7 @@ import { cleanCrops } from "./core/bgcrop";
 import { rainAmount, rainKind } from "./core/rain";
 import { nbDesign } from "./core/notebook";
 import { CAMPAIGNS_ON } from "./core/features";
+import { privatePatch } from "./core/privateends";
 import { cleanSwitches } from "./core/features";   // V1.58 "From the squad" switches (cleanLooks)
 import { startFeatureSync } from "./featuresync";
 import { liveForMirror, liveStore, refreshCampaignsLive, setLiveAsker, setLiveMirror } from "./core/campaignsLive";
@@ -80,7 +81,8 @@ export function cleanLooks(p: Record<string, unknown>): Partial<Settings> {
   Object.assign(o, cleanAppearance(p));                                                  // the PS look, accent, density, text, font (core/looks.ts)
   if (typeof p.tmDailyFirst === "boolean") o.tmDailyFirst = p.tmDailyFirst;
   if (Array.isArray(p.tmSecOrder)) o.tmSecOrder = cleanSecOrder(p.tmSecOrder);
-  if (typeof p.privateMode === "boolean") o.privateMode = p.privateMode;
+  // PS 1.68: when it came on, stamped here with this page's clock (core/privateends.ts: it ends with the meeting).
+  if (typeof p.privateMode === "boolean") Object.assign(o, privatePatch(p.privateMode, Date.now()));
   if (p.island && typeof p.island === "object") o.island = islandPrefs(p.island);
   // Pomodoro (core/pomodoro.ts, V1.58): its Settings section; switched off, a timer that is running stops too.
   if (p.pomodoro && typeof p.pomodoro === "object") { o.pomodoro = pomoPrefs(p.pomodoro); if (!o.pomodoro.on) o.pomoRun = null; }

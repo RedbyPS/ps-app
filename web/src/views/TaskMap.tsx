@@ -35,6 +35,7 @@ import { useVoiceCapture, VoiceMic, VoicePanel } from "./VoiceCapture";
 import type { ReviewRow } from "../core/voicecapture";
 import { nlAddOpts, nlRule } from "../core/nldates";
 import { addDraftReminder, addTimeReminder, type TimeRemind } from "../core/nlremind";
+import { privatePatch } from "../core/privateends";
 import type { Reminder } from "../core/remind";
 import { addTodo, approveSuggestion, awareDone, awareToList, awareUndone, suggestionToAware, suggestionToDimx, resetTodos, deleteTodo, noteDimxMove, dismissSuggestion, saveSettings, setReplyHandled, setTodoOrder, setWorkingOn, subtaskOp, toggleTodo, setTodoDone, setTodosDone, clearTodos, reviveTodos, buryTodos, restoreTodo, updateTodo, moveTasks, ungroupTasks, setDnd, setJournal } from "../core/actions";
 import { accepts, cleanGroups, dropAbovePrioIsP1, groupKey, hitSection, mergeOrder, newGroupId, sectionOrder, tabLists, type TabLists, type TaskMove } from "../core/groups";
@@ -4134,7 +4135,7 @@ function PrivateMask({ on }: { on: boolean }) {
     <button type="button" className={`tm-mask${on ? " on" : ""}`} role="switch" aria-checked={on}
       aria-label={on ? "Private mode is on. Click to turn it off" : "Private mode is off. Click to turn it on"}
       title={on ? "Private mode is on: cards are small pills with no sound" : "Private mode: cards become small pills with no sound, the island hides names"}
-      onClick={() => { sfx.click(); void taskMapActions.looks({ privateMode: !on }); }}>
+      onClick={() => { sfx.click(); void taskMapActions.looks(privatePatch(!on, Date.now())); }}>
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
         <path d="M12 2.6c-4.3 0-7.4 2.9-7.4 7.5 0 5.4 3.3 11.3 7.4 11.3s7.4-5.9 7.4-11.3c0-4.6-3.1-7.5-7.4-7.5z" />
         <path d="M6.9 8.6c1-.9 2.6-1 3.7-.1" /><path d="M13.4 8.5c1.1-.9 2.7-.8 3.7.1" />
