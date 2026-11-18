@@ -14,6 +14,9 @@ import { notInStage, THE_SQUAD } from "../squad/single";
 import { NO_NAME } from "../core/squadauto";
 import { NO_NAME_ASK } from "../core/squaddir";
 import { fmtDate } from "../ui/kit";
+import { feature } from "../core/features";
+import { P1_FEATURE, cleanStart, p1State } from "../core/squadp1";
+import { BOARD_FEATURE, leftTone, leftWords } from "../core/squadp1board";
 import { sfx } from "../ui/sfx";
 import { useChat } from "../squad/chatmirror";
 import { composeStore } from "../squad/chatopen";
@@ -67,7 +70,7 @@ export function GSquadButton() {
   useEffect(() => { if (!shown) setPop(false); }, [shown]);
   const n = v.in ? v.count : null;
   const live = (n ?? 0) > 0;
-  const outLine = v.in ? "" : v.auto?.stage === "left" ? "You left The G Squad" : v.auto?.stage === "removed" || v.auto?.stage === "off" ? "Not in The G Squad" : NO_SQUAD;
+  const outLine = v.in ? "" : v.auto?.stage === "removed" ? "Not in The G Squad" : NO_SQUAD;
   return (
     <span className="gs-wrap">
       <button ref={btn} type="button" className={`gs-btn${open ? " open" : ""}${live ? " live" : ""}${v.in ? "" : " gs-none"}`} aria-haspopup="dialog" aria-expanded={open}
@@ -168,18 +171,6 @@ function JoinScreen({ v }: { v: SquadView }) {
           {v.auto?.code && <p className="gs-code">Check code <b className="num">{v.auto.code}</b><em>The admin sees the same code on your request.</em></p>}
         </div>
       )}
-      {stage === "left" && (
-        <div className="gs-card">
-          <span className="gs-tt">You left {THE_SQUAD}<em>PS app does not put you back by itself.</em></span>
-          <button type="button" className="gs-go big" onClick={again}>Join again</button>
-        </div>
-      )}
-      {stage === "off" && (
-        <div className="gs-card">
-          <span className="gs-tt">You are not in {THE_SQUAD}<em>Joining by itself is off in Settings. Join switches it back on.</em></span>
-          <button type="button" className="gs-go big" onClick={again}>Join</button>
-        </div>
-      )}
       {stage === "removed" && (
         <div className="gs-card bad" role="status">
           <span className="gs-tt">You are not in {THE_SQUAD}<em>The admin took you out or did not let you in. A friend's Add friend code still lets you in.</em></span>
@@ -211,7 +202,10 @@ function TasksTab({ view, op, share }: SquadTabProps) {
     for (const l of m.values()) l.sort((a, b) => Number(a.x) - Number(b.x) || (a.p ?? 99) - (b.p ?? 99));
     return view.members.filter((x) => m.has(x.id)).map((x) => ({ who: x, list: m.get(x.id)! }));
   }, [view.tasks, view.members]);
-  const [show, setShow] = useState<"done" | "open" | "all">("done");   // PS 1.65 (gsquad-v3)
+  // PS 1.68 (Jan 18 Nov: "you see what the person did"): opens on All, not Done.
+  const [show, setShow] = useState<"done" | "open" | "all">("all");   // PS 1.65 (gsquad-v3)
+  const now = useTasksNow();
+  const left = feature(P1_FEATURE) && feature(BOARD_FEATURE);
   const v3 = v3On();
   const toMe = view.hands.filter((h) => h.to === view.me && h.state === "open");
   const fromMe = view.hands.filter((h) => h.from === view.me);
@@ -253,6 +247,7 @@ function TasksTab({ view, op, share }: SquadTabProps) {
                     <span className="gst-t">{t.t}<span className="gs-sr"> {t.x ? "done" : "open"}</span></span>
                     {(t.e || t.p) && <span className={`gs-p${t.p === 1 ? " p1" : ""}`}>{t.e ? "Daily" : `P${t.p}`}</span>}
                     {t.d && !t.x && <span className="gs-due">{fmtDate(t.d)}</span>}
+                    {left && <TimeLeft t={t} now={now} />}
                   </li>
                 ))}
               </ul>}
@@ -268,6 +263,7 @@ function TasksTab({ view, op, share }: SquadTabProps) {
                 <span className={`gs-p${t.p === 1 ? " p1" : ""}`}>{t.e ? "Daily" : t.p ? `P${t.p}` : ""}</span>
                 <span className="gs-tt">{t.t}</span>
                 {t.d && !t.x && <span className="gs-due">{fmtDate(t.d)}</span>}
+                {left && <TimeLeft t={t} now={now} />}
               </li>
             ))}
           </ul>
@@ -288,6 +284,21 @@ function TasksTab({ view, op, share }: SquadTabProps) {
       <p className="gs-foot">Right click one of your tasks to share it with G Squad. Once shared, you can hand it to someone or hide a client's name.</p>
     </div>
   );
+}
+/** PS 1.68: the time left of an open Priority 1 (its 24 hours), coloured by core/squadp1board.ts leftTone. */
+function TimeLeft({ t, now }: { t: SquadTask; now: number }) {
+  if (t.x || t.p !== 1 || !t.s) return null;
+  const s = cleanStart(t.s, now);
+  if (!s) return null;
+  const st = p1State({ s, x: false }, now);
+  return st.kind === "open"
+    ? <span className={`gs-left ${leftTone(st.left)}`} data-tip={leftWords(st.left)} data-tip-line="Time left of the 24 hours this Priority 1 task has">{leftWords(st.left)}</span>
+    : <span className="gs-left bad" data-tip="Missed" data-tip-line="Its 24 hours ran out">Missed</span>;
+}
+function useTasksNow(every = 30_000): number {
+  const [n, setN] = useState(() => Date.now());
+  useEffect(() => { const t = window.setInterval(() => setN(Date.now()), every); return () => window.clearInterval(t); }, [every]);
+  return n;
 }
 function HandRow({ h, who, op }: { h: SquadHand; who: string; op: SquadTabProps["op"] }) {
   return (

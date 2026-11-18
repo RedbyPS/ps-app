@@ -15,3 +15,43 @@
 .sqp1-row.missed .sqp1-t { text-decoration: line-through; text-decoration-color: color-mix(in srgb, var(--k-bad-t, #FF8F8A) 60%, transparent); }
 .sqp1-row.done .sqp1-s { color: var(--k-ok, #4CC38A); }
 .sqp1-row.done .sqp1-t { opacity: .6; }
+/* The time left on the 1.63 rows too (PS 1.68): green, amber under 8 hours, red only in the last 2 hours. */
+.sqp1-row.open .sqp1-s.ok, .sqb-st.ok { color: var(--k-ok, #4CC38A); }
+.sqp1-row.open .sqp1-s.warn, .sqb-st.warn { color: var(--k-warn, #F2B544); }
+.sqp1-row.open .sqp1-s.bad, .sqb-st.bad { color: var(--k-bad-t, #FF8F8A); }
+.sqb-st.done { color: var(--k-ok, #4CC38A); }
+
+/* PS 1.68 Squad Priority 1 board (views/SquadP1Panel.tsx Board): one thin row per person, ranked. */
+.sqb .sqb-list { gap: 1px; max-height: none; overflow: visible; }
+.sqb-list > li { border-radius: calc(9px * var(--k-rd, 1)); }
+.sqb-list > li.open { background: color-mix(in srgb, var(--k-fg, #FFFFFF) 5%, transparent); }
+.sqb-row { width: 100%; display: grid; grid-template-columns: 12px 18px minmax(0, 1fr) auto 30px 26px; align-items: center; gap: calc(6px * var(--k-dn, 1));
+  text-align: left; border: 0; background: transparent; color: inherit; font: inherit; padding: calc(4px * var(--k-dn, 1)) calc(4px * var(--k-dn, 1)); margin: 0 -4px; width: calc(100% + 8px);
+  border-radius: calc(9px * var(--k-rd, 1)); cursor: pointer; font-variant-numeric: tabular-nums; }
+.sqb-row:hover, .sqb-row:focus-visible { background: color-mix(in srgb, var(--k-fg, #FFFFFF) 9%, transparent); outline: none; }
+.sqb-pl { font-size: calc(10.5px * var(--k-fs, 1)); font-weight: 800; text-align: center; color: color-mix(in srgb, var(--k-fg, #FFFFFF) min(100%, calc(48% * var(--k-ia, 1))), transparent); }
+.sqb-list > li:first-child .sqb-pl:not(:empty) { color: var(--k-warn, #F2B544); }
+.sqb-who { font-size: calc(12.5px * var(--k-fs, 1)); font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sqb-row.me .sqb-who { color: color-mix(in srgb, var(--k-fg, #FFFFFF) min(100%, calc(80% * var(--k-ia, 1))), transparent); }
+.sqb-lead { display: inline-flex; justify-content: flex-end; min-width: 0; }
+.sqb-st { font-size: calc(11px * var(--k-fs, 1)); font-weight: 750; white-space: nowrap; display: inline-flex; align-items: center; gap: 2px; }
+.sqb-more { font-style: normal; font-weight: 700; opacity: .6; margin-left: 2px; }
+.sqb-rate { font-size: calc(11px * var(--k-fs, 1)); font-weight: 750; text-align: right; color: color-mix(in srgb, var(--k-fg, #FFFFFF) min(100%, calc(82% * var(--k-ia, 1))), transparent); }
+.sqb-streak { font-size: calc(11px * var(--k-fs, 1)); font-weight: 750; display: inline-flex; align-items: center; justify-content: flex-end; gap: 2px; color: var(--k-warn, #F2B544); }
+.sqb-streak.none { color: color-mix(in srgb, var(--k-fg, #FFFFFF) min(100%, calc(30% * var(--k-ia, 1))), transparent); }
+.sqb .sqb-tasks { list-style: none; margin: 0; padding: 0 0 calc(4px * var(--k-dn, 1)) calc(34px * var(--k-dn, 1)); display: grid; gap: 0; animation: sqb-in .22s cubic-bezier(.2, .9, .3, 1.2) both; transform-origin: top; }
+.sqb-task { width: 100%; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: center; border: 0; background: transparent; color: inherit; font: inherit; text-align: left;
+  padding: calc(3px * var(--k-dn, 1)) calc(4px * var(--k-dn, 1)); border-radius: calc(7px * var(--k-rd, 1)); cursor: pointer; }
+.sqb-task:hover, .sqb-task:focus-visible { background: color-mix(in srgb, var(--k-fg, #FFFFFF) 8%, transparent); outline: none; }
+.sqb-tt { font-size: calc(12px * var(--k-fs, 1)); font-weight: 550; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: color-mix(in srgb, var(--k-fg, #FFFFFF) min(100%, calc(76% * var(--k-ia, 1))), transparent); }
+.sqb-tt.done { opacity: .6; }
+.sqb-none { font-size: calc(11.5px * var(--k-fs, 1)); padding: 2px 4px; color: color-mix(in srgb, var(--k-fg, #FFFFFF) 50%, transparent); }
+.sqb-all { justify-self: center; border: 0; background: transparent; color: color-mix(in srgb, var(--k-fg, #FFFFFF) min(100%, calc(55% * var(--k-ia, 1))), transparent); font: inherit;
+  font-size: calc(11px * var(--k-fs, 1)); font-weight: 700; padding: 2px 10px; border-radius: 999px; cursor: pointer; }
+.sqb-all:hover, .sqb-all:focus-visible { color: var(--k-fg, #FFFFFF); background: color-mix(in srgb, var(--k-fg, #FFFFFF) 8%, transparent); outline: none; }
+.sqb-grip { justify-self: center; width: 44px; height: 10px; border: 0; padding: 0; background: transparent; cursor: ns-resize; display: grid; place-items: center; margin: -2px 0 -4px; touch-action: none; }
+.sqb-grip i { width: 26px; height: 3px; border-radius: 3px; background: color-mix(in srgb, var(--k-fg, #FFFFFF) 18%, transparent); transition: width .18s, background .18s; }
+.sqb-grip:hover i, .sqb-grip:focus-visible i, .sqb-grip.on i { width: 34px; background: color-mix(in srgb, var(--k-fg, #FFFFFF) 45%, transparent); }
+.sqb-grip:focus-visible { outline: none; }
+@keyframes sqb-in { 0% { opacity: 0; transform: scaleY(.92); } 100% { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .sqb .sqb-tasks { animation: none; } .sqb-grip i { transition: none; } }

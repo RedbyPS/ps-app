@@ -139,7 +139,10 @@ async function openRow(r: SquadRec, row: RowIn): Promise<unknown | null> {
 }
 async function pull() {
   const r = rec, w = who();
-  if (!r || !w || pulling || !navigator.onLine) return;
+  if (!r || !w || !navigator.onLine) return;
+  // PS 1.68: a pull asked for while one runs (Fitness opened, or an exercise picked, during a pull) runs right after it,
+  // instead of being dropped until the next 45 second pull.
+  if (pulling) { pullAgain = true; return; }
   pulling = true;
   try {
     const key = exKeyOn;
@@ -148,26 +151,32 @@ async function pull() {
     const cards = !ins.length || ins.some((id) => !names.has(id));
     const p = await gymCall<PullOut>(w, "gym_pull", { r: since.r, p: since.p, ...(cards ? { cards: true } : {}), ...(key ? { tags: await tagsFor(r, key), x: ex!.since } : {}) });
     ins = p.members.map((m) => m.id);
-    for (const m of p.members) { if (!m.card_ct) continue; const c = await openCard(r, m.id, m.card_ct, m.card_gen); if (c) names.set(m.id, c.n); }
+    // PS 1.68 (Jan 18 Nov: "Fitness takes long to load"): every sealed card, row and post of a pull is opened at once, not one
+    // after another (each open is a separate trip to the browser's crypto), then applied in the hub's order, exactly as before.
+    const cardsOpen = await Promise.all(p.members.map((m) => (m.card_ct ? openCard(r, m.id, m.card_ct, m.card_gen).catch(() => null) : Promise.resolve(null))));
+    p.members.forEach((m, i) => { const c = cardsOpen[i]; if (c) names.set(m.id, c.n); });
     if (ins.some((id) => !names.has(id)) && !cards) window.setTimeout(() => void pull(), 1_000);   // someone new: their name next
-    for (const row of p.rows) {
+    const rowsOpen = await Promise.all(p.rows.map((row) => (row.deleted ? Promise.resolve(null) : openRow(r, row))));
+    for (const [i, row] of p.rows.entries()) {
       const map = row.part === "sleep" ? sleeps : sums;
       if (row.deleted) { map.set(row.member_id, null); continue; }
-      const v = await openRow(r, row);
+      const v = rowsOpen[i];
       if (v == null) continue;
       if (row.part === "sum") sums.set(row.member_id, cleanSum(v));
       else if (row.part === "sleep") sleeps.set(row.member_id, cleanSleepCard(v));
     }
-    for (const x of p.posts) {
+    const postsOpen = await Promise.all(p.posts.map((x) => (x.deleted ? Promise.resolve(null) : openGymPost(r, x))));
+    for (const [i, x] of p.posts.entries()) {
       if (x.deleted) { posts.delete(x.id); continue; }
-      const post = await openGymPost(r, x);
+      const post = postsOpen[i];
       if (post === undefined) { missingKey = true; continue; }
       if (post) posts.set(x.id, { id: x.id, by: x.member_id, at: x.updated_at, post });
     }
     if (key && ex) {
-      for (const row of p.ex) {
+      const exOpen = await Promise.all(p.ex.map((row) => (row.deleted ? Promise.resolve(null) : openRow(r, row))));
+      for (const [i, row] of p.ex.entries()) {
         if (row.deleted) { ex.rows.delete(row.id); continue; }
-        const v = cleanEx(await openRow(r, row));
+        const v = cleanEx(exOpen[i]);
         if (v && v.m === key) ex.rows.set(row.id, { member: row.member_id, ex: v }); else ex.rows.delete(row.id);
       }
       ex.since = new Date(Date.parse(p.now) - 5_000).toISOString();
@@ -178,8 +187,9 @@ async function pull() {
     rebuild();
   } catch (e) {
     if (!gone(e)) set({ error: say(e) });
-  } finally { pulling = false; }
+  } finally { pulling = false; if (pullAgain) { pullAgain = false; void pull(); } }
 }
+let pullAgain = false;
 function keepPulling() {
   if (pullTimer !== undefined) return;
   pullTimer = lpInterval("squad-gym", () => {

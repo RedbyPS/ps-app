@@ -111,8 +111,10 @@ apps. ("Sentry" in the code is PS's lock screen mode, not the error reporting se
 The G Squad is a shared space with other PS users. It runs on a second server of the developer's, the hub
 (`zxhvchchfrkfqxuyorqo.supabase.co`, code in `web/supabase/hub/`).
 
-- PS asks to join The G Squad by itself after you sign in, unless you switch "Join The G Squad automatically" off
-  (Settings, G Squad). You can leave at any time in G Squad's own settings.
+- Since 1.68 every PS user is in The G Squad: PS joins by itself after you sign in, and there is no Leave or Join. To be let
+  in at once, PS shows the hub your vault sign in once while you are joining: the hub asks the developer's vault server who
+  you are and that you own your vault, then forgets it (never stored or logged). What you share stays exactly as you set it,
+  each piece with its own switch in Squad settings, What you share.
 - What you share is sealed with a squad key that every member's device holds. **Every member can read it, and the developer
   is a member and the squad's admin.** So the developer can read anything you share there.
 - Shared by default: your first name, whether PS is running ("working"), money, your daily screen time total,
@@ -180,7 +182,7 @@ With Connect your own Supabase (Mac), your vault, the sign in log and all server
 The developer's. The developer cannot see your account at all. These still reach the developer's servers, unless you switch them off:
 
 - the "Last online" DNS check (switch: Network monitor, Off),
-- The G Squad hub (switch: "Join The G Squad automatically", Off, or leave the squad).
+- The G Squad hub (since 1.68 everyone is in it; switch off each piece you share in Squad settings, What you share).
 
 Also: if you let PS keep your Supabase access token (it asks), an update that changes the database setup applies
 the new setup to your project by itself, about 20 seconds after launch (`mac/Sources/ProjectSetup.swift`). Remove

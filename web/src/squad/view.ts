@@ -7,6 +7,7 @@ import type { TaskCopy } from "../core/squadshare.ts";
 import type { BoardView } from "../core/squadboard.ts";
 import type { AutoStage } from "../core/squadauto.ts";
 import type { P1Row } from "../core/squadp1.ts";
+import type { P1Person } from "../core/squadp1board.ts";
 
 export interface SquadMember {
   id: string; name: string; me: boolean; creator: boolean; working: boolean;
@@ -38,6 +39,8 @@ export interface SquadView {
   auto?: { stage: AutoStage; error?: string | null; /** V1.57 asked: the check code the admin sees too */ code?: string | null } | null;
   friend?: FriendView | null;    // V1.44 Add friend: the QR code's link (made fresh each time the page opens)
   ai?: AiView | null;            // V1.62 Link my AI (squad/devlink.ts): your linked AIs and the code just made
+  p1b?: P1Person[];              // PS 1.68 the Squad Priority 1 board, one row per person, ranked (core/squadp1board.ts), you included
+  p1since?: string;              // PS 1.68 when this PS started counting the board
   p1?: P1Row[];                  // PS 1.63 the squad's Priority 1 tasks for the side panel (core/squadp1.ts p1Rows), others only, never a key
 }
 /** V1.62 Link my AI. code: the one the Tab list just copied (it made it); state of registering it with the hub. */

@@ -23,11 +23,13 @@ import { THE_SQUAD } from "../core/squadauto";
 import { acceptFriend, callOffFriendCode, captureFriendLink, dropFriendLink, makeFriendCode, pendingFriendLink, type FriendCodeResult, type FriendResult } from "./addfriend";
 import { DIR_OPS, EMPTY_VIEW, type FriendView, type SquadOp, type SquadView } from "./view";
 import { dirCardMessage, dirOpen, dirPulse, dirSync, runDirOp, startDir } from "./direngine";
-import { autoAgain, autoGone, autoLeft, autoOpen, autoPulse, startAuto } from "./autoengine";
+import { autoAgain, autoGone, autoOpen, autoPulse, startAuto } from "./autoengine";
 import { hasCard } from "../core/squadauto";
 import { feature } from "../core/features";
 import { P1_FEATURE, p1Panel, p1Rows, type P1Row } from "../core/squadp1";
 import { startP1 } from "./p1engine";
+import { BOARD_FEATURE, cleanP1Log, observeP1, p1Board, type P1Log } from "../core/squadp1board";
+import { validTz } from "../core/tz";
 import { aiError, listAis, registerAiCode, unlinkAi } from "./devlink";
 import { cleanSeenRows, openPresence, sealPresence } from "../core/squadpresence";
 import { gymScreen, onGymScreen } from "./presence";
@@ -88,15 +90,48 @@ function set(p: Partial<SquadView>) { view = { ...view, ...p }; emit(); }
 function p1All(): P1Row[] {
   return feature(P1_FEATURE) && rec ? p1Rows([...tasks.values()], { me: rec.memberId, live: new Set([...members.values()].filter((m) => !m.left).map((m) => m.id)), now: Date.now() }) : [];
 }
+// PS 1.68 Squad Priority 1 board (core/squadp1board.ts): how each P1 this PS saw ended, kept on this device only (never synced,
+// never sent). The hub keeps a done copy for a day, so the hit rate and streak count from the day this PS started counting.
+const P1_LOG_STORE = "ps-gsquad-p1-log";
+let p1Log: P1Log | null | undefined;
+function readP1Log(): P1Log | null {
+  if (p1Log === undefined) { try { p1Log = cleanP1Log(JSON.parse(localStorage.getItem(P1_LOG_STORE) || "null")); } catch { p1Log = null; } }
+  return p1Log;
+}
+function writeP1Log(l: P1Log) { p1Log = l; try { localStorage.setItem(P1_LOG_STORE, JSON.stringify(l)); } catch { /* storage blocked: this run's copy */ } }
+const boardOn = () => feature(P1_FEATURE) && feature(BOARD_FEATURE) && !!rec;
+/** The log brought up to date with the copies held now. Only after the first pull (an empty map is not "everything vanished"). */
+function observeNow(): boolean {
+  if (!boardOn() || !view.loaded && tasks.size === 0) return false;
+  const r = observeP1(readP1Log(), [...tasks.values()].filter((t) => members.has(t.member)), Date.now());
+  if (r.changed) writeP1Log(r.log);
+  return r.changed;
+}
+function boardTz(): string {
+  const z = settings().tmHomeTz;
+  if (typeof z === "string" && z && validTz(z)) return z;
+  try { return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC"; } catch { return "UTC"; }
+}
+function p1BoardNow(list: SquadView["members"]): Pick<SquadView, "p1b" | "p1since"> {
+  if (!boardOn()) return { p1b: undefined, p1since: undefined };
+  const log = readP1Log();
+  return { p1b: p1Board({ log, copies: [...tasks.values()], members: list, now: Date.now(), tz: boardTz() }).slice(0, 40), p1since: log?.since };
+}
+/** The P1 engine's minute tick: a P1 that just ran out changes the board without any pull. */
+function p1Tick() { if (observeNow()) rebuild(); }
+
 function rebuild() {
-  set({
-    members: [...members.values()].filter((m) => !m.left).sort((a, b) => Number(b.me) - Number(a.me) || Number(b.working) - Number(a.working) || a.name.localeCompare(b.name))
+  observeNow();
+  const list = [...members.values()].filter((m) => !m.left).sort((a, b) => Number(b.me) - Number(a.me) || Number(b.working) - Number(a.working) || a.name.localeCompare(b.name))
       .map((m) => {
         // PS 1.64: your own row follows this device (your switch, your Fitness screen); the others' come from the hub.
         const p = m.me ? { at: shareOn(share(), "working") ? new Date().toISOString() : null, gym: gymNow() ? new Date().toISOString() : null } : seen.get(m.id);
         const shares = m.me ? shareOn(share(), "working") : !seenKnown || !!p?.at || m.working;
         return { id: m.id, name: m.name, me: m.me, creator: m.creator, working: m.working, seen: p?.at ?? null, gym: p?.gym ?? null, known: m.me || seenKnown, shares };
-      }),
+      });
+  set({
+    ...p1BoardNow(list),
+    members: list,
     tasks: [...tasks.values()].filter((t) => members.has(t.member) && !members.get(t.member)!.left).slice(0, 600),
     p1: p1Panel(p1All()),
     hands: [...hands.values()].sort((a, b) => b.at.localeCompare(a.at)).slice(0, 100),
@@ -401,14 +436,7 @@ export async function runSquadOp(o: SquadOp): Promise<void> {
         set({ link: { url: inv.link, expiresAt: inv.expiresAt }, busy: null });
         return;
       }
-      case "leave": {
-        if (!rec || !api) return;
-        set({ busy: "Leaving", error: null });
-        await api.leave();
-        await dropRec(null);
-        await autoLeft();   // V1.49: left on purpose, so PS does not join again by itself (Join again does)
-        return;
-      }
+      case "leave": return;   // PS 1.68 one squad for everyone: nobody leaves The G Squad (an older Tab list may still send it)
       case "renameSquad": {
         if (!rec || !api || !view.creator) return;   // the admin only (the hub checks it too)
         set({ busy: "Renaming", error: null });
@@ -591,7 +619,7 @@ export function startSquad(post: ((m: object) => void) | null = null) {
     }
   });
   // PS 1.63 Priority 1 (squad/p1engine.ts): the 24 hour clock on your own P1 tasks, the side panel's data, the missed task cards.
-  startP1({ post, rec: () => rec, view: () => view, p1All, onPulled: (f) => { hooks.add({ pulled: f }); }, pull: () => void pull(), push: () => schedulePush(), isOpen: () => open });
+  startP1({ post, rec: () => rec, view: () => view, p1All, tick: p1Tick, onPulled: (f) => { hooks.add({ pulled: f }); }, pull: () => void pull(), push: () => schedulePush(), isOpen: () => open });
   window.addEventListener("online", () => { void beat(); if (open) void pull(); schedulePush(); });
   // PS 1.64: Fitness opened or closed on this device, or a workout started or ended (it is in the vault).
   onGymScreen(gymChanged);

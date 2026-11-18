@@ -91,9 +91,8 @@ const PAGE_ICON: Record<SettingsPage, ReactNode> = {
   notify: <I><path d="M6.5 16.5V11a5.5 5.5 0 0 1 11 0v5.5l1.5 1.8H5z" /><path d="M10 20.5a2.2 2.2 0 0 0 4 0" /></I>,
   looks: <I><circle cx="12" cy="12" r="8.5" /><path d="M12 3.5a8.5 8.5 0 0 0 0 17z" fill="currentColor" stroke="none" /></I>,
   ai: <I><rect x="5" y="7.5" width="14" height="11" rx="3" /><path d="M12 7.5V4.5M9.5 12.5h.01M14.5 12.5h.01M9.5 15.5h5" /></I>,
-  leave: <I><path d="M14 4.5h4.5v15H14" /><path d="M10.5 8L6.5 12l4 4M6.8 12H15" /></I>,
 };
-const TONE: Record<SettingsPage, string> = { share: "ok", name: "info", notify: "warn", looks: "acc2", ai: "info", leave: "bad" };
+const TONE: Record<SettingsPage, string> = { share: "ok", name: "info", notify: "warn", looks: "acc2", ai: "info" };
 export function SettingsIcon() {
   return <I><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-1.8-.3 1.6 1.6 0 0 0-1 1.5V21a2 2 0 0 1-4 0v-.1a1.6 1.6 0 0 0-1-1.5 1.6 1.6 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.6 1.6 0 0 0 .3-1.8 1.6 1.6 0 0 0-1.5-1H3a2 2 0 0 1 0-4h.1a1.6 1.6 0 0 0 1.5-1 1.6 1.6 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.6 1.6 0 0 0 1.8.3H9a1.6 1.6 0 0 0 1-1.5V3a2 2 0 0 1 4 0v.1a1.6 1.6 0 0 0 1 1.5 1.6 1.6 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.8V9a1.6 1.6 0 0 0 1.5 1H21a2 2 0 0 1 0 4h-.1a1.6 1.6 0 0 0-1.5 1z" /></I>;
 }
@@ -110,7 +109,7 @@ export function SquadSettings({ view, page, onPage }: { view: SquadView; page: S
       <ul className="gss-rows">
         {SETTINGS_PAGES.map((p) => (
           <li key={p.id}>
-            <button type="button" className={`gss-row${p.id === "leave" ? " bad" : ""}`} onClick={() => { sfx.hover(); onPage(p.id); }}>
+            <button type="button" className="gss-row" onClick={() => { sfx.hover(); onPage(p.id); }}>
               <span className={`gsw-ico sm ${TONE[p.id]}`}>{PAGE_ICON[p.id]}</span>
               <span className="gss-row-t">{p.title}<em>{p.line}</em></span>
               <i className="gss-chev" aria-hidden="true" />
@@ -133,7 +132,6 @@ export function SquadSettings({ view, page, onPage }: { view: SquadView; page: S
       {page === "notify" && <NotifyPage />}
       {page === "looks" && <LooksPage />}
       {page === "ai" && <AiPage view={view} />}
-      {page === "leave" && <LeavePage view={view} onDone={() => onPage(null)} />}
     </div>
   );
 }
@@ -278,21 +276,3 @@ function AiPage({ view }: { view: SquadView }) {
   );
 }
 
-function LeavePage({ view, onDone }: { view: SquadView; onDone: () => void }) {
-  const [sure, setSure] = useState(false);
-  const name = view.name || THE_SQUAD;
-  const alone = view.members.length <= 1;
-  return (
-    <div className="gss-card">
-      <p className="gs-lead">{view.creator && !alone
-        ? `You are the admin of ${name}. If you leave, the others stay in it, your shared tasks are taken off and everyone else gets a new key.`
-        : `Your shared tasks are taken off and everyone else gets a new key. PS app does not put you back by itself: open G Squad and choose Join again whenever you like.`}</p>
-      {sure
-        ? <div className="gs-row">
-          <button type="button" className="gs-mini bad big" onClick={() => { sfx.click(); squadOp({ op: "leave" }); onDone(); }}>Leave {name}</button>
-          <button type="button" className="gs-mini big" onClick={() => setSure(false)}>Stay</button>
-        </div>
-        : <button type="button" className="gs-mini bad big" onClick={() => { sfx.click(); setSure(true); }}>Leave the squad</button>}
-    </div>
-  );
-}

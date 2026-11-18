@@ -470,7 +470,6 @@ export const CONTROLS: Controls = {
   // G Squad
   "gs-share": block(() => <SharingList />),
   "squad-features": block(() => <FromTheSquad />),   // V1.58 (views/FromTheSquad.tsx)
-  "gs-auto-join": function GsAutoJoin({ e }) { return <SyncedOnOff e={e} field="squadAutoJoin" />; },
   // V1.44: the QR code comes up as soon as the section opens (a fresh code each time; closing calls it off).
   "add-friend": function AddFriend({ e }) { return <SetRow e={e} body={<AddFriendPanel />} open plain className="af-row-set" />; },
 

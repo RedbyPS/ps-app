@@ -159,3 +159,8 @@
 .gs-name-edit .gs-field { flex: 1; }
 /* V1.43: a quiet dot on a tab (the Leaderboard while last month's amount is not added) */
 .gs-tabdot { display: inline-block; width: 6px; height: 6px; margin-left: 5px; vertical-align: middle; border-radius: 50%; background: var(--k-acc, #EC4E86); }
+/* PS 1.68 the time left of an open Priority 1 in Tasks: green, amber under 8 hours, red only in the last 2 hours. */
+.gs-left { flex: none; font-size: calc(11px * var(--k-fs, 1)); font-weight: 750; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.gs-left.ok { color: var(--k-ok, #4CC38A); }
+.gs-left.warn { color: var(--k-warn, #F2B544); }
+.gs-left.bad { color: var(--k-bad-t, #FF8F8A); }

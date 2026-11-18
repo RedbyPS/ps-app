@@ -8,7 +8,11 @@
 //   in               when the pulse says someone is waiting for the squad key, your PS seals it to them
 //   in an older squad (made with Create a squad before V1.47): your PS leaves it and joins The G Squad
 //   The developer's PS         becomes the admin (the hub asks his vault whether it is his account)
-// Leaving on purpose stays left (Join again brings you back); the admin's Take out keeps you out.
+// PS 1.68 one squad for everyone (Jan 18 Nov 2026: "everybody using this app is automatically in this one squad ... there should
+// not be an option to leave or join"): nobody leaves, an old "left" or "Join automatically: Off" no longer keeps anyone out, and
+// only the admin's Take out does. Your PS shows the hub it is a real PS account (your own vault session, checked once by the hub
+// with the vault and never kept), so the hub lets you in at once (hub migration invite_002_every_ps_user.sql). A hub without
+// that step keeps the V1.57 behaviour below (wait for the admin), so nothing breaks before it is deployed.
 //
 // V1.57 invite only (the developer, 13 Nov 2026: "Yes, lock it"): joining by itself is now an Ask to join. The hub gives you a
 // waiting place and nobody hands you the squad key until the admin lets you in (or you scan a friend's Add friend
@@ -18,8 +22,6 @@ import { docs, put, sb, vaultStore, PROJECT } from "../core/vault";
 import { isRedAccount } from "../core/account";
 import { settingsData } from "../core/select";
 import { autoStage, newPending, pickJoinRec, sayAuto, shouldJoin, whoHash, type AutoView, type JoinRec } from "../core/squadauto";
-import { squadAutoOn } from "../core/offswitches";
-import { saveSettings } from "../core/actions";
 import type { SquadRec } from "../core/squadrec";
 import { HubError, type HubApi } from "./hub";
 import { askAdmin, autoCheck, autoJoin, handOut, theSquadId } from "./autoflows";
@@ -71,7 +73,14 @@ function show() {
 }
 /** Settings, G Squad, "Join The G Squad automatically" (on unless switched off). Off: while not in, PS does nothing by
  *  itself (no join, no 3 minute wait for the squad key); a join already on its way waits until it is on again. */
-function autoOn() { return squadAutoOn(settingsData(vaultStore.get()).squadAutoJoin); }
+function autoOn() { return true; }   // PS 1.68: always (one squad for everyone); the old setting is no longer read
+/** PS 1.68: your vault session, so the hub can check you are a PS account and let you in at once. null on a project of your own. */
+async function account(): Promise<{ token: string; anon: string } | null> {
+  const token = (await sb.auth.getSession().catch(() => null))?.data.session?.access_token;
+  return token && PROJECT.key ? { token, anon: PROJECT.key } : null;
+}
+let admitTried = 0;   // the last time a waiting join showed the hub its account (at most every 10 minutes)
+const ADMIT_EVERY_MS = 10 * 60_000;
 function myName() {
   return (settingsData(vaultStore.get()).ownerName || "").trim().split(/\s+/)[0] || "";
 }
@@ -131,7 +140,6 @@ async function inSquad(rec: SquadRec) {
 
 async function notIn() {
   let j = join.rec;
-  if (!autoOn()) { problem = null; return; }   // switched off in Settings: nothing by itself (Join on the G Squad screen switches it on)
   if (!shouldJoin(false, j) && !j?.pending) return;   // left on purpose, or taken out
   if (Date.now() < holdUntil) return;
   if (!j) j = { v: 1 };
@@ -144,7 +152,7 @@ async function notIn() {
   if (!p.memberId) {
     const s = vaultStore.get();
     try {
-      const r = await autoJoin(await whoHash(PROJECT.url, s.userId!), p);
+      const r = await autoJoin(await whoHash(PROJECT.url, s.userId!), p, undefined, await account());
       p = r.pending;
       j = { ...j, pending: p, gs: r.pending.squadId };
       await saveJoin(j);
@@ -166,6 +174,13 @@ async function notIn() {
       asked = null;
       await saveJoin({ v: 1, gs: out.rec.squadId });
       await ctx!.adopt(out.rec);
+    } else if (out.admitted === false && Date.now() - admitTried > ADMIT_EVERY_MS && await account()) {
+      // PS 1.68: waiting since V1.57 (or a hub that has just learned the account step): the same keys again, now with the account.
+      admitTried = Date.now();
+      const s = vaultStore.get();
+      try { await autoJoin(await whoHash(PROJECT.url, s.userId!), p, undefined, await account()); again = true; }
+      catch { /* an older hub: keep waiting for the admin */ }
+      asked = { code: p.asked && p.squadId ? await checkCode(p.squadId, p.sign.pub, p.box.pub, p.asked) : "" };
     } else if (out.admitted === false) {
       // V1.57: waiting for the admin. Leave your name for them once (sealed to their key), then show the check code.
       if (!p.asked) {
@@ -189,8 +204,7 @@ function restart() {
   if (timer !== undefined) lpClear(timer);
   timer = undefined;
   if (!ctx || ctx.rec() || !join.rec?.pending && !problem) return;
-  if (join.rec?.left || join.rec?.removed) return;
-  if (!autoOn()) return;   // "Join The G Squad automatically" Off: no 3 minute wait while not in
+  if (join.rec?.removed) return;
   timer = lpInterval("squad-auto", () => void autoStep(), open ? OPEN_MS : WAIT_MS);
 }
 
@@ -205,17 +219,8 @@ export function autoPulse(k: number | undefined) {
 }
 /** G Squad opened or closed: wait more often while it is open. */
 export function autoOpen(on: boolean) { open = on; restart(); if (on) void autoStep(); }
-/** You left on purpose (Squad settings, Leave): PS does not join again by itself. */
-export async function autoLeft() {
-  readJoin();
-  await saveJoin({ ...(join.rec ?? { v: 1 }), left: true, pending: null });
-  problem = null;
-  show();
-}
 /** Join again (after leaving), or Try again (after a problem). */
 export async function autoAgain() {
-  // A clear yes (Join, Join again, a scanned friend code): "Join The G Squad automatically" goes back on.
-  if (!autoOn()) await saveSettings({ squadAutoJoin: true }).catch(() => {});
   readJoin();
   const j = join.rec ?? { v: 1 };
   if (j.left || j.removed) await saveJoin({ v: 1, ...(j.gs ? { gs: j.gs } : {}) });

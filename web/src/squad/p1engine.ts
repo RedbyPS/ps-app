@@ -51,6 +51,8 @@ export interface P1Hooks {
   pull: () => void;
   push: () => void;
   isOpen: () => boolean;
+  /** PS 1.68: every minute, so the Squad Priority 1 board sees a P1 run out without a pull. */
+  tick?: () => void;
 }
 
 export function startP1(h: P1Hooks) {
@@ -147,6 +149,7 @@ export function startP1(h: P1Hooks) {
     lastTick = now;
     quietPull(now);
     alerts();
+    try { h.tick?.(); } catch { /* the board's own problem */ }
   }, TICK_MS);
   window.setTimeout(() => { void reconcile(); quietPull(Date.now()); }, 8_000);
 }

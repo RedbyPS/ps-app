@@ -9,6 +9,7 @@ import { setChatMirror } from "../squad/chatmirror";
 import { setGymMirror } from "../squad/gymview";
 import { gymStore } from "../squad/gym";
 import { loadGymFake } from "./gym-fake";
+import { p1Board, type P1Log } from "../core/squadp1board";
 
 const ME = "00000000-0000-4000-8000-000000000001";
 const SAM = "00000000-0000-4000-8000-0000000000a1", KIT = "00000000-0000-4000-8000-0000000000a2", ANA = "00000000-0000-4000-8000-0000000000a3";
@@ -49,6 +50,27 @@ export function loadGSquadFake() {
     { id: "p1c", member: KIT, t: "Send the invoices", s: ago(60 * 26), x: false },
     { id: "p1d", member: SAM, t: "Review the pricing page", s: ago(60 * 20), x: true, xa: ago(60 * 2) },
   ];
+  // PS 1.68 Squad Priority 1 board: &p1n=2 (or 5, 12) people, made up names, made up history (core/squadp1board.ts).
+  const p1n = Math.max(1, Math.min(12, Number(new URLSearchParams(location.search).get("p1n")) || 4));
+  const FAKE_NAMES = ["Alex", "Sam Rivera", "Kit", "Ana Petrova", "Lee Moss", "Rui", "Noor Haddad", "Ben Ode", "Ivy", "Max Lund", "Zoe Kerr", "Tom Vale"];
+  const boardMembers = FAKE_NAMES.slice(0, p1n).map((name, i) => ({ id: i === 0 ? ME : i === 1 ? SAM : i === 2 ? KIT : i === 3 ? ANA : id(900 + i), name, me: i === 0 }));
+  const H = 3_600_000, D = 24 * H, NOW = Date.now();
+  const log: P1Log = { since: new Date(NOW - 40 * D).toISOString(), e: {} };
+  boardMembers.forEach((m, i) => {
+    const n = [25, 22, 14, 31, 9, 18, 2, 12, 20, 6, 16, 11][i], misses = [2, 4, 5, 1, 1, 6, 0, 2, 3, 3, 1, 2][i], lastMiss = [6, 9, 2, 12, 4, 1, 99, 3, 5, 2, 8, 7][i];
+    for (let k = 0; k < n; k++) {
+      const at = NOW - (k + 1) * (28 * D) / n, miss = k < misses ? k === 0 ? NOW - lastMiss * D - 2 * H : NOW - (lastMiss + 3 * k) * D : 0;
+      log.e[`${m.id}-${k}@x`] = { m: m.id, id: `${i}-${k}`, s: new Date((miss || at) - 20 * H).toISOString(), o: miss ? "miss" : "hit", at: miss || at };
+    }
+  });
+  const openCopies = boardMembers.flatMap((m, i) => {
+    const t = ["Finish the onboarding copy", "Fix the checkout bug", "Send the invoices", "Draft the new landing page", "Client task", "Book the venue", "Ship the beta", "Call the bank", "Write the brief", "Plan the launch", "Pay the team", "Update the deck"][i];
+    const left = [22, 1.5, -3, 5, 15, 0.6, 11, 19, 7, 2.5, 23, 9][i];
+    return [{ id: `bo${i}`, member: m.id, t, x: false, s: new Date(NOW - (24 - left) * H).toISOString() },
+      ...(i % 3 === 0 ? [{ id: `bd${i}`, member: m.id, t: "Review the pricing page", x: true, s: new Date(NOW - 20 * H).toISOString(), xa: new Date(NOW - 2 * H).toISOString() }] : []),
+      ...(i === 1 ? [{ id: "bx1", member: m.id, t: "Reply to the agency", x: false, s: new Date(NOW - 6 * H).toISOString() }] : [])];
+  });
+  const p1b = p1Board({ log, copies: openCopies, members: boardMembers, now: NOW, tz: "UTC" });
   const entry = (member: string, rank: number, n: number) => ({ member, state: "ok" as const, rank, n });
   const board = {
     rules: { money: "revenue", show: "exact", currency: "GBP" },
@@ -73,7 +95,7 @@ export function loadGSquadFake() {
       ? notIn("error", "G Squad could not be reached. Check your internet and try again.")
     : mode === "solo"
       ? { in: true, name: "The G Squad", me: ME, meName: "Alex", creator: true, count: 1, waiting: 0, members: [members[0]], tasks: [], hands: [], link: null, busy: null, error: null, loaded: true, board, asks: [] }
-      : { in: true, name: "The G Squad", me: ME, meName: "Alex", creator: true, count: 3, waiting: 1, members, tasks, p1,
+      : { in: true, name: "The G Squad", me: ME, meName: "Alex", creator: true, count: 3, waiting: 1, members: p1n > 4 ? [...members, ...boardMembers.slice(4).map((m) => ({ ...m, creator: false, working: false }))] : members, tasks, p1, p1b, p1since: log.since,
         hands: [{ id: id(700), from: SAM, to: ME, state: "open", t: "Review the pricing page", d: null, at: ago(30) }], link: null, busy: null, error: null, loaded: true, board, asks };
 
   const day = (d: number, h: number, m: number) => { const x = new Date(); x.setDate(x.getDate() - d); x.setHours(h, m, 0, 0); return x.toISOString(); };

@@ -114,11 +114,11 @@ ok("join record: checked field by field; two devices' records settle on the one 
 ok("who joins by itself: not when in, not after leaving or being taken out, not twice", () => {
   assert.equal(shouldJoin(false, null), true, "a brand new PS joins");
   assert.equal(shouldJoin(true, null), false);
-  assert.equal(shouldJoin(false, { v: 1, left: true }), false, "left on purpose: Join again only");
+  assert.equal(shouldJoin(false, { v: 1, left: true }), true, "PS 1.68 one squad for everyone: a left from an older PS joins again");
   assert.equal(shouldJoin(false, { v: 1, removed: true }), false, "taken out");
   assert.equal(shouldJoin(false, { v: 1, pending: {} as Pending }), false, "a join already on its way");
   assert.equal(autoStage(null, null), "joining");
-  assert.equal(autoStage({ v: 1, left: true }, null), "left");
+  assert.equal(autoStage({ v: 1, left: true }, null), "joining", "PS 1.68: nobody stays left");
   assert.equal(autoStage({ v: 1, left: true }, "removed"), "removed");
   assert.equal(autoStage(null, "full"), "full");
   assert.equal(autoStage(null, "error"), "error");
@@ -243,13 +243,22 @@ ok("edge function: admin only when the developer's vault says 'red' (fails close
   assert.match(f, /const KEY_ACTS = new Set\(\[[^\]]*"auto_join"\]\);/, "joining is signed with the new key itself");
   assert.ok(!/console\.log|token\)\s*;?\s*\/\/ store/.test(f), "the token is never logged");
 });
-ok("PS: only the developer's account sends the admin step, once per session; leaving stays left", () => {
+ok("PS: only the developer's account sends the admin step, once per session; PS 1.68 nobody leaves, a PS account shows the hub who it is", () => {
   const e = read("src/squad/autoengine.ts");
   assert.match(e, /if \(!v\.creator && isRedAccount\(vaultStore\.get\(\)\) && adminTried !== rec\.memberId\) \{/);
   assert.match(e, /await ctx!\.api\(\)\?\.admin\(token, PROJECT\.key\)/);
-  assert.match(e, /left: true, pending: null/);
+  assert.doesNotMatch(e, /left: true/);
+  assert.match(e, /autoJoin\(await whoHash\(PROJECT\.url, s\.userId!\), p, undefined, await account\(\)\)/, "the join carries the account");
+  assert.match(e, /Date\.now\(\) - admitTried > ADMIT_EVERY_MS/, "a waiting join shows its account at most every 10 minutes");
   const g = read("src/squad/engine.ts");
-  assert.match(g, /await autoLeft\(\);/);
+  assert.match(g, /case "leave": return;/);
+  const hub = read("supabase/hub/functions/squad/index.ts");
+  assert.match(hub, /if \(who && await isPsAccount\(args\.vault, args\.anon, who\)\)/);
+  assert.match(hub, /role !== "owner" && role !== "red"/, "only an account that owns its vault");
+  assert.match(hub, /sha256hex\(`gsquad-v1\|who\|\$\{RED_VAULT\}\|\$\{id\}`\)\) === who/, "the join id must be that account's own");
+  const sql = read("supabase/hub/migrations/invite_002_every_ps_user.sql");
+  assert.match(sql, /squad_blocked where squad_id = sid and who = p_who/, "Take out still keeps people out");
+  assert.match(sql, /grant execute on function public\.auto_join_account\(text, text, text\) to service_role;/);
   assert.match(g, /autoPulse\(p\.k\);/);
 });
 ok("the join pop up and shared tasks off still apply: the vote starts when a card arrives, sharing still starts off", () => {

@@ -95,19 +95,20 @@ export type AutoStage = "joining" | "asked" | "left" | "removed" | "full" | "err
 export interface AutoView { stage: AutoStage; error?: string | null; /** asked: the check code the admin sees too */ code?: string | null }
 /** The screen's one step from the join record and the last problem (null: no record yet, so joining). `auto`: the
  *  "Join The G Squad automatically" setting (on unless switched off). */
-export function autoStage(j: JoinRec | null, problem: "full" | "removed" | "error" | null, auto = true): AutoStage {
+export function autoStage(j: JoinRec | null, problem: "full" | "removed" | "error" | null, _auto = true): AutoStage {
+  // PS 1.68 one squad for everyone (Jan 18 Nov 2026: "there should not be an option to leave or join squad, we're all the app
+  // users"): a "left" from an older PS and the old "Join automatically: Off" no longer keep anyone out. Only the admin's
+  // Take out does.
   if (j?.removed || problem === "removed") return "removed";
-  if (j?.left) return "left";
-  if (!auto) return "off";
   if (problem === "full") return "full";
   if (problem === "error") return "error";
   return "joining";
 }
 /** Whether this device should start joining now: not in, not left or removed, no join already on its way, and
  *  "Join The G Squad automatically" not switched off (`auto`). */
-export function shouldJoin(inSquad: boolean, j: JoinRec | null, auto = true): boolean {
-  if (inSquad || !auto) return false;
-  if (j?.left || j?.removed) return false;
+export function shouldJoin(inSquad: boolean, j: JoinRec | null, _auto = true): boolean {
+  if (inSquad) return false;
+  if (j?.removed) return false;   // PS 1.68: left and the old Off switch no longer keep anyone out (autoStage)
   return !j?.pending;
 }
 

@@ -58,6 +58,23 @@ async function isRed(token: unknown, anon: unknown): Promise<boolean> {
   } catch { return false; }
 }
 
+/** PS 1.68: true only when this vault session is a PS account that owns its own vault (vault_role() 'owner' or 'red') on the
+ *  developer's vault project AND its join id is the one PS makes from that account (core/squadauto.ts whoHash). Fails closed. */
+async function isPsAccount(token: unknown, anon: unknown, who: string): Promise<boolean> {
+  if (typeof token !== "string" || token.length > 4000 || !JWT.test(token) || typeof anon !== "string" || !ANON.test(anon)) return false;
+  try {
+    const h = { "Content-Type": "application/json", apikey: anon, Authorization: `Bearer ${token}` };
+    const [u, r] = await Promise.all([
+      fetch(`${RED_VAULT}/auth/v1/user`, { headers: h, signal: AbortSignal.timeout(8000) }),
+      fetch(`${RED_VAULT}/rest/v1/rpc/vault_role`, { method: "POST", body: "{}", headers: h, signal: AbortSignal.timeout(8000) }),
+    ]);
+    if (!u.ok || !r.ok) return false;
+    const id = (await u.json() as { id?: unknown }).id, role = await r.json();
+    if (typeof id !== "string" || !UUID.test(id) || (role !== "owner" && role !== "red")) return false;
+    return (await sha256hex(`gsquad-v1|who|${RED_VAULT}|${id}`)) === who;
+  } catch { return false; }
+}
+
 class Fail extends Error { constructor(public code: number, msg: string) { super(msg); } }
 const json = (v: unknown, status = 200) => new Response(JSON.stringify(v), { status, headers: { ...CORS, "Content-Type": "application/json" } });
 const unb64 = (s: string) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
@@ -159,6 +176,12 @@ async function handle(body: Record<string, unknown>) {
       // V1.49: into The G Squad at once. who: sha256 of a secret only this person's own vault holds (the same on their
       // Mac and phone), so the admin's Take out keeps them out and two devices joining at once become one member.
       const who = typeof args.who === "string" && HEX64.test(args.who) ? args.who : null;
+      // PS 1.68 one squad for everyone (migration invite_002_every_ps_user.sql): a PS account on the developer's vault is let in at
+      // once. Its vault session is checked with the vault (who it is, and that it owns its vault) and must give the same who; the
+      // token is used for that one question and never stored or logged. Anything else waits for the admin, as since V1.57.
+      if (who && await isPsAccount(args.vault, args.anon, who)) {
+        return await dirRpc("auto_join_account", { p_sign_pub: args.sign, p_box_pub: args.box, p_who: who });
+      }
       return await dirRpc("auto_join", { p_sign_pub: args.sign, p_box_pub: args.box, p_who: who });
     }
     case "join": {

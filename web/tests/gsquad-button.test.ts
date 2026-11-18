@@ -78,7 +78,7 @@ ok("not in yet: the button says Joining The G Squad (hover card, screen reader) 
   const body = gs.slice(gs.indexOf("export function GSquadButton()"), gs.indexOf("\nfunction SquadLayers"));
   assert.match(body, /: `G Squad\. \$\{outLine\}`\}/, "aria-label");
   assert.match(body, /data-tip-line=\{v\.in \? workingLine\(n\) : outLine\}/, "hover card line");
-  assert.match(body, /"You left The G Squad"/);
+  assert.doesNotMatch(body, /"You left The G Squad"/, "PS 1.68: nobody leaves");
   assert.match(body, /\{!v\.in && <i className="gs-plus" aria-hidden="true" \/>\}/, "the plus");
   assert.ok(rules(gsCss).some((r) => r.sel === ".gs-plus"), "the plus is styled");
 });

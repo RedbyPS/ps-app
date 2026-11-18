@@ -156,6 +156,7 @@ const DONE_PROBES: Record<string, (can: boolean, s: Snapshot) => Promise<"done" 
   },
   // PS 1.64 G Squad replies and members list: only for people in a squad; Ok ends it for good (a choice with one button).
   "gsquad-reply-164": async () => (squadStore.get().in ? "open" : "unknown"),
+  "squad-p1-board-168": async () => (!feature("squad-p1") || !feature("squad-p1-board") ? "unknown" : squadStore.get().in ? "open" : "unknown"),
   "gsquad-pieces-165": foldedUnlessTour(async () => (feature("gsquad-pieces") && squadStore.get().in ? "open" : "unknown")),
   "gsquad-v3-165": foldedUnlessTour(async () => (feature("gsquad-v3") && squadStore.get().in ? "open" : "unknown")),
   // PS 1.65 Receipts: only while the feature is on for an owner; Ok ends it for good.
