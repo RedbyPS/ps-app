@@ -5,7 +5,12 @@
 // and per task: tick, move to another list, delete (with Undo). Pages that hold panels (Edit mode) are left out.
 // Every change goes through the same functions as the list's own menus (views/ListPager.tsx), so it is one write each.
 // Also MoveMenu: the small menu that sends a task to another list, or out of the AI Inbox (core/aiinbox.ts).
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+// PS 1.68 (Jan, 18 Nov 2026): press, hold and drag a task to reorder it inside a list, onto another list, or in from Your
+// task list and the AI Inbox on the right. The drag is Dimension X's own (views/DimensionX.tsx Board: the same lifted
+// card, the gap that opens, the glide into place, Esc puts it back), so the Lists view gets `dnd` from the Board and each
+// section is a drop place (data-zone "s:<section>"). The Move menu offers every place, grouped and coloured by level:
+// the action level (every list, then Actionables), The Upside Down, Dimension X.
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import type { Doc, DimxZone, Todo } from "../core/model";
 import { MAIN, allPages, movePage, secsByPage, shownName, LIST_NAME_MAX, PAGES_MAX } from "../core/lists";
 import { groupOf, newGroupId } from "../core/groups";
@@ -21,11 +26,27 @@ import "./dimxlists.css";
 let escNow: () => boolean = () => false;
 export const listsEscape = () => escNow();
 
-const secTasks = (key: string): Doc<Todo>[] => {
+/** A task row as the Board's drag sees it (views/DimensionX.tsx Card). */
+export type ListCard = { key: string; id: string; text: string; zone: string; due?: string | null; ai?: boolean; type?: Todo["type"]; done?: boolean; pending?: boolean };
+/** What the Board lends the Lists view so its rows drag like every card in Dimension X. */
+export type ListDnd = {
+  /** The rows of one section, with the gap where a dragged task would land. */
+  rows: (zone: string, render: (c: ListCard) => ReactNode) => ReactNode[];
+  /** Spread on each row: its key for the glide, and the press that starts a drag. */
+  rowProps: (c: ListCard) => { "data-k": string; onPointerDown: (e: React.PointerEvent<HTMLElement>) => void };
+  /** The section a dragged task is over (its zone), and whether a task is being dragged at all. */
+  over: string | null; dragging: boolean;
+};
+export const secZone = (key: string) => `s:${key}`;
+export function secTasks(key: string): Doc<Todo>[] {
   const l = listCtx().lists, g = groupOf(key);
   if (g) return l.groups.get(g) ?? [];
   return key === "p1" ? l.p1 : key === "prio" ? l.prio : key === "daily" ? l.daily : [];
-};
+}
+export const cardOf = (d: Doc<Todo>, zone: string): ListCard =>
+  ({ key: `l:${d.id}`, id: d.id, text: d.data.title, zone, due: d.data.due, ai: d.data.ai === true, type: d.data.type, done: !!d.data.done });
+/** Every task on a list, by id (a row held in its new place for a moment is still found). */
+const allTasks = () => { const l = listCtx().lists; return new Map([...l.ranked, ...l.daily, ...[...l.groups.values()].flat()].map((d) => [d.id, d])); };
 const secName = (key: string): string => {
   const c = listCtx(), g = groupOf(key);
   if (g) return c.groups.find((x) => x.id === g)?.name || "Group";
@@ -38,7 +59,7 @@ export function taskPages(): { id: string; name: string }[] {
   return allPages(c.pages, c.names, c.order).filter((p) => p.id === MAIN || c.pages.find((x) => x.id === p.id)?.kind !== "panels");
 }
 
-export function DimxLists({ onOpen, onUndo }: { onOpen: () => void; onUndo: (text: string, restore: () => void) => void }) {
+export function DimxLists({ onOpen, onUndo, dnd }: { onOpen: () => void; onUndo: (text: string, restore: () => void) => void; dnd?: ListDnd }) {
   const c = listCtx();
   const byPage = secsByPage(c.full, c.pages);
   const pages = taskPages();
@@ -57,6 +78,7 @@ export function DimxLists({ onOpen, onUndo }: { onOpen: () => void; onUndo: (tex
 
   const move = (id: string, by: -1 | 1) => { sfx.drop(); setPageOrder(movePage(c.order, id, by)); };
   const open = (id: string) => { sfx.click(); onOpen(); window.setTimeout(() => goToPage(id), 60); };
+  const docs = allTasks();
   const delTask = (d: Doc<Todo>) => {
     sfx.click();
     void taskMapActions.remove(d.id);
@@ -107,28 +129,34 @@ export function DimxLists({ onOpen, onUndo }: { onOpen: () => void; onUndo: (tex
               ) : null}
               <div className="dl-body" data-scroll>
                 {keys.map((k) => {
-                  const list = secTasks(k);
-                  if (!list.length && (k === "p1" || (p.id === MAIN && k === "daily"))) return null;
-                  return (
-                    <div key={k} className="dl-sec">
-                      <h4>{secName(k)}</h4>
-                      {list.map((d) => (
-                        <div key={d.id} className={`dl-row${d.data.done ? " done" : ""}${menu?.id === d.id ? " menu-on" : ""}`}>
-                          <button type="button" className="dx-tick" onClick={() => { sfx.done(); void taskMapActions.tick(d.id, !d.data.done); }} aria-label={`${d.data.done ? "Untick" : "Tick off"}: ${d.data.title}`} title={d.data.done ? "Untick" : "Tick off"}>
-                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M5 12l5 5L20 7" /></svg>
+                  const list = secTasks(k), zone = secZone(k);
+                  if (!list.length && dnd?.over !== zone && (k === "p1" || (p.id === MAIN && k === "daily"))) return null;
+                  const row = (c: ListCard) => {
+                    const d = docs.get(c.id);
+                    const done = d ? !!d.data.done : !!c.done, title = d?.data.title ?? c.text, due = d ? d.data.due : c.due, ai = d ? d.data.ai : c.ai;
+                    return (
+                      <div key={c.key} className={`dl-row${done ? " done" : ""}${c.pending ? " pending" : ""}${menu?.id === c.id ? " menu-on" : ""}`} {...(dnd && !c.pending ? dnd.rowProps(c) : { "data-k": c.key })}>
+                        <button type="button" className="dx-tick" disabled={!d} onClick={() => { sfx.done(); void taskMapActions.tick(c.id, !done); }} aria-label={`${done ? "Untick" : "Tick off"}: ${title}`} title={done ? "Untick" : "Tick off"}>
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M5 12l5 5L20 7" /></svg>
+                        </button>
+                        <span className="dl-tx"><span className="dl-t">{title}</span>
+                          {ai || due ? <span className="dl-meta">{ai ? <span className="dx-ai" title="Added by an AI">AI</span> : null}{due ? <span className="dx-due num">{fmtDate(due)}</span> : null}</span> : null}</span>
+                        {d ? <span className="dl-acts">
+                          <button type="button" className="dx-mv" onClick={(e) => { sfx.click(); const b = root.current?.getBoundingClientRect(), r = e.currentTarget.getBoundingClientRect(); if (b) setMenu((m) => (m?.id === c.id ? null : { id: c.id, page: p.id, at: new DOMRect(r.left - b.left, r.top - b.top, r.width, r.height) })); }}
+                            aria-label={`Move: ${title}`} title="Move to another list" aria-expanded={menu?.id === c.id}>
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6" /></svg>
                           </button>
-                          <span className="dl-tx"><span className="dl-t">{d.data.title}</span>
-                            {d.data.ai || d.data.due ? <span className="dl-meta">{d.data.ai ? <span className="dx-ai" title="Added by an AI">AI</span> : null}{d.data.due ? <span className="dx-due num">{fmtDate(d.data.due)}</span> : null}</span> : null}</span>
-                          <span className="dl-acts">
-                            <button type="button" className="dx-mv" onClick={(e) => { sfx.click(); const b = root.current?.getBoundingClientRect(), r = e.currentTarget.getBoundingClientRect(); if (b) setMenu((m) => (m?.id === d.id ? null : { id: d.id, page: p.id, at: new DOMRect(r.left - b.left, r.top - b.top, r.width, r.height) })); }}
-                              aria-label={`Move: ${d.data.title}`} title="Move to another list" aria-expanded={menu?.id === d.id}>
-                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6" /></svg>
-                            </button>
-                            <button type="button" className="dx-del" onClick={() => delTask(d)} aria-label={`Delete: ${d.data.title}`} title="Delete">×</button>
-                          </span>
-                        </div>
-                      ))}
-                      {!list.length ? <p className="dl-empty">Nothing here.</p> : null}
+                          <button type="button" className="dx-del" onClick={() => delTask(d)} aria-label={`Delete: ${title}`} title="Delete">×</button>
+                        </span> : null}
+                      </div>
+                    );
+                  };
+                  const rows = dnd ? dnd.rows(zone, row) : list.map((d) => row(cardOf(d, zone)));
+                  return (
+                    <div key={k} className={`dl-sec${dnd?.over === zone ? " target" : ""}`} data-zone={dnd ? zone : undefined}>
+                      <h4>{secName(k)}</h4>
+                      {rows}
+                      {!rows.length ? <p className="dl-empty">{dnd?.dragging ? "Drop it here." : "Nothing here."}</p> : null}
                     </div>
                   );
                 })}
@@ -144,7 +172,7 @@ export function DimxLists({ onOpen, onUndo }: { onOpen: () => void; onUndo: (tex
         ) : null}
       </div>
       {menu && (() => {
-        const d = [...listCtx().lists.ranked, ...listCtx().lists.daily, ...[...listCtx().lists.groups.values()].flat()].find((x) => x.id === menu.id);
+        const d = docs.get(menu.id);
         return d ? <MoveMenu task={d} from={menu.page} at={menu.at} bounds={root.current} onClose={() => setMenu(null)} onMoved={() => setMenu(null)} /> : null;
       })()}
     </div>
@@ -163,9 +191,12 @@ function RenameBox({ value, onDone, cancelRef }: { value: string; onDone: (v: st
   );
 }
 
+/** The three levels, top to bottom, in their colours (dimx.css): the action level holds every list, then the bands. */
 const BANDS: { zone: DimxZone; label: string }[] = [{ zone: "act", label: "Actionables" }, { zone: "soon", label: "The Upside Down" }, { zone: "x", label: "Dimension X" }];
-/** Send a task to another list. An AI Inbox task leaves the inbox (into that list's first section that takes it, or a
- *  new "To do" group there); onBand also lets it become an idea card in a band. */
+/** Send a task to any place: another list, or an idea card in a band (PS 1.68: every task, not only the AI Inbox's), as
+ *  one move that keeps its id (core/dimxmove.ts). An AI Inbox task leaves the inbox (into that list's first section that
+ *  takes it, or a new "To do" group there). A repeating task stays on a list: an idea card has no repeat. onBand: the
+ *  Board's own band move (it shows the card there at once). */
 export function MoveMenu({ task, from, at, bounds, onClose, onMoved, onBand }: {
   task: Doc<Todo>; from?: string; at: DOMRect; bounds: HTMLElement | null; onClose: () => void; onMoved: () => void; onBand?: (zone: DimxZone) => void;
 }) {
@@ -194,21 +225,38 @@ export function MoveMenu({ task, from, at, bounds, onClose, onMoved, onBand }: {
     void taskMapActions.update(task.id, m.patch);
     onMoved();
   };
+  const repeats = task.data.type === "daily";
+  const band = (zone: DimxZone) => {
+    if (repeats) return;
+    if (onBand) { onBand(zone); return; }
+    sfx.drop();
+    window.setTimeout(() => sfx.plop(), 120);
+    void taskMapActions.toIdea(task.id, zone, IDEA_END);   // at the end of that band
+    onMoved();
+  };
   const pages = taskPages().filter((p) => p.id !== from);
+  const idea = (b: { zone: DimxZone; label: string }) => (
+    <button type="button" role="menuitem" className={`dl-item band z-${b.zone}`} onClick={() => band(b.zone)} disabled={repeats}
+      aria-label={`Ideas, ${b.label}`} title={repeats ? "A repeating task stays on a list" : `An idea card in ${b.label}`}><i aria-hidden="true" />Ideas</button>
+  );
   return (
     <div ref={ref} className="dl-menu" role="menu" aria-label="Move to" style={pos ? { left: pos.left, top: pos.top } : { left: at.left, top: at.bottom + 6, visibility: "hidden" }}
       onPointerDown={(e) => e.stopPropagation()}>
       <span className="dl-menu-h">{inbox ? "Move to a list" : "Move to"}</span>
-      {pages.map((p) => (
-        <button key={p.id} type="button" role="menuitem" className="dl-item" onClick={() => go(p.id)}>
-          {p.id === MAIN ? <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z" /></svg> : <i aria-hidden="true" />}
-          {p.name}
-        </button>
+      {BANDS.map((b) => (
+        <div key={b.zone} className={`dl-lvl z-${b.zone}`} role="group" aria-label={b.label}>
+          <span className="dl-lvl-h">{b.label}</span>
+          {b.zone === "act" ? pages.map((p) => (
+            <button key={p.id} type="button" role="menuitem" className="dl-item" onClick={() => go(p.id)}>
+              {p.id === MAIN ? <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z" /></svg> : <i aria-hidden="true" />}
+              {p.name}
+            </button>
+          )) : null}
+          {idea(b)}
+        </div>
       ))}
-      {onBand ? <>
-        <span className="dl-menu-h">Make it an idea</span>
-        {BANDS.map((b) => <button key={b.zone} type="button" role="menuitem" className={`dl-item band z-${b.zone}`} onClick={() => onBand(b.zone)}><i aria-hidden="true" />{b.label}</button>)}
-      </> : null}
     </div>
   );
 }
+/** An index past the end of any band: the card goes last in its band (core/dimxmove.ts insertDimx). */
+const IDEA_END = 100_000;
