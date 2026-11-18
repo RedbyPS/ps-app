@@ -244,6 +244,24 @@ new words for that number from `web/ps-notes.json`, but only if `web/ps-public-a
 8. **Update this skill** with anything that was different from these steps (a pull request to
    `skill/ps-app-public-developer`), so the next release does not hit the same wall.
 
+### Lessons from the first friend release (1.68, 18 Nov 2026)
+
+- **The term audit reads the whole branch history**, not only the final files ("Changes and file history"). A private
+  word fixed in a later commit still blocks the pull request. Squash the branch to one commit
+  (`git reset --soft upstream/main`, one commit, `git push --force-with-lease=refs/heads/<branch>:<old sha>`).
+- **Never put the person's own city, time zone, name or company in tests or comments.** The owner's private word list
+  has them (1.68 was blocked by a test that used the person's home time zone). Use a neutral zone with the same offset.
+- **The keyed jobs check out the CLAIMED commit**, scripts included. A fix to the release scripts on `main` does not
+  help a rebuild of a tag claimed before the fix: that rebuild runs the old scripts. After such a fix, release the
+  same code under the next number instead of rebuilding the old tag (or the owner changes the workflow).
+- **Read the failed step to the end.** 1.68's sign mac got past signing (the keychain fix worked) and failed one
+  step later, on a relative path given to `node -e require(...)`. Each failure may be a new one: send the owner's AI
+  the exact error line and the cause, not only "sign mac failed".
+- **zsh trap:** `$SHA:web/...` in zsh is read as the `:w` modifier. Write `${SHA}:web/...`.
+- **Waiting for checks:** a loop on `gh pr view <n> --json state,statusCheckRollup` every 30 s, stopping on MERGED
+  or on any check with conclusion FAILURE, keeps the release moving without anyone watching. The release run itself:
+  `gh run watch <id> --exit-status`.
+
 ### The owner's standing release rules (until the owner changes them)
 
 - The 1.67 Hatch update animation stays in every release: never change, remove or replace
