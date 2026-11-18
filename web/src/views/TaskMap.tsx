@@ -65,7 +65,7 @@ import { PhoneTilesHost } from "../gos/PhonePages";
 import { usePhoneBg } from "../gos/phonepage";
 import { CopySlots, EditButton, EditLayer, EditScope, Inner, Slot, editingNow, setMacAccounts, setOverviewPages, useEditing, useInst, useTabLayout } from "./EditMode";
 import { calendarFor, feedOfAccount, panelCal } from "../core/calfeeds";
-import { cleanLayout, emptyLayout, onPage, pageOf } from "../core/tablayout";
+import { cleanLayout, emptyLayout, layoutReady, onPage, pageOf } from "../core/tablayout";
 import { mailPanelId, newestOf, onMailOpen, peekMailOpen, takeMailOpen } from "../core/mailopen";
 import { PS, cleanLooks, useBgVideos as usePsBgVideos, useOverlayShown, firstSentences, askMic, askPresence, askTimeline, chooseMic, psIsOpen, psPost, useAppIcons, usePresence, usePsMic, usePsSettings, useTimeline } from "../ps";
 import { primeSfx, setEditSoundCtx, setSfxVolume, setTickSound, sfx } from "../ui/sfx";
@@ -1083,6 +1083,9 @@ export function Overlay({ onClose, controls, docked, web, footer }: { onClose: (
   useEffect(() => { if (!red) setMacAccounts(calendarSnap(s)?.data); }, [s, red]);
   // Edit mode (views/EditMode.tsx, G Squad): only the floating list, never the website's To-do page or the phone.
   const editable = !docked && !GOS;
+  // PS 1.68 (core/tablayout.ts layoutReady): until the account's own layout and pages are in, the panels draw where they
+  // start and nothing can be moved or saved, so a draw from an empty layout never becomes the saved one.
+  const ready = layoutReady(s.status === "unlocked", s.lastSync);
   const layoutDoc = tabLayoutDoc(s);
   const savedLayout = useMemo(() => (layoutDoc ? cleanLayout(layoutDoc.data) : emptyLayout()), [layoutDoc]);
   const layout = useTabLayout(savedLayout);
@@ -1130,7 +1133,7 @@ export function Overlay({ onClose, controls, docked, web, footer }: { onClose: (
     void taskMapActions.looks({ tmSecOrder: order, tmDailyFirst: order.indexOf("daily") < order.indexOf("prio") });
   }, { onDrop: () => sfx.drop(), onMove: () => window.dispatchEvent(new Event("tm-relayout")) });
   tabNow.full = fullOrder; tabNow.shown = secs.order;
-  setListCtx({ lists, full: fullOrder, pages: pg.pages, order: pg.order, names: pg.names, groups, dir: pg.dir, todos: allTodos(s), st });
+  setListCtx({ lists, full: fullOrder, pages: pg.pages, order: pg.order, names: pg.names, groups, dir: pg.dir, todos: allTodos(s), st, ready });
   // V1.55 Edit mode overview (views/EditMode.tsx): the pages, their names and sections for the cards beside the middle.
   const secTitle = (k: string) => k === "p1" || k === "prio" ? shownName(pg.names, k) : k === "daily" ? shownName(pg.names, "daily", daily.every((d) => isEveryDay(d.data)))
     : groups.find((g) => groupKey(g.id) === k)?.name ?? "";
@@ -1336,7 +1339,7 @@ export function Overlay({ onClose, controls, docked, web, footer }: { onClose: (
       onMouseOver={(e) => { if (hover) light(e.target); }}
       onFocus={(e) => { if (isField(e.target)) taskMapActions.editing(true); }}
       onBlur={(e) => { if (isField(e.target) && !isField(e.relatedTarget) && !dimxIsOpen()) taskMapActions.editing(false); }}>
-      <EditScope layout={editable ? layout : null} red={red} page={curPage.id} pages={pg.order}>
+      <EditScope layout={editable && ready ? layout : null} red={red} page={curPage.id} pages={pg.order}>
       {/* The whole screen points at the group, but only the group's own band moves: the rest of
           the pattern stands still, so nothing outside the outline ever flickers (18 Oct 2026). */}
       {colourCss && bgOn && <div key={bgLook} className="tm-bgcolour" style={{ ["--bgc" as string]: colourCss }} aria-hidden="true" data-bg={bgLook} />}
@@ -1507,8 +1510,8 @@ export function Overlay({ onClose, controls, docked, web, footer }: { onClose: (
         {footer}
       </div>
       </div>
-      {editable && <EditLayer saved={savedLayout} />}
-      {editable && <EditButton kept={kept} onKeep={setKept} shown={shown} red={red} saved={savedLayout} st={st} onSettings={(patch) => void taskMapActions.looks(patch)} />}
+      {editable && ready && <EditLayer saved={savedLayout} />}
+      {editable && <EditButton ready={ready} kept={kept} onKeep={setKept} shown={shown} red={red} saved={savedLayout} st={st} onSettings={(patch) => void taskMapActions.looks(patch)} />}
       </EditScope>
     </div>
   );
