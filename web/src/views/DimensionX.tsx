@@ -36,13 +36,19 @@ import type { ParsedTask } from "../core/nldates";
 import type { TimeRemind } from "../core/nlremind";
 import { settingsData } from "../core/select";
 import { renamedPrio, typedEdit, typedOrder, type PrioNum } from "../core/typedprio";
-import { DimxLists, MoveMenu, listsEscape } from "./DimxLists";
+import { DimxLists, MoveMenu, cardOf, listsEscape, secTasks, type ListCard, type ListDnd } from "./DimxLists";
+import { accepts } from "../core/groups";
 import { INBOX_NAME } from "../core/aiinbox";
+import { dropIndex, insertDimx } from "../core/dimxmove";
 import "./dimx.css";
 
-type Zone = DimxZone | "prio" | "ai";
-type Card = { key: string; id: string; text: string; zone: Zone; due?: string | null; pending?: boolean; style?: DimxStyle; ai?: boolean };
+// "s:<section>": a section of a list in the Lists view (PS 1.68, views/DimxLists.tsx), a place a task can be dragged to.
+type Zone = DimxZone | "prio" | "ai" | `s:${string}`;
+type Card = { key: string; id: string; text: string; zone: Zone; due?: string | null; pending?: boolean; style?: DimxStyle; ai?: boolean; type?: Todo["type"]; done?: boolean };
 type PrioView = { id: string; title: string; due?: string | null; pending?: boolean; p1?: boolean; unranked?: boolean; ai?: boolean };
+const isSec = (z: Zone | null | undefined): z is `s:${string}` => typeof z === "string" && z.startsWith("s:");
+/** A Lists view task held in its new place for a moment (Board), while the move travels to the page that saves it. */
+type ListHold = { card: Card; to: string; at: number; until: number };
 type View = { dimx: DimxItem[]; prio: PrioView[]; ai: PrioView[] };
 type Hold = Partial<View> & { until: number };
 
@@ -67,13 +73,6 @@ const WIN_RADIUS = 26;
 const uid = () => crypto.randomUUID();
 const nowIso = () => new Date().toISOString();
 
-/** Puts a card into its band at a position counted inside that band only. */
-function insertDimx(list: DimxItem[], item: DimxItem, index: number): DimxItem[] {
-  const rest = list.filter((x) => x.id !== item.id);
-  const band = rest.filter((x) => x.zone === item.zone);
-  const at = index < band.length ? rest.indexOf(band[index]) : band.length ? rest.indexOf(band[band.length - 1]) + 1 : rest.length;
-  return [...rest.slice(0, at), item, ...rest.slice(at)];
-}
 const insertAt = <T,>(arr: T[], item: T, i: number) => [...arr.slice(0, i), item, ...arr.slice(i)];
 
 /**
@@ -218,7 +217,7 @@ export function DimensionX({ prio, aware, dimx, docked, inbox = [] }: { prio: Do
                 ))}
               </div>
             </div>
-            <p className="dx-hint">{view === "ideas" ? "Drag a card anywhere, even onto your to-do list" : "Every list, side by side"}<span>{view === "ideas" ? "Double click to edit. Right click for colours and effects" : "Double click a name to rename it. Arrows reorder"}</span><span>Esc to go back</span></p>
+            <p className="dx-hint">{view === "ideas" ? "Drag a card anywhere, even onto your to-do list" : "Drag a task to reorder it or move it to another list"}<span>{view === "ideas" ? "Double click to edit. Right click for colours and effects" : "Double click a name to rename it. Arrows reorder"}</span><span>Esc to go back</span></p>
           </header>
           <Board prio={prio} aware={aware} dimx={dimx} inbox={inbox} ready={ready} escRef={boardEsc} view={view} onClose={close} />
         </div>
@@ -357,6 +356,12 @@ function Board({ prio, aware, dimx, inbox, ready, escRef, view, onClose }: {
   const aiDocs = useRef(new Map<string, Doc<Todo>>());
   aiDocs.current = new Map(inbox.map((d) => [d.id, d]));
   const [moveFor, setMoveFor] = useState<{ id: string; at: DOMRect } | null>(null);
+  const [lhold, setLhold] = useState<ListHold | null>(null);
+  useEffect(() => {
+    if (!lhold) return;
+    const t = window.setTimeout(() => setLhold(null), Math.max(0, lhold.until - Date.now()));
+    return () => clearTimeout(t);
+  }, [lhold]);
   // The latest lists change at once too, so quick changes in a row (several style picks, a delete
   // right after a move) each build on the one before instead of on the last render.
   const keep = (p: Partial<View>) => {
@@ -367,10 +372,19 @@ function Board({ prio, aware, dimx, inbox, ready, escRef, view, onClose }: {
   const cards = useMemo(() => {
     const m: Record<Zone, Card[]> = { act: [], soon: [], x: [], prio: [], ai: [] };
     for (const d of v.dimx) if (isBand(d.zone)) m[d.zone].push({ key: `d:${d.id}`, id: d.id, text: d.text, zone: d.zone, style: d.style });
-    for (const p of v.prio) m.prio.push({ key: `p:${p.id}`, id: p.id, text: p.title, zone: "prio", due: p.due, pending: p.pending, ai: p.ai });
-    for (const p of v.ai) m.ai.push({ key: `a:${p.id}`, id: p.id, text: p.title, zone: "ai", due: p.due, pending: p.pending, ai: true });
+    for (const p of v.prio) m.prio.push({ key: `p:${p.id}`, id: p.id, text: p.title, zone: "prio", due: p.due, pending: p.pending, ai: p.ai, type: "once" });
+    for (const p of v.ai) m.ai.push({ key: `a:${p.id}`, id: p.id, text: p.title, zone: "ai", due: p.due, pending: p.pending, ai: true, type: aiDocs.current.get(p.id)?.data.type ?? "once" });
     return m;
   }, [v.dimx, v.prio, v.ai]);
+  /** The cards of any place: a band, the rail's two lists, or (Lists view) one section of a list, with a task that was
+   *  just dropped already shown where it landed. */
+  const lholdLive = lhold && lhold.until > Date.now() ? lhold : null;
+  const zoneCards = (zone: Zone): Card[] => {
+    if (!isSec(zone)) return (cards as Record<string, Card[]>)[zone] ?? [];
+    const out: Card[] = secTasks(zone.slice(2)).map((d) => cardOf(d, zone) as Card).filter((c) => c.id !== lholdLive?.card.id);
+    if (lholdLive && lholdLive.to === zone) out.splice(Math.min(lholdLive.at, out.length), 0, { ...lholdLive.card, zone, key: `l:${lholdLive.card.id}`, pending: true });
+    return out;
+  };
 
   // Urgent is gone (V1.40). Anything still on the old Urgent list (settings.aware, eg from an older
   // PS on another device) moves to the top of Actionables when the board opens: first added there
@@ -389,6 +403,9 @@ function Board({ prio, aware, dimx, inbox, ready, escRef, view, onClose }: {
     }
     void taskMapActions.aware([]);
   }, [ready, aware]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // PS 1.68: each time the board opens, a move that was cut in half (the same id as a card and as a task) is finished.
+  useEffect(() => { if (ready) void taskMapActions.dimxTidy(); }, [ready]);
 
   const [drag, setDrag] = useState<Drag | null>(null);
   const dragRef = useRef(drag);
@@ -420,6 +437,7 @@ function Board({ prio, aware, dimx, inbox, ready, escRef, view, onClose }: {
   /** Moves a card and saves it. Returns the key the card has where it lands. */
   const moveCard = (card: Card, to: Zone, index: number): string => {
     const cur = vRef.current, from = card.zone;
+    if (isSec(to) || isSec(from)) return moveInLists(card, to, index);
     if (from === "ai") return moveFromInbox(card, to, index);
     if (isBand(from) && isBand(to)) {
       const item = cur.dimx.find((x) => x.id === card.id);
@@ -441,32 +459,57 @@ function Board({ prio, aware, dimx, inbox, ready, escRef, view, onClose }: {
       void taskMapActions.reorder(next.filter((p) => !p.pending).map((p) => p.id), on !== p1.has(card.id) ? { id: card.id, on } : undefined);
       return card.key;
     }
-    // Across: put it in its new place first, then take it out of the old one, so nothing is ever lost.
+    // Across (PS 1.68, core/dimxmove.ts): ONE move that keeps the item's id. The page holding the vault writes the new
+    // place first and then takes the old one away; a move sent twice, or cut in half, never leaves two copies.
     const text = card.text.trim();
-    const patch: Partial<View> = {};
-    let key: string, into: () => Promise<unknown>;
-    if (isBand(to)) {
-      const item: DimxItem = { id: uid(), text: text.slice(0, 500), zone: to, createdAt: nowIso() };
-      patch.dimx = insertDimx(cur.dimx, item, index);
-      key = `d:${item.id}`;
-      into = async () => { await taskMapActions.dimx(patch.dimx!); void taskMapActions.dimxMoved(item.id, item.text); };   // one move, noted once
-    } else {
-      const pid = `pending-${uid()}`;
+    if (isBand(to) && from === "prio") {
+      if (!prioDocs.current.has(card.id)) return card.key;
+      keep({ dimx: insertDimx(cur.dimx, { id: card.id, text: text.slice(0, 500), zone: to, createdAt: nowIso() }, index), prio: cur.prio.filter((p) => p.id !== card.id) });
+      void taskMapActions.toIdea(card.id, to, index);
+      return `d:${card.id}`;
+    }
+    if (to === "prio" && isBand(from)) {
       const order = orderAt(index);
       // Dropped among the Priority 1 cards: it joins that group.
       const p1 = index < cur.prio.filter((p) => p.p1).length;
-      patch.prio = insertAt(cur.prio, { id: pid, title: text, pending: true, p1 }, index);
-      key = `p:${pid}`;
-      into = () => taskMapActions.add({ title: text.slice(0, 500), due: null, type: "once", order, ...(p1 ? { p1: true } : {}) });
+      keep({ prio: insertAt(cur.prio.filter((p) => p.id !== card.id), { id: card.id, title: text, pending: true, p1 }, index), dimx: cur.dimx.filter((x) => x.id !== card.id) });
+      void taskMapActions.toTask(card.id, { order, p1 });
+      return `p:${card.id}`;
     }
-    let out: () => Promise<unknown>;
-    if (isBand(from)) { patch.dimx = (patch.dimx ?? cur.dimx).filter((x) => x.id !== card.id); const list = patch.dimx; out = () => taskMapActions.dimx(list); }
-    else { patch.prio = (patch.prio ?? cur.prio).filter((p) => p.id !== card.id); out = () => isBand(to) ? taskMapActions.moveOut(card.id) : taskMapActions.remove(card.id); }
-    keep(patch);
-    // A band to a band is handled above, so `into` and `out` never write the same list twice.
-    void into();
-    void out();
-    return key;
+    return card.key;
+  };
+
+  /** PS 1.68 Lists view: a task dragged into a section of a list (from that list, another list, Your task list or the AI
+   *  Inbox), or from a list onto Your task list. One write of the Tab list's own move (core/groups.ts planMove), the same
+   *  id, so it is in exactly one place; the row shows where it landed at once while the move travels. */
+  const moveInLists = (card: Card, to: Zone, index: number): string => {
+    const cur = vRef.current;
+    if (isSec(to)) {
+      const key = to.slice(2);
+      if (!accepts(key, [card.type ?? "once"])) return card.key;
+      // Shown without the dragged row; inside its own section planMove counts it where it was.
+      const shown = zoneCards(to).filter((c) => c.key !== card.key);
+      const from = card.zone === to ? zoneCards(to).findIndex((c) => c.key === card.key) : -1;
+      const at = index - (shown.slice(0, index).some((c) => c.id === card.id) ? 1 : 0);
+      setLhold({ card: { ...card, zone: to }, to, at: Math.max(0, at), until: Date.now() + HOLD_MS });
+      if (card.zone === "ai") keep({ ai: cur.ai.filter((p) => p.id !== card.id) });
+      else if (card.zone === "prio" && key !== "p1" && key !== "prio") keep({ prio: cur.prio.filter((p) => p.id !== card.id) });
+      void taskMapActions.moveTasks({ ids: [card.id], to: key, index: dropIndex(index, from), ...(card.zone === "ai" ? { inbox: true } : {}) });
+      return `l:${card.id}`;
+    }
+    if (to === "prio" && isSec(card.zone) && card.type !== "daily") {
+      // Among (or above) the Priority 1 cards it is P1, below them not (the Tab list's rule).
+      const p1n = cur.prio.filter((p) => p.p1).length;
+      const rest = cur.prio.filter((p) => p.id !== card.id);
+      const i = index - (cur.prio.slice(0, index).some((p) => p.id === card.id) ? 1 : 0);
+      const p1 = index < p1n;
+      keep({ prio: insertAt(rest, { id: card.id, title: card.text, due: card.due, pending: true, p1, ai: card.ai }, Math.max(0, i)) });
+      // It shows in its new section of the main list at once too (Priority 1 or Priorities).
+      setLhold({ card, to: `s:${p1 ? "p1" : "prio"}`, at: Math.max(0, p1 ? i : i - rest.filter((p) => p.p1).length), until: Date.now() + HOLD_MS });
+      void taskMapActions.moveTasks(p1 ? { ids: [card.id], to: "p1", index } : { ids: [card.id], to: "prio", index: index - p1n });
+      return `p:${card.id}`;
+    }
+    return card.key;
   };
 
   /** A task out of the AI Inbox (core/aiinbox.ts): onto Your task list it keeps its id and its AI badge and only
@@ -490,12 +533,10 @@ function Board({ prio, aware, dimx, inbox, ready, escRef, view, onClose }: {
       return `p:${card.id}`;
     }
     if (!isBand(to)) return card.key;
-    const item: DimxItem = { id: uid(), text: card.text.trim().slice(0, 500), zone: to, createdAt: nowIso() };
-    const next = insertDimx(cur.dimx, item, index);
-    keep({ dimx: next, ai: rest });
-    void taskMapActions.dimx(next).then(() => taskMapActions.dimxMoved(item.id, item.text));
-    void taskMapActions.moveOut(card.id);   // a move, not a delete
-    return `d:${item.id}`;
+    // A move, not a delete: the card keeps the task's id (core/dimxmove.ts), one op for the page holding the vault.
+    keep({ dimx: insertDimx(cur.dimx, { id: card.id, text: card.text.trim().slice(0, 500), zone: to, createdAt: nowIso() }, index), ai: rest });
+    void taskMapActions.toIdea(card.id, to, index);
+    return `d:${card.id}`;
   };
   /** An inbox task deleted, with Undo (it comes back with everything it had). */
   const removeInbox = (card: Card) => {
@@ -564,9 +605,18 @@ function Board({ prio, aware, dimx, inbox, ready, escRef, view, onClose }: {
   const hit = (x: number, y: number): { zone: Zone; index: number } | null => {
     const root = board.current;
     if (!root) return null;
+    const moving = dragRef.current?.card;
     for (const z of root.querySelectorAll<HTMLElement>("[data-zone]")) {
-      if (z.dataset.zone === "ai" && dragRef.current?.card.zone !== "ai") continue;   // nothing goes INTO the AI Inbox by hand
-      const r = z.getBoundingClientRect();
+      const zone = z.dataset.zone as Zone;
+      if (zone === "ai" && moving?.zone !== "ai") continue;   // nothing goes INTO the AI Inbox by hand
+      // PS 1.68 Lists view: a section only takes what it can hold (Every day repeating tasks, Priorities one-offs, a group
+      // anything), and a repeating task on a list stays on a list (Your task list holds one-offs).
+      const type = moving?.type ?? "once";
+      if (isSec(zone) ? !accepts(zone.slice(2), [type]) : isSec(moving?.zone) && type === "daily" && (zone === "prio" || isBand(zone))) continue;
+      const box = z.getBoundingClientRect(), sc = isSec(zone) ? z.closest<HTMLElement>("[data-scroll]")?.getBoundingClientRect() : null;
+      // A section scrolled partly out of its list only counts where it shows.
+      const r = sc ? { left: Math.max(box.left, sc.left), right: Math.min(box.right, sc.right), top: Math.max(box.top, sc.top), bottom: Math.min(box.bottom, sc.bottom) } : box;
+      if (r.bottom <= r.top) continue;
       if (x < r.left - 6 || x > r.right + 6 || y < r.top - 6 || y > r.bottom + 6) continue;
       const wrap = z.dataset.layout === "wrap";
       let index = 0;
@@ -575,7 +625,7 @@ function Board({ prio, aware, dimx, inbox, ready, escRef, view, onClose }: {
         const before = wrap ? y > c.bottom || (y >= c.top && x > c.left + c.width / 2) : y > c.top + c.height / 2;
         if (before) index++;
       });
-      return { zone: z.dataset.zone as Zone, index };
+      return { zone, index };
     }
     return null;
   };
@@ -593,7 +643,8 @@ function Board({ prio, aware, dimx, inbox, ready, escRef, view, onClose }: {
     const scrollerAt = () => {
       const z = hit(x, y);
       if (!z) return null;
-      const el = board.current?.querySelector<HTMLElement>(`[data-zone="${z.zone}"] [data-scroll]`);
+      const zel = [...(board.current?.querySelectorAll<HTMLElement>("[data-zone]") ?? [])].find((n) => n.dataset.zone === z.zone);
+      const el = zel ? (isSec(z.zone) ? zel.closest<HTMLElement>("[data-scroll]") : zel.querySelector<HTMLElement>("[data-scroll]")) : null;
       if (!el || el.scrollHeight <= el.clientHeight + 2) return null;
       const r = el.getBoundingClientRect();
       const edge = 42;
@@ -608,6 +659,14 @@ function Board({ prio, aware, dimx, inbox, ready, escRef, view, onClose }: {
       ghost.style.transform = `translate3d(${x - offX}px, ${y - offY}px, 0) rotate(${tilt.toFixed(2)}deg) scale(1.04)`;
       const sc = scrollerAt();
       if (sc) { sc.el.scrollTop += sc.sp; measure(); }
+      // Lists view: near the left or right edge the lists slide sideways, so a task reaches a list off screen.
+      const cols = board.current?.querySelector<HTMLElement>(".dl-cols");
+      let side = 0;
+      if (cols && cols.scrollWidth > cols.clientWidth + 2) {
+        const r = cols.getBoundingClientRect(), edge = 48;
+        side = x < r.left + edge ? -Math.min(16, (r.left + edge - x) / 3) : x > r.right - edge ? Math.min(16, (x - (r.right - edge)) / 3) : 0;
+        if (side) { cols.scrollLeft += side; measure(); }
+      }
       const t = hit(x, y);
       const d = dragRef.current;
       if (d && ((t?.zone ?? null) !== d.to || (t && t.index !== d.index))) {
@@ -617,14 +676,14 @@ function Board({ prio, aware, dimx, inbox, ready, escRef, view, onClose }: {
         if (t) sfx.hover();
         ghost.classList.toggle("lost", !t);
       }
-      if (Math.abs(tilt) > 0.05 || sc) raf = requestAnimationFrame(frame);
+      if (Math.abs(tilt) > 0.05 || sc || side) raf = requestAnimationFrame(frame);
     };
     const onMove = (ev: PointerEvent) => {
       x = ev.clientX; y = ev.clientY;
       if (!ghost) {
         if (Math.hypot(x - sx, y - sy) < 5) return;
         ghost = document.createElement("div");
-        ghost.className = `dx-ghost z-${card.zone} ${sizeCls(card.style)}`;
+        ghost.className = `dx-ghost z-${isSec(card.zone) ? "prio" : card.zone} ${sizeCls(card.style)}`;
         ghost.style.width = `${src.width}px`;
         const tx = document.createElement("span");
         tx.className = `dx-tx ${textCls(card.style)}`;
@@ -633,7 +692,7 @@ function Board({ prio, aware, dimx, inbox, ready, escRef, view, onClose }: {
         document.body.appendChild(ghost);
         document.documentElement.classList.add("dx-dragging");
         sfx.click();
-        const index = cards[card.zone].findIndex((c) => c.key === card.key);
+        const index = zoneCards(card.zone).findIndex((c) => c.key === card.key);
         const nd: Drag = { card, to: card.zone, index: Math.max(0, index), w: src.width, h: src.height };
         dragRef.current = nd;
         setDrag(nd);
@@ -811,7 +870,7 @@ function Board({ prio, aware, dimx, inbox, ready, escRef, view, onClose }: {
 
   /** One list's cards, with the gap where a dragged card would land. */
   const listOf = (zone: Zone, render: (c: Card, i: number) => React.ReactNode) => {
-    const list = cards[zone].filter((c) => c.key !== drag?.card.key);
+    const list = zoneCards(zone).filter((c) => c.key !== drag?.card.key);
     const out: React.ReactNode[] = list.map((c, i) => render(c, i));
     if (drag && drag.to === zone) {
       const band = isBand(zone);
@@ -841,6 +900,12 @@ function Board({ prio, aware, dimx, inbox, ready, escRef, view, onClose }: {
     setMenu({ key: c.key, at: new DOMRect(at.left - b.left, at.top - b.top, at.width, at.height) });
   };
   const menuCard = menu ? [...cards.act, ...cards.soon, ...cards.x].find((c) => c.key === menu.key) : undefined;
+  // PS 1.68: the Lists view's rows drag with this same code (views/DimxLists.tsx).
+  const listDnd: ListDnd = {
+    rows: (zone, render) => listOf(zone as Zone, (c) => render(c as ListCard)),
+    rowProps: (c) => ({ "data-k": c.key, onPointerDown: (e) => startDrag(e, c as Card) }),
+    over: drag?.to && isSec(drag.to) ? drag.to : null, dragging: !!drag,
+  };
 
   // P numbers as in the Tab list: the Priority 1 group shows P1, the rest count on from P2.
   const p1Of = new Map(v.prio.map((p) => [p.id, !!p.p1]));
@@ -849,7 +914,7 @@ function Board({ prio, aware, dimx, inbox, ready, escRef, view, onClose }: {
   return (
     <div ref={board} className={`dx-grid${drag ? " is-dragging" : ""}${view === "lists" ? " lists" : ""}`}
       onPointerDown={(e) => { if (!(e.target as Element).closest("[data-k], .dx-menu, .dx-toast, .dl-menu")) { setSel(null); setMenu(null); } }}>
-      {view === "lists" ? <DimxLists onOpen={onClose} onUndo={(text, restore) => setUndo({ text, verb: "Deleted", restore })} /> : (
+      {view === "lists" ? <DimxLists onOpen={onClose} onUndo={(text, restore) => setUndo({ text, verb: "Deleted", restore })} dnd={listDnd} /> : (
       <div className="dx-bands">
         {BANDS.map((b) => (
           <section key={b.zone} className={`dx-band z-${b.zone}${drag?.to === b.zone ? " target" : ""}`} data-zone={b.zone} data-layout="wrap" aria-label={b.title}>

@@ -5,6 +5,7 @@ import { OLD_SCENES, movedId, sortPrio, unrankedAfterMove } from "./prio";
 import { islandOnPatch } from "./islandon";
 import { cleanGroups, cleanSecOrder, groupKey, planMove, planUngroup, tabLists, type TaskMove } from "./groups";
 import { addPage, cleanPages, moveSec } from "./lists";
+import { moveLeftovers, taskToIdea } from "./dimxmove";
 import { createWorkspace, deleteBlob, doc, docs, put, putBlob, rematchMail, remove, roleConfirmed, setMerger, vaultStore } from "./vault";
 import { parseMatchEntry } from "./mail";
 import { agendas, dayLogs, extraSettingsIds, tzZonesDoc, journal, notes, projectViews, quotes, rawScreenTimeDays, settings, todos } from "./select";
@@ -494,7 +495,8 @@ export async function approveStage(projectId: string, ws: string, stageKey: stri
 }
 
 // ---------- to-do list ----------
-export async function addTodo(t: Partial<Todo> & { title: string }) {
+/** id (PS 1.68): an idea card that becomes a task gives the task its own id (core/dimxmove.ts). */
+export async function addTodo(t: Partial<Todo> & { title: string }, opts: { id?: string } = {}) {
   // New tasks join the bottom of the priority list (drag them up to raise their priority).
   const list = todos(vaultStore.get());
   const order = t.order ?? (list.length ? Math.max(...list.map((x) => x.data.order ?? 0)) + 1 : 0);
@@ -502,7 +504,7 @@ export async function addTodo(t: Partial<Todo> & { title: string }) {
   const usual = !t.example && t.est == null ? learnedEst(t.title) : null;
   const id = await put<Todo>("todo", {
     type: "once", done: false, source: "manual", ...t, ...(usual ? { est: usual, estBy: "past" as const } : {}), order, createdAt: now(),
-  } as Todo, { ws: null });
+  } as Todo, { ws: null, ...(opts.id ? { id: opts.id } : {}) });
   if (!t.example && id) void logTaskEvent("added", { id, title: t.title, p1: t.p1, clientId: t.clientId });
   return id;
 }
@@ -541,7 +543,9 @@ export async function moveTasks(m: TaskMove, make?: { group: TaskGroup; order: s
     if (!groups.some((x) => x.id === g.id)) await saveSettings({ tmGroups: [...groups, g], tmSecOrder: cleanSecOrder(make.order), ...onPage });
     m = { ...m, to: groupKey(g.id) };
   }
-  await writeMoves(planMove(tabListsNow(), m));
+  // PS 1.68: a task dragged out of the AI Inbox in Dimension X joins the section and leaves the inbox in one write.
+  const inbox = m.inbox ? todos(vaultStore.get()).filter((d) => m.ids.includes(d.id) && d.data.aiInbox === true) : [];
+  await writeMoves(planMove(tabListsNow(), m, inbox));
 }
 /** A group taken apart: its tasks go back to Priorities or Every day, then the group goes. */
 export async function ungroupTasks(id: string) {
@@ -664,6 +668,53 @@ export function subtaskOp(id: string, op: SubOp): Promise<void> {
   subLane = p.catch(() => {});
   return p;
 }
+// ---------- Dimension X: a task becomes an idea, an idea becomes a task (PS 1.68, core/dimxmove.ts) ----------
+// One lane, so two moves (or a move and its tidy) never read the same old copy. Each move writes the new place first and
+// only then takes the old one away, so nothing is ever lost; the item keeps its id both ways, so a move cut in half is
+// found and finished by tidyMoves, and a move sent twice adds nothing the second time.
+let dimxLane: Promise<unknown> = Promise.resolve();
+function inDimxLane(f: () => Promise<void>): Promise<void> {
+  const p = dimxLane.then(f, f);
+  dimxLane = p.catch(() => {});
+  return p;
+}
+/** A task (or an AI Inbox task) becomes an idea card in `zone` at `index` (counted in that band). */
+export function moveTaskToIdea(id: string, zone: DimxZone, index: number): Promise<void> {
+  return inDimxLane(async () => {
+    const t = doc<Todo>(id), st = settings(vaultStore.get())?.data;
+    if (!t || t.kind !== "todo" || !st) return;   // gone already: the same move ran before
+    const dimx = st.dimx || [];
+    const next = taskToIdea(dimx, { id, title: t.data.title }, zone, index, now());
+    if (next !== dimx) await saveSettings({ dimx: next });
+    await deleteTodo(id, { moved: true });
+    void noteDimxMove(id, t.data.title);
+    await tidyNow();
+  });
+}
+/** An idea card becomes a task with the card's id, at `order` (p1: in the Priority 1 group). */
+export function moveIdeaToTask(id: string, place: { order: number; p1?: boolean }): Promise<void> {
+  return inDimxLane(async () => {
+    const st = settings(vaultStore.get())?.data;
+    const card = st?.dimx?.find((x) => x.id === id);
+    if (!st || !card) return;   // gone already: the same move ran before
+    const have = doc(id);
+    if (!have) await addTodo({ title: card.text.slice(0, 500), due: null, type: "once", order: place.order, ...(place.p1 ? { p1: true } : {}) }, { id });
+    else if (have.kind !== "todo") await addTodo({ title: card.text.slice(0, 500), due: null, type: "once", order: place.order, ...(place.p1 ? { p1: true } : {}) });
+    const now2 = settings(vaultStore.get())?.data;
+    await saveSettings({ dimx: (now2?.dimx || []).filter((x) => x.id !== id) });
+    await tidyNow();
+  });
+}
+/** Finishes half done moves (core/dimxmove.ts moveLeftovers): only a card and a task with the same id and words. */
+export function tidyMoves(): Promise<void> { return inDimxLane(tidyNow); }
+async function tidyNow() {
+  const s = vaultStore.get(), st = settings(s)?.data;
+  if (!st?.dimx?.length) return;
+  const l = moveLeftovers(st.dimx, todos(s));
+  if (l.dimx) await saveSettings({ dimx: l.dimx });
+  for (const id of l.tasks) await deleteTodo(id, { moved: true });
+}
+
 /** moved: the task is leaving for Dimension X, which is one move (noted by noteDimxMove), not also a delete. */
 export async function deleteTodo(id: string, o: { moved?: boolean } = {}) {
   const d = doc<Todo>(id);

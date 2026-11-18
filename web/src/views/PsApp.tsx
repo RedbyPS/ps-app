@@ -129,6 +129,11 @@ export function PsOverlay() {
     taskMapActions.remove = async (id) => psPost({ type: "remove", id });
     taskMapActions.aware = async (list) => psPost({ type: "aware", list });
     taskMapActions.dimx = async (list) => psPost({ type: "dimxList", list });
+    // PS 1.68 Dimension X moves (core/dimxmove.ts): this window holds no keys, so the main window runs each move as one op.
+    // Before this a task moved to Ideas from here was never deleted (the delete was refused here), so it stayed in both.
+    taskMapActions.toIdea = async (id, zone, index) => psPost({ type: "looks", patch: { dimxOp: { op: "toIdea", id, zone, index } } });
+    taskMapActions.toTask = async (id, place) => psPost({ type: "looks", patch: { dimxOp: { op: "toTask", id, order: place.order, p1: place.p1 === true } } });
+    taskMapActions.dimxTidy = async () => psPost({ type: "looks", patch: { dimxOp: { op: "tidy" } } });
     taskMapActions.rules = async (list) => psPost({ type: "looks", patch: { rules: list } });   // the rule book: the main window saves it
     taskMapActions.moveTasks = async (m, make) => psPost({ type: "looks", patch: { taskMove: { ...m, ...(make ? { make } : {}) } } });   // Tab list groups (core/groups.ts)
     taskMapActions.ungroup = async (id) => psPost({ type: "looks", patch: { ungroup: id } });

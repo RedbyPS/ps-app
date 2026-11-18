@@ -59,6 +59,22 @@
 .dl-item.band.z-act i { background: var(--k-bad, #FF4D4D); }
 .dl-item.band.z-soon i { background: var(--k-info-t, #9DB4CC); }
 .dl-item.band.z-x i { background: var(--k-acc2, #8B5CF6); }
+/* PS 1.68: every place, grouped by level top to bottom (the action level with every list, The Upside Down, Dimension X),
+   each with a thin bar and a small name in its band's colour. */
+.dl-lvl { display: grid; gap: 1px; margin-top: 4px; padding-left: 7px; border-left: 2px solid var(--lvl, color-mix(in srgb, var(--k-fg, #FFFFFF) 30%, transparent)); }
+.dl-lvl.z-act { --lvl: var(--k-bad, #FF4D4D); }
+.dl-lvl.z-soon { --lvl: var(--k-info-t, #9DB4CC); }
+.dl-lvl.z-x { --lvl: var(--k-acc2, #8B5CF6); }
+.dl-lvl-h { padding: calc(3px * var(--k-dn, 1)) calc(2px * var(--k-dn, 1)) 1px; font-size: calc(10px * var(--k-fs, 1)); font-weight: 820; letter-spacing: .12em; text-transform: uppercase; color: var(--lvl); }
+.dl-lvl .dl-item:hover, .dl-lvl .dl-item:focus-visible { background: color-mix(in srgb, var(--lvl) 24%, transparent); }
+.dl-lvl.z-act .dl-item:not(.band) i { background: color-mix(in srgb, var(--k-bad, #FF4D4D) 55%, transparent); }
+.dl-item:disabled { opacity: .4; cursor: default; }
+.dl-item:disabled:hover { background: transparent; }
+/* PS 1.68 dragging in the Lists view: the section under a dragged task lights up, a row being saved is dimmed. */
+.dl-sec { padding: 2px; margin: -2px; border-radius: calc(12px * var(--k-rd, 1)); transition: background .18s ease, box-shadow .18s ease; }
+.dl-sec.target { background: color-mix(in srgb, var(--k-bad, #FF2828) 7%, transparent); box-shadow: 0 0 0 1px color-mix(in srgb, var(--k-bad, #FF5050) 45%, transparent); }
+.dl-row.pending { opacity: .6; }
+.dx-grid.is-dragging .dl-acts { opacity: 0; pointer-events: none; }
 
 /* ---------- the Lists view ---------- */
 .dx-grid.lists .dl-wrap { min-height: 0; min-width: 0; position: relative; }
@@ -135,5 +151,5 @@
 }
 @media (prefers-reduced-motion: reduce) {
   .dl-col, .dl-menu, .dl-ask, .dx-x-ai { animation: none; }
-  .dl-btn, .dl-new, .dx-mv, .dx-view { transition: none; }
+  .dl-btn, .dl-new, .dx-mv, .dx-view, .dl-sec { transition: none; }
 }
