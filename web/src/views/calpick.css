@@ -16,7 +16,8 @@
 .cp-seg button:focus-visible { outline: 2px solid color-mix(in srgb, currentColor 55%, transparent); outline-offset: 1px; }
 .cp-seg button.on { opacity: 1; background: color-mix(in srgb, currentColor 16%, transparent); }
 @media (max-width: 520px) { .cp-row { grid-template-columns: 10px minmax(0, 1fr); } .cp-seg { grid-column: 1 / -1; justify-self: start; } }
-/* The gear in the Meetings panel sits just left of the refresh button. */
-.tm-cal-pick { right: 128px; }
-.tm-cal-pick.solo { right: 90px; }
-.tm-meet-h.has-pick { padding-right: calc(162px * var(--k-dn, 1)); }
+/* The gear in the Meetings panel: next to the mask, refresh moves one place left of it. PS 1.68: both selectors carry two classes,
+   so taskmap.css (loaded later) can no longer put the gear back on top of refresh (it drew both icons in one circle). */
+.tm-meet .tm-cal-ref.tm-cal-pick { right: 50px; }
+.tm-meet:has(.tm-cal-pick) .tm-cal-ref:not(.tm-cal-pick) { right: 90px; }
+.tm-meet-h.has-pick { padding-right: calc(124px * var(--k-dn, 1)); }
