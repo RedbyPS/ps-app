@@ -321,5 +321,15 @@
    "Phone: hold the round button bottom left for the wheel menu. Every screen opens full screen.",
    "Receipts read more accurately."
   ]
+ },
+ "1.68": {
+  "en": [
+   "Your pages, panels and settings stay where you put them after an update. The Edit button stays visible while you arrange.",
+   "Squad Priority 1 shows one row per person: time left, hit rate and streak. Hover any number to see what it means.",
+   "One G Squad for everyone, no more Leave or Join. Your sleep now reaches the squad even if you skip Save.",
+   "Streaks on every mini task of a repeating task. Add a reminder and an estimate while adding a task.",
+   "Dimension X: drag tasks between lists, move anything to Ideas, and moves never leave a copy behind.",
+   "Private mode turns itself off when the meeting ends. The island's email count matches your email panel."
+  ]
  }
 }
