@@ -20,7 +20,10 @@ WORK="${RUNNER_TEMP:-$(mktemp -d)}/gsquad-mac"
 KC="$WORK/gsquad-signing.keychain-db"
 KEY="$CORE/mac/signing/update-ed25519.key"
 rm -rf "$WORK"; mkdir -p "$WORK/in" "$OUT"
+OLD_KCS=""
 cleanup() {
+  # Put the runner's own keychain list back before the throwaway keychain goes.
+  [ -n "$OLD_KCS" ] && security list-keychains -d user -s $OLD_KCS 2>/dev/null || true
   security delete-keychain "$KC" 2>/dev/null || true
   rm -f "$KEY" "$WORK/cert.p12"
 }
@@ -39,10 +42,17 @@ printf '%s' "$GSQUAD_MAC_CERT_P12" | base64 --decode > "$WORK/cert.p12"
 security import "$WORK/cert.p12" -k "$KC" -P "$GSQUAD_MAC_CERT_PASSWORD" -T /usr/bin/codesign > /dev/null
 rm -f "$WORK/cert.p12"
 security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KCPASS" "$KC" > /dev/null
+# codesign finds the identity through the user keychain search list, --keychain alone is not enough on the
+# macOS runners ("no identity found" in the 1.67 runs), so the throwaway keychain goes on the list for this run.
+OLD_KCS="$(security list-keychains -d user | tr -d '"' | xargs)"
+security list-keychains -d user -s "$KC" $OLD_KCS
 # Self signed (no Apple team, like PS Local Signing), so it is not "valid" to find-identity -v; it signs all the same.
 ID="$(security find-identity -p codesigning "$KC" | sed -n 's/^ *[0-9][0-9]*) \([0-9A-F]\{40\}\) .*/\1/p' | head -1)"
 [ -n "$ID" ] || { echo "STOP: no code signing identity in GSQUAD_MAC_CERT_P12"; exit 1; }
 echo "signing identity $ID"
+# Try the identity on a throwaway copy first, so a signing problem stops here with a clear message.
+cp /usr/bin/true "$WORK/sign-check"
+codesign --force --keychain "$KC" --sign "$ID" "$WORK/sign-check" || { echo "STOP: codesign can not use identity $ID"; exit 1; }
 
 # 2. Sign inside out, as mac/build.sh does for a signed build (hardened runtime everywhere).
 sign() { codesign --force --options runtime --timestamp=none --keychain "$KC" --sign "$ID" "$@"; }
