@@ -639,6 +639,14 @@ export function addTaskReminder(rec: RemindRec, r: Reminder, now: number): Remin
   const gone = { ...rec.gone }; delete gone[c.id];
   return { ...rec, list: [...rec.list, { ...c, edited: Math.max(now, c.edited) }], gone, at: Math.max(now, rec.at) };
 }
+/** PS 1.68 (Jan, 18 Nov 2026: adding a task offers the annoying reminder too, like its Edit): a reminder set up in the Add a
+ *  task window before the task existed joins the record once the task has its id. It gets a fresh id here (the one it was
+ *  drafted with may be taken by now) and the new task's id; everything else is cleaned like any reminder. */
+export function addDraftTaskReminder(rec: RemindRec, draft: unknown, task: string, now: number): RemindRec {
+  const c = cleanReminder(draft, now);
+  if (!c || !task) return rec;
+  return addTaskReminder(rec, { ...c, id: freshId(rec), task }, now);
+}
 /** A one-line state for the bell's hover: "Showing now", "Snoozed until 14:30", "Done for today. Next: Fri 13 Nov, 09:00". */
 export function nextWords(r: Reminder, s: RemState | undefined, now: number, deviceTz: string, taskDone = false): string {
   if (!r.on) return "Reminder off";

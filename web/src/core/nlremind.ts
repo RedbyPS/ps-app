@@ -5,7 +5,7 @@
 import { saveRemind } from "./actions";
 import { vaultStore } from "./vault";
 import { isRedAccount } from "./account";
-import { addTaskReminder, freshId, remindOrDefault } from "./remind";
+import { addDraftTaskReminder, addTaskReminder, freshId, remindOrDefault } from "./remind";
 import { timeReminder, type TimeRemind } from "./nldates.ts";
 
 export { cleanTimeRemind, type TimeRemind } from "./nldates.ts";
@@ -17,6 +17,18 @@ export function addTimeReminder(taskId: string, w: TimeRemind): Promise<void> {
   return saveRemind((cur) => {
     const base = remindOrDefault(cur, red);
     const next = addTaskReminder(base, timeReminder(freshId(base), taskId, w, now), now);
+    return next === base ? null : next;
+  }).catch(() => {});
+}
+
+/** PS 1.68: the reminder set up in the Add a task window (views/TaskRemind.tsx DraftRemindPop), added once the task has its id.
+ *  Nothing happens when the task has one already or the list of reminders on tasks is full. */
+export function addDraftReminder(taskId: string, draft: unknown): Promise<void> {
+  const red = isRedAccount(vaultStore.get());
+  const now = Date.now();
+  return saveRemind((cur) => {
+    const base = remindOrDefault(cur, red);
+    const next = addDraftTaskReminder(base, draft, taskId, now);
     return next === base ? null : next;
   }).catch(() => {});
 }

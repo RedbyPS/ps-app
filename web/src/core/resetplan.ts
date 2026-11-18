@@ -8,7 +8,7 @@
 // at 9am never wipes the tasks ticked on the phone at 6am. A Reset you press saves every tick to one work day,
 // "Your work day ends at" (core/daylog.ts), as before.
 import type { Doc, Todo } from "./model.ts";
-import { isRepeating, resetPatch } from "./repeat.ts";
+import { isRepeating, resetPatch, roundOver } from "./repeat.ts";
 import { resetSubs } from "./subtasks.ts";
 import { DAY_ENDS_DEFAULT, workDayOf, type DayLogItem } from "./daylog.ts";
 import { addDays, byResetDay, dayStartAt, resetDayOf } from "./resetday.ts";
@@ -43,8 +43,10 @@ export function planReset(list: Doc<Todo>[], o: { at: string; tz: string; atMin:
   for (const d of list) {
     if (fresh(d.data.doneAt)) continue;   // ticked today (auto): it stays as it is until the next reset
     const rp = resetPatch(d.data, today);
-    // Mini tasks: a repeating task's all untick with it; an unfinished one-off drops its done ones.
-    const subs = d.data.type === "once" && d.data.done ? d.data.subtasks : keepFresh(d.data.subtasks, resetSubs(d.data.subtasks, isRepeating(d.data)), fresh);
+    // Mini tasks: a repeating task's all untick with it (PS 1.68: keeping or ending each one's streak, and left as they are
+    // while a longer repeat waits for its date); an unfinished one-off drops its done ones.
+    const subs = d.data.type === "once" && d.data.done ? d.data.subtasks
+      : keepFresh(d.data.subtasks, resetSubs(d.data.subtasks, isRepeating(d.data), roundOver(d.data, today) ? "over" : "wait"), fresh);
     const subPatch = subs !== d.data.subtasks && JSON.stringify(subs) !== JSON.stringify(d.data.subtasks) ? { subtasks: subs } : null;
     if (rp || subPatch) puts.push({ id: d.id, data: { ...d.data, ...rp, ...subPatch } as Todo });
     else if (d.data.type === "once" && d.data.done) puts.push({ id: d.id, data: { ...d.data, clearedAt: o.at } as Todo });

@@ -11,6 +11,7 @@ import { phonesOf, type PhoneDev } from "./phonedevices";
 import * as Dev from "./devicebg";
 import { pickRemind, type RemindRec } from "./remind";
 import { mainCalendar } from "./calfeeds";
+import { isOpenReply } from "./mailopen";
 import { hasOff, shownEvents, type CalInfo } from "./calpick";
 import { belongsTo, daysOf } from "./screentime";
 import { daysFromToday, todayISO } from "../ui/kit";
@@ -283,7 +284,7 @@ export function replies(s: Snapshot, clientId?: string): Doc<Reply>[] {
 }
 export function openReplies(s: Snapshot, clientId?: string): Doc<Reply>[] {
   const live = new Set(byKind<ClientRec>(s, "client").map((c) => c.id));
-  return replies(s, clientId).filter((r) => !r.data.handled && live.has(r.data.clientId));
+  return replies(s, clientId).filter((r) => isOpenReply(r.data, live));   // the island's envelope counts the same (core/mailopen.ts)
 }
 export function drafts(s: Snapshot): Doc<Draft>[] {
   return byKind<Draft>(s, "draft").sort((a, b) => (a.updatedAt || "").localeCompare(b.updatedAt || ""));

@@ -517,6 +517,7 @@ export interface Settings {
   noteLook?: import("./notelook").NoteLookPrefs | null;   // notification cards per kind: colour, sound on, which sound (core/notelook.ts, V1.36). Unset = as before
   tmDoneKeep?: "today" | "7d" | "30d";   // how long Completed keeps ticks: since the start of today in the developer's zone (default), 7 or 30 days
   privateMode?: boolean;         // PS (V1.57: every Mac pop up is a small pill with no sound, ps-mac PrivateCore.swift): notification cards hide names and words (the mask on the Meetings panel, or Yes to "Start private mode?"), until the developer turns it off (the developer, 29 Oct 2026)
+  privateAt?: string | null;    // PS 1.68: when private mode last came on (ISO), so it ends with the meeting (core/privateends.ts)
   tmSecOrder?: string[];         // the Tab list's sections top to bottom: "p1", "prio", "daily" and "g:<group id>" (the developer, 29 Oct 2026), see core/groups.ts
   tmGroups?: TaskGroup[];        // The developer's own task groups in the Tab list, made by dragging Cmd-selected tasks out (the developer, 29 Oct 2026)
   tmPages?: import("./lists").ListPage[];   // V1.55: the developer's extra to-do lists, each a page of sections he swipes to (core/lists.ts). Unset = the main list only

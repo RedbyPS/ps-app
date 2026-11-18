@@ -1155,8 +1155,10 @@ html:not(.gos) .tm-overlay:not(.tm-docked) .tm-xrow > *, html:not(.gos) .tm-over
 .tm-mask:hover { color: color-mix(in srgb, var(--k-fg, #FFFFFF) min(100%, calc(85% * var(--k-ia, 1))), transparent); border-color: color-mix(in srgb, var(--k-fg, #FFFFFF) min(100%, calc(30% * var(--k-ia, 1))), transparent); }
 .tm-mask:active { transform: scale(.92); }
 .tm-mask.on { color: var(--k-fg, #FFFFFF); background: color-mix(in srgb, var(--k-fg, #FFFFFF) min(100%, calc(16% * var(--k-ia, 1))), transparent); border-color: color-mix(in srgb, var(--k-fg, #FFFFFF) min(100%, calc(85% * var(--k-ia, 1))), transparent);
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--k-fg, #FFFFFF) min(100%, calc(35% * var(--k-ia, 1))), transparent), 0 0 16px color-mix(in srgb, var(--k-glow, #FFFFFF) 55%, transparent), 0 0 34px color-mix(in srgb, var(--k-glow, #FFFFFF) 25%, transparent);
-  filter: drop-shadow(0 0 4px color-mix(in srgb, var(--k-glow, #FFFFFF) 80%, transparent)); }
+  box-shadow: 0 0 14px color-mix(in srgb, var(--k-glow, #FFFFFF) 40%, transparent); }
+/* PS 1.68 (Jan, 18 Nov 2026: "two buttons on one button"): one ring only. The glow sits on the mask itself, not on a second ring
+   around the button (the 1px outer ring and the drop shadow on the whole button drew a circle around the circle). */
+.tm-mask.on svg { filter: drop-shadow(0 0 3px color-mix(in srgb, var(--k-glow, #FFFFFF) 70%, transparent)); }
 .tm-meet-none { margin: 8px 0 2px; font-size: calc(13px * var(--k-fs, 1)); font-weight: 600; color: color-mix(in srgb, var(--k-fg, #FFFFFF) min(100%, calc(45% * var(--k-ia, 1))), transparent); }
 .tm-light-on .tm-mask.on { color: #1B1A1D; border-color: #1B1A1D; background: rgba(0, 0, 0, .08); box-shadow: 0 0 14px rgba(0, 0, 0, .25); filter: none; }
 .tm-meet-list:empty { display: none; }
@@ -1211,9 +1213,10 @@ html:not(.gos) .tm-overlay:not(.tm-docked) .tm-xrow > *, html:not(.gos) .tm-over
 .tm-light-on .tm-isl-opt.sel { background: rgba(0, 0, 0, .06); box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .4); }
 
 /* Meetings panel, delete and refresh (the developer, 2 Nov 2026). The X shows on a hovered meeting (always, faintly, on the
-   phone); a removed meeting slides out and an Undo bar waits a few seconds. Refresh sits left of the island
-   switch and spins while the calendar is read. Only transform and opacity animate. */
-.tm-meet-h { padding-right: calc(124px * var(--k-dn, 1)); }
+   phone); a removed meeting slides out and an Undo bar waits a few seconds. Refresh spins while the calendar is read. Only
+   transform and opacity animate. PS 1.68 (Jan, 18 Nov 2026: "two buttons on one button"): the island switch left this panel in
+   1.58, so refresh sits right next to the mask, and the calendar gear (views/calpick.css) gets its own place between them
+   instead of being drawn over refresh. */
 .tm-cal-ref { position: absolute; top: 9px; right: 90px; width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; cursor: pointer;
   color: color-mix(in srgb, var(--k-fg, #FFFFFF) min(100%, calc(50% * var(--k-ia, 1))), transparent); background: color-mix(in srgb, var(--k-fg, #FFFFFF) min(100%, calc(5% * var(--k-ia, 1))), transparent); border: 1px solid color-mix(in srgb, var(--k-fg, #FFFFFF) min(100%, calc(14% * var(--k-ia, 1))), transparent);
   transition: color .2s ease, background .2s ease, border-color .2s ease, transform .15s ease; }
@@ -1223,6 +1226,7 @@ html:not(.gos) .tm-overlay:not(.tm-docked) .tm-xrow > *, html:not(.gos) .tm-over
 .tm-cal-ref.busy { color: var(--k-fg, #FFFFFF); border-color: color-mix(in srgb, var(--k-fg, #FFFFFF) min(100%, calc(50% * var(--k-ia, 1))), transparent); }
 .tm-cal-ref.busy svg { animation: tmCalSpin .9s linear infinite; }
 @keyframes tmCalSpin { to { transform: rotate(360deg); } }
+.tm-meet .tm-cal-ref { right: 50px; }   /* in the panel: next to the mask (a copy dragged out in Edit mode keeps its old place) */
 .tm-light-on .tm-cal-ref.busy { color: #1B1A1D; border-color: #1B1A1D; }
 .tm-meet li { position: relative; transition: background .15s ease, opacity .22s ease, transform .24s cubic-bezier(.22, 1, .36, 1); }
 .tm-meet li.leaving { opacity: 0; transform: translate3d(-14px, 0, 0); pointer-events: none; }

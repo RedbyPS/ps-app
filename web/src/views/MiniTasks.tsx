@@ -13,6 +13,7 @@ import { useDragOrder } from "../ui/dragOrder";
 import { useVault } from "../ui/kit";
 import { sfx } from "../ui/sfx";
 import { Chevron, Collapse } from "./Accordion";
+import { StreakBadge } from "../ui/RepeatPicker";
 import { dimxIsOpen } from "./DimensionX";
 import { pushUndoAction, taskMapActions } from "./TaskMap";
 import "./minitasks.css";
@@ -39,7 +40,7 @@ export function miniList(d: Doc<Todo>): Subtask[] {
 
 /** One change: shown at once, then saved (PS: through its main window, as an op on the newest copy). */
 export function miniAct(d: Doc<Todo>, op: SubOp) {
-  const next = applySubOp(miniList(d), op, new Date().toISOString());
+  const next = applySubOp(miniList(d), op, new Date().toISOString(), d.data.type === "daily");
   pending.set(d.id, { list: next, until: Date.now() + 5000 });
   emit();
   void taskMapActions.sub(d.id, op, next);
@@ -181,6 +182,8 @@ function MiniItem({ d, s, index, drag, undo }: { d: Doc<Todo>; s: Subtask; index
         <span className="mt-t" onDoubleClick={() => setEdit(true)} title="Double click to edit">{s.title}</span>
       )}
       {claude && <span className="mt-claude">Claude</span>}
+      {/* PS 1.68: each mini task of a repeating task has its own streak (core/subtasks.ts), a tiny flame from 2 in a row. */}
+      {d.data.type === "daily" && !edit && <StreakBadge n={s.streak} className="mt-streak" rule={d.data.repeat} best={s.bestStreak} mini />}
     </li>
   );
 }

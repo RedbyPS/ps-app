@@ -218,4 +218,19 @@ ok("G Squad tasks per day and month follow the reset time", () => {
   assert.deepEqual(tasksCard(todos, NOW, TB).m, { "2026-11": 2 });
 });
 
+// PS 1.68 streaks on mini tasks: the Reset ends each one's round with its parent's.
+ok("a Reset keeps the streak of done mini tasks of a repeating task and ends the missed ones", () => {
+  const subs = [{ id: "s1", title: "Water", done: true, doneAt: "2026-11-07T05:00:00Z", streak: 6, streakTicked: true, bestStreak: 6 },
+    { id: "s2", title: "Stretch", done: false, streak: 3, bestStreak: 5 }];
+  const morning = task("m", { type: "daily", done: false, streak: 2, subtasks: subs });
+  const weekly = task("w", { type: "daily", done: false, repeat: { every: 1, unit: "week", from: "2026-11-02" }, due: "2026-11-09",
+    subtasks: [{ id: "x", title: "Step", done: true, doneAt: "2026-11-07T05:00:00Z", streak: 1, streakTicked: true }] });
+  const p = planReset([morning, weekly], { at: "2026-11-08T00:30:00.000Z", tz: TB, atMin: 240, auto: true });
+  const put = new Map(p.puts.map((x) => [x.id, x.data]));
+  const m = put.get("m")!;
+  assert.equal(m.streak, 0, "the every day task itself was missed");
+  assert.deepEqual(m.subtasks!.map((x) => [x.done, x.streak ?? 0, !!x.streakTicked]), [[false, 6, false], [false, 0, false]]);
+  assert.equal(m.subtasks![1].bestStreak, 5);
+  assert.equal(put.has("w"), false, "a weekly task not due yet keeps its mini tasks as they are");
+});
 console.log(`resettime: ${n} passed`);

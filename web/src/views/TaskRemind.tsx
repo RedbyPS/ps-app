@@ -10,7 +10,7 @@
 // - The bell on the task row: the next time on hover, a click opens this pop-up.
 // The rules are in core/remind.ts; the pop-ups and notifications come from the shells like every other reminder.
 // Esc closes it (one layer: a Test showing ends first). Motion: transform and opacity only, none with Reduce motion.
-import { useEffect, useRef, useState, useSyncExternalStore, type CSSProperties } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore, type CSSProperties, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import type { Doc, Todo } from "../core/model";
 import { useVault } from "../ui/kit";
@@ -59,23 +59,9 @@ export function TaskRemindHost() {
   return <><span ref={probe} hidden />{mine && o && <Pop key={o.key} task={o.task} />}</>;
 }
 
-function Pop({ task }: { task: string }) {
-  const s = useVault();
-  const red = isRedAccount(s);
-  const ready = s.status === "unlocked";
-  const d = s.docs.get(task) as Doc<Todo> | undefined;
-  const t = d?.kind === "todo" ? d.data : undefined;
-  const saved = ready ? reminderOfTask(remindRec(s), task) : null;
-  // A new one is a draft here until Add reminder (its own id, so a sound picked for it stays with it).
-  const [draft, setDraft] = useState<Reminder | null>(() => (saved ? null : newTaskReminder(freshId(remindOrDefault(remindRec(s), red)), task, Date.now(), DEVICE_TZ)));
-  const [everyDay, setEveryDay] = useState(false);
-  const [closing, setClosing] = useState(false);
-  const [sure, setSure] = useState(false);
-  const full = ready && onTasksOf(remindOrDefault(remindRec(s), red)).length >= REM_TASK_MAX;
-  const r = saved ?? draft;
+/** Esc for a pop-up: a Test showing ends first (its own listener is newer), then the pop-up closes. Nothing behind it sees the key. */
+function useEscClose(close: () => void) {
   const snd = useRemSound();
-  const close = () => { if (closing) return; setClosing(true); stopTest(); window.setTimeout(closeTaskRemind, 170); };
-  // Esc: a Test showing ends first (its own listener is newer), then this pop-up closes. Nothing behind it sees the key.
   const testing = useRef(false);
   testing.current = !!snd.testing;
   const closeRef = useRef(close);
@@ -90,6 +76,63 @@ function Pop({ task }: { task: string }) {
     window.addEventListener("keydown", k, true);
     return () => window.removeEventListener("keydown", k, true);
   }, []);
+}
+
+/** The pop-up itself, shared by a task's reminder (Pop) and the one set up while adding a task (DraftRemindPop, PS 1.68). */
+function PopFrame({ title, small, accent, closing, onClose, sw, intro, children, foot }: {
+  title: string; small: string; accent: string; closing: boolean; onClose: () => void; sw?: ReactNode; intro: ReactNode; children: ReactNode; foot: ReactNode;
+}) {
+  return createPortal(
+    <div className={`trm-layer${closing ? " out" : ""}`} onPointerDown={(e) => { e.stopPropagation(); if (e.target === e.currentTarget) onClose(); }}
+      onMouseDown={(e) => e.stopPropagation()} onContextMenu={(e) => e.preventDefault()}>
+      <div className="trm-pop" role="dialog" aria-modal="true" aria-label={`Reminder on ${title}`} style={{ "--rm-acc": accent } as CSSProperties}>
+        <header className="trm-head">
+          <span className="trm-bell" aria-hidden="true"><BellIcon /></span>
+          <span className="trm-t">
+            <small>{small}</small>
+            <b>{title}</b>
+          </span>
+          {sw}
+          <button type="button" className="trm-x" onClick={onClose} aria-label="Close">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" /></svg>
+          </button>
+        </header>
+        <p className="trm-intro">{intro}</p>
+        <div className="trm-body">{children}</div>
+        <footer className="trm-foot">{foot}</footer>
+      </div>
+      <RemTestCard />
+    </div>,
+    document.body,
+  );
+}
+const INTRO = "A pop-up on your Mac and a notification on your phone that keeps coming back until you answer, with this task's name on it.";
+const EVERY_DAY_NOTE = "This is an Every day task: Done ticks it for today, and the reminder comes back next time.";
+function MakeDaily({ checked, disabled, onChange }: { checked: boolean; disabled?: boolean; onChange: (on: boolean) => void }) {
+  return (
+    <label className="rm-check">
+      <input type="checkbox" checked={checked} disabled={disabled} onChange={(e) => { sfx.hover(); onChange(e.target.checked); }} />
+      <span><b>Make it an Every day task too</b>Done ticks the task. A one-off task leaves with its reminder once ticked, so a repeating reminder keeps coming back only on an Every day task.</span>
+    </label>
+  );
+}
+
+function Pop({ task }: { task: string }) {
+  const s = useVault();
+  const red = isRedAccount(s);
+  const ready = s.status === "unlocked";
+  const d = s.docs.get(task) as Doc<Todo> | undefined;
+  const t = d?.kind === "todo" ? d.data : undefined;
+  const saved = ready ? reminderOfTask(remindRec(s), task) : null;
+  // A new one is a draft here until Add reminder (its own id, so a sound picked for it stays with it).
+  const [draft, setDraft] = useState<Reminder | null>(() => (saved ? null : newTaskReminder(freshId(remindOrDefault(remindRec(s), red)), task, Date.now(), DEVICE_TZ)));
+  const [everyDay, setEveryDay] = useState(false);
+  const [closing, setClosing] = useState(false);
+  const [sure, setSure] = useState(false);
+  const full = ready && onTasksOf(remindOrDefault(remindRec(s), red)).length >= REM_TASK_MAX;
+  const r = saved ?? draft;
+  const close = () => { if (closing) return; setClosing(true); stopTest(); window.setTimeout(closeTaskRemind, 170); };
+  useEscClose(close);
   useEffect(() => { if (sure) { const x = window.setTimeout(() => setSure(false), 4000); return () => clearTimeout(x); } }, [sure]);
   // The task went (deleted on another device): nothing left to set.
   useEffect(() => { if (ready && !t) close(); }, [ready, t]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -119,62 +162,107 @@ function Pop({ task }: { task: string }) {
     change((x) => removeReminder(x, saved.id, Date.now()));
     close();
   };
-  const whenExtra = once && repeats ? (
-    <label className="rm-check">
-      <input type="checkbox" checked={saved ? false : everyDay} disabled={!ready}
-        onChange={(e) => { sfx.hover(); if (saved) { if (e.target.checked) makeDaily(); } else setEveryDay(e.target.checked); }} />
-      <span><b>Make it an Every day task too</b>Done ticks the task. A one-off task leaves with its reminder once ticked, so a repeating reminder keeps coming back only on an Every day task.</span>
-    </label>
-  ) : !once ? <p className="rm-note">This is an Every day task: Done ticks it for today, and the reminder comes back next time.</p> : null;
+  const whenExtra = once && repeats
+    ? <MakeDaily checked={saved ? false : everyDay} disabled={!ready} onChange={(on) => { if (saved) { if (on) makeDaily(); } else setEveryDay(on); }} />
+    : !once ? <p className="rm-note">{EVERY_DAY_NOTE}</p> : null;
 
-  return createPortal(
-    <div className={`trm-layer${closing ? " out" : ""}`} onPointerDown={(e) => { e.stopPropagation(); if (e.target === e.currentTarget) close(); }}
-      onMouseDown={(e) => e.stopPropagation()} onContextMenu={(e) => e.preventDefault()}>
-      <div className="trm-pop" role="dialog" aria-modal="true" aria-label={`Reminder on ${t.title}`} style={{ "--rm-acc": r.accent } as CSSProperties}>
-        <header className="trm-head">
-          <span className="trm-bell" aria-hidden="true"><BellIcon /></span>
-          <span className="trm-t">
-            <small>{saved ? "Reminder on this task" : "Add an annoying reminder"}</small>
-            <b>{t.title}</b>
-          </span>
-          {saved && (
-            <button type="button" className={`rm-switch${saved.on ? " on" : ""}`} role="switch" aria-checked={saved.on} aria-label={`${pillOf(saved)} on or off`}
-              onClick={() => { sfx.hover(); set({ on: !saved.on }); }}><i /></button>
-          )}
-          <button type="button" className="trm-x" onClick={close} aria-label="Close">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" /></svg>
-          </button>
-        </header>
-        <p className="trm-intro">
-          A pop-up on your Mac and a notification on your phone that keeps coming back until you answer, with this task's name on it.
-          {saved ? ` ${nextWords(saved, remindRec(s)?.state[saved.id], Date.now(), DEVICE_TZ, t.done)}.` : ""}
-        </p>
-        <div className="trm-body">
-          <RemEditor r={r} red={red} set={set} ready={ready} taskTitle={t.title} whenExtra={whenExtra} />
-        </div>
-        <footer className="trm-foot">
-          {saved
-            ? <>
-                {!sure
-                  ? <button type="button" className="rm-small danger" onClick={() => { sfx.hover(); setSure(true); }}>Remove reminder</button>
-                  : <button type="button" className="rm-small danger sure" onClick={remove}>Sure? Remove it</button>}
-                <span className="rm-grow" />
-                <span className="rm-soft">Changes save as you go.</span>
-                <button type="button" className="trm-go" onClick={() => { sfx.click(); close(); }}>Done</button>
-              </>
-            : <>
-                <span className="rm-soft">{full ? `${REM_TASK_MAX} reminders on tasks is the most.` : !ready ? "Sign in to add a reminder." : "Esc or Cancel leaves the task as it is."}</span>
-                <span className="rm-grow" />
-                <button type="button" className="rm-small" onClick={() => { sfx.hover(); close(); }}>Cancel</button>
-                <button type="button" className="trm-go" disabled={!ready || full} onClick={add}>Add reminder</button>
-              </>}
-        </footer>
-      </div>
-      <RemTestCard />
-    </div>,
-    document.body,
+  return (
+    <PopFrame title={t.title} small={saved ? "Reminder on this task" : "Add an annoying reminder"} accent={r.accent} closing={closing} onClose={close}
+      sw={saved && (
+        <button type="button" className={`rm-switch${saved.on ? " on" : ""}`} role="switch" aria-checked={saved.on} aria-label={`${pillOf(saved)} on or off`}
+          onClick={() => { sfx.hover(); set({ on: !saved.on }); }}><i /></button>
+      )}
+      intro={<>{INTRO}{saved ? ` ${nextWords(saved, remindRec(s)?.state[saved.id], Date.now(), DEVICE_TZ, t.done)}.` : ""}</>}
+      foot={saved
+        ? <>
+            {!sure
+              ? <button type="button" className="rm-small danger" onClick={() => { sfx.hover(); setSure(true); }}>Remove reminder</button>
+              : <button type="button" className="rm-small danger sure" onClick={remove}>Sure? Remove it</button>}
+            <span className="rm-grow" />
+            <span className="rm-soft">Changes save as you go.</span>
+            <button type="button" className="trm-go" onClick={() => { sfx.click(); close(); }}>Done</button>
+          </>
+        : <>
+            <span className="rm-soft">{full ? `${REM_TASK_MAX} reminders on tasks is the most.` : !ready ? "Sign in to add a reminder." : "Esc or Cancel leaves the task as it is."}</span>
+            <span className="rm-grow" />
+            <button type="button" className="rm-small" onClick={() => { sfx.hover(); close(); }}>Cancel</button>
+            <button type="button" className="trm-go" disabled={!ready || full} onClick={add}>Add reminder</button>
+          </>}>
+      <RemEditor r={r} red={red} set={set} ready={ready} taskTitle={t.title} whenExtra={whenExtra} />
+    </PopFrame>
   );
 }
+
+// ---------- PS 1.68: the reminder set up in the Add a task window, before the task exists ----------
+// The same pop-up and the same reminder display as a task's Edit (Jan, 18 Nov 2026: "I don't see the option to add the annoying
+// reminder" when adding). Nothing is saved here: Add reminder hands the reminder back to the Add a task window, which keeps it
+// with the task being typed, and the reminder joins the synced list once the task is added and has its id (core/remind.ts
+// addDraftTaskReminder). Picked again before Add task, it changes that kept reminder as you go, and Remove reminder drops it.
+/** The task id a reminder carries while its task is still being typed (replaced by the real id when the task is added). */
+export const DRAFT_TASK = "new-task";
+let draftClose: (() => void) | null = null;
+/** Is a reminder pop-up open (a task's, or the Add a task window's)? The Add a task window leaves Esc to it then. */
+export const remindPopOpen = () => !!open || !!draftClose;
+/** Close whichever reminder pop-up is open (the Mac's own Esc path); true when one was open. */
+export function closeRemindPop(): boolean {
+  if (draftClose) { draftClose(); return true; }
+  if (open) { closeTaskRemind(); return true; }
+  return false;
+}
+
+export function DraftRemindPop({ title, once, value, onSave, onClose }: {
+  title: string; once: boolean; value: Reminder | null;
+  /** The reminder kept with the new task (null: removed). `daily`: make the new task an Every day task too. */
+  onSave: (r: Reminder | null, daily?: boolean) => void;
+  onClose: () => void;
+}) {
+  const s = useVault();
+  const red = isRedAccount(s);
+  const ready = s.status === "unlocked";
+  const [r, setR] = useState<Reminder>(() => value ?? newTaskReminder(freshId(remindOrDefault(remindRec(s), red)), DRAFT_TASK, Date.now(), DEVICE_TZ));
+  const [everyDay, setEveryDay] = useState(false);
+  const [closing, setClosing] = useState(false);
+  const full = !value && ready && onTasksOf(remindOrDefault(remindRec(s), red)).length >= REM_TASK_MAX;
+  const close = () => { if (closing) return; setClosing(true); stopTest(); window.setTimeout(onClose, 170); };
+  const closeRef = useRef(close);
+  closeRef.current = close;
+  useEffect(() => { const f = () => closeRef.current(); draftClose = f; return () => { if (draftClose === f) draftClose = null; }; }, []);
+  useEscClose(close);
+  const set = (patch: Partial<Reminder>) => {
+    const next = cleanReminder({ ...r, ...patch }, Date.now()) ?? r;
+    setR(next);
+    if (value) onSave(next);   // already kept with the task: changes save as you go, like a task's own reminder
+  };
+  const name = title.trim() || "New task";
+  const repeats = repeatOf(r) !== "once";
+  const whenExtra = once && repeats ? <MakeDaily checked={everyDay} disabled={!ready} onChange={setEveryDay} />
+    : !once ? <p className="rm-note">{EVERY_DAY_NOTE}</p> : null;
+  const add = () => { if (full) return; sfx.done(); onSave({ ...r, edited: Date.now() }, everyDay && once && repeats); close(); };
+  return (
+    <PopFrame title={name} small={value ? "Reminder on this task" : "Add an annoying reminder"} accent={r.accent} closing={closing} onClose={close}
+      intro={<>{INTRO} {DRAFT_WORDS.starts}</>}
+      foot={value
+        ? <>
+            <button type="button" className="rm-small danger" onClick={() => { sfx.click(); stopTest(); onSave(null); close(); }}>Remove reminder</button>
+            <span className="rm-grow" />
+            <span className="rm-soft">Changes save as you go.</span>
+            <button type="button" className="trm-go" onClick={() => { sfx.click(); close(); }}>Done</button>
+          </>
+        : <>
+            <span className="rm-soft">{full ? `${REM_TASK_MAX} reminders on tasks is the most.` : !ready ? "Sign in to add a reminder." : DRAFT_WORDS.cancel}</span>
+            <span className="rm-grow" />
+            <button type="button" className="rm-small" onClick={() => { sfx.hover(); close(); }}>Cancel</button>
+            <button type="button" className="trm-go" disabled={!ready || full} onClick={add}>Add reminder</button>
+          </>}>
+      <RemEditor r={r} red={red} set={set} ready={ready} taskTitle={name} whenExtra={whenExtra} />
+    </PopFrame>
+  );
+}
+/** The new words of the Add a task window's reminder (PS 1.68, waiting for the owner's approval). */
+export const DRAFT_WORDS = {
+  starts: "It starts once you add the task.",
+  cancel: "Esc or Cancel adds no reminder.",
+};
 
 function BellIcon({ size = 18 }: { size?: number }) {
   return (

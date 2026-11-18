@@ -22,6 +22,8 @@ import { afkMeetWindows, sameWindows, type MeetWindow } from "./core/afkmeet";
 import { askScreenRec, screenRecNow } from "./screenrec";
 import { meetingMessage } from "./core/screenrecmeet";
 import { lpInterval } from "./core/lowpower.ts";
+import { feature } from "./core/features";
+import { PRIVATE_ENDS_FEATURE, privatePatch, privateShouldEnd, privateStamp } from "./core/privateends";
 
 /** The phone shows these as notifications; its "Phone notifications" toggle mutes them all (core/dnd.ts). */
 const DEVICE = import.meta.env.MODE === "gos" ? "phone" : "mac";
@@ -109,6 +111,8 @@ function saveSeen(s: MeetSeen) { try { localStorage.setItem(SEEN, JSON.stringify
 // Meetings panel. While it is on, every card arrives discreet ({type:"meetPrivacy"}). A meeting no
 // longer does that by itself: when a real one starts, a card asks "Start private mode?" once.
 const ASKED = "ps.privateAsked";
+/** PS 1.68: the card's words while private mode ends with the meeting (waiting for the owner's approval). */
+const PRIVATE_ASK_ENDS = "Notification cards become small pills with no sound, and the island hides names and messages, until the meeting ends or you turn it off with the mask on the Meetings panel.";
 let askPost: Post = () => {};
 let asking: string | null = null;
 function loadAsked(): string[] {
@@ -120,11 +124,12 @@ function hideAsk() { if (asking) { asking = null; askPost({ type: "cardHide", id
 export function privateAskMessage(m: { type?: string; id?: string; action?: string }) {
   if (m.type !== "cardAction" || m.id !== "private-ask") return false;
   asking = null;
-  if (m.action === "yes") void saveSettings({ privateMode: true });
+  if (m.action === "yes") void saveSettings(privatePatch(true, Date.now()));
   return true;
 }
 
 let started = false;
+let privateSaving = false;
 export function startMeetAlerts(post: Post) {
   if (started) return;
   started = true;
@@ -157,6 +162,13 @@ export function startMeetAlerts(post: Post) {
     if (!held) { seen = r.seen; saveSeen(seen); }
     const priv = !!st.privateMode;
     if (priv !== wasPrivate) { wasPrivate = priv; post({ type: "meetPrivacy", on: priv }); }
+    // PS 1.68 (core/privateends.ts): private mode ends with the meeting it was on for. One save at a time; the next run sees it.
+    if (feature(PRIVATE_ENDS_FEATURE) && !privateSaving) {
+      const nowMs = Date.now();
+      const write = privateShouldEnd({ privateMode: st.privateMode, privateAt: st.privateAt, events: calEvents, now: nowMs })
+        ? privatePatch(false, nowMs) : privateStamp(st.privateMode, st.privateAt, nowMs);
+      if (write) { privateSaving = true; void saveSettings(write).catch(() => {}).finally(() => { privateSaving = false; }); }
+    }
     // A real meeting just started (or was on when PS opened): ask once. The card goes when private
     // mode comes on another way, or when that meeting is over (or moved).
     const events = calEvents;
@@ -168,7 +180,9 @@ export function startMeetAlerts(post: Post) {
       post({ type: "cardShow", card: {
         id: "private-ask", sticky: true, title: "Start private mode?",
         sub: "A meeting has started",
-        body: "Notification cards become small pills with no sound, and the island hides names and messages, until you turn it off with the mask on the Meetings panel.",
+        body: feature(PRIVATE_ENDS_FEATURE)
+          ? PRIVATE_ASK_ENDS
+          : "Notification cards become small pills with no sound, and the island hides names and messages, until you turn it off with the mask on the Meetings panel.",
         actions: [{ id: "yes", label: "Yes" }, { id: "no", label: "No" }],
       } });
     } else if (asking && (priv || !events.some((e) => e.id + e.start === asking && Date.parse(e.end || "") > Date.now()))) hideAsk();

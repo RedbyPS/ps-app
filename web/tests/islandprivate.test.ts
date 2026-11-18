@@ -32,7 +32,7 @@ ok("the page handles the click before the task id check, saves privateMode false
   const p = src("src/island.ts");
   const i = p.indexOf('m.action === "privateOff"'), id = p.indexOf('typeof m.id !== "string"');
   assert.ok(i > 0 && id > i, "privateOff handled before the id guard");
-  assert.match(p, /canPrivateOff\(shown, settingsData\(s\)\.privateMode\)\) void saveSettings\(\{ privateMode: false \}\)\.then\(\(\) => sync\(true\)\)/);
+  assert.match(p, /canPrivateOff\(shown, settingsData\(s\)\.privateMode\)\) void saveSettings\(privatePatch\(false, Date\.now\(\)\)\)\.then\(\(\) => sync\(true\)\)/);
   // only for an unlocked owner, as ticks
   assert.ok(p.indexOf('s.status !== "unlocked" || s.role !== "owner") return true;') < i);
 });

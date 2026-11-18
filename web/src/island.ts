@@ -6,7 +6,7 @@
 // Private mode: the island shows a mask and "Private mode" with Show instead of the hidden title; a click there comes
 // back as {type:"islandAction", action:"privateOff"} and turns private mode off, and the real task is sent at once.
 import { vaultStore, type Snapshot } from "./core/vault";
-import { calendarSnap, settingsData, tabLayoutDoc, todos } from "./core/select";
+import { calendarSnap, openReplies, settingsData, tabLayoutDoc, todos } from "./core/select";
 import { mailOnSnap } from "./core/mailsnap";
 import { islandMailOk } from "./core/mailopen";
 import { cleanLayout } from "./core/tablayout";
@@ -32,6 +32,7 @@ import { fitIslandPart } from "./fitness/fitisland";
 import { welcomeDoneIds, welcomeIsland, type WelcomeIn } from "./core/welcomeback";
 import { pendingSummary, summaryPrefs } from "./core/workoutsummary";
 import { feature } from "./core/features";
+import { privatePatch } from "./core/privateends";
 import type { FitWorkout } from "./core/fitness";
 import { workoutPatch } from "./fitness/store";
 import { asleepNames, lowPower } from "./core/lowpower.ts";
@@ -73,7 +74,9 @@ function cardsNow(s: Snapshot, now: number): { mail: number; leads: number; card
   for (const c of ai.msgs) cards.push({ id: c.id, kind: "chat", title: c.text, sub: c.from, url: "", privTitle: AI_MSG_PRIVATE, at: Date.parse(c.at) || 0, fresh: c.fresh });
   // The counts open the Tab list's email panel (core/mailopen.ts): none while it is taken off the Tab list in Edit mode.
   const counts = islandMailOk(mailOn, tabLayout(s));
-  return { mail: counts ? mail.length : 0, leads: counts ? leads.length : 0, cards };
+  // PS 1.68: the envelope counts what the email panel lists (core/mailopen.ts isOpenReply), every one, not the pop-up cards (which
+  // also held emails already dealt with and stopped at 20). The cards above still decide what pops the island open.
+  return { mail: counts && mailOn ? openReplies(s).length : 0, leads: counts ? leads.length : 0, cards };
 }
 function tabLayout(s: Snapshot) { const d = tabLayoutDoc(s); return d ? cleanLayout(d.data) : null; }
 
@@ -173,7 +176,7 @@ export function islandMessage(m: { type?: string; action?: string; id?: string }
   // PS 1.65 Low power mode: the leaf card's Wake everything.
   if (m.action === "lowPowerWake") { lowPower.wakeAll(); return true; }
   if (m.action === "privateOff") {
-    if (canPrivateOff(shown, settingsData(s).privateMode)) void saveSettings({ privateMode: false }).then(() => sync(true));
+    if (canPrivateOff(shown, settingsData(s).privateMode)) void saveSettings(privatePatch(false, Date.now())).then(() => sync(true));
     return true;
   }
   if (typeof m.id !== "string") return true;

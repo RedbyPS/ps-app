@@ -253,7 +253,7 @@ export function TodoRow({ d, clients, onUp, onDown, n, drag }: {
             </>
           )}
           {n != null && <span className={`td-prio num${n === 1 ? " top" : ""}`} title={`Priority ${n}`}>P{n}</span>}
-          <StreakBadge n={once ? 0 : t.streak} className="td-streak" />
+          <StreakBadge n={once ? 0 : t.streak} className="td-streak" rule={t.repeat} best={t.bestStreak} />
           <button className="btn quiet icon td-more" onClick={() => setTray((v) => !v)} aria-expanded={tray} aria-label={`More for: ${t.title}`}>
             <Icon name={tray ? "x" : "dots"} />
           </button>

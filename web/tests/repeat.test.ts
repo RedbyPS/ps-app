@@ -72,4 +72,37 @@ ok("editor drafts and patches", () => {
   assert.equal(R.cleanRepeat({ every: 2, unit: "fortnight" }, today), null);
 });
 
+// ---------- PS 1.68: the streak's words and when a round ends (feature task-streaks) ----------
+ok("streak words say what the number is", () => {
+  assert.equal(R.streakWords(7), "7 days in a row");
+  assert.equal(R.streakWords(7, null, 12), "7 days in a row. Best: 12");
+  assert.equal(R.streakWords(7, null, 7), "7 days in a row");
+  assert.equal(R.streakWords(1), "1 day in a row");
+  assert.equal(R.streakWords(3, { every: 1, unit: "week", from: "2026-11-02" }), "3 weeks in a row");
+  assert.equal(R.streakWords(2, { every: 1, unit: "month", from: "2026-11-02" }), "2 months in a row");
+  assert.equal(R.streakWords(2, { every: 1, unit: "year", from: "2026-11-02" }), "2 years in a row");
+  assert.equal(R.streakWords(5, { every: 2, unit: "day", from: "2026-11-02" }), "5 times in a row");
+  assert.equal(R.streakWords(5, { every: 1, unit: "week", from: "2026-11-02", days: [1, 2, 3, 4, 5] }), "5 times in a row");
+  assert.equal(R.streakWords(4, { every: 2, unit: "week", from: "2026-11-02" }), "4 times in a row");
+});
+ok("a round ends when the task was done or missed, never while a longer repeat waits", () => {
+  const today = "2026-11-18";
+  assert.equal(R.roundOver({ type: "once", done: true }, today), false);
+  assert.equal(R.roundOver({ type: "daily", done: false }, today), true, "every day, not done: missed");
+  assert.equal(R.roundOver({ type: "daily", done: true }, today), true);
+  const wk: T = { type: "daily", done: false, repeat: { every: 1, unit: "week", from: "2026-11-16", days: [1, 2, 3, 4, 5] }, due: "2026-11-23" };
+  assert.equal(R.roundOver(wk, "2026-11-22"), false, "weekdays only: Sunday is no miss");
+  assert.equal(R.roundOver({ ...wk, due: "2026-11-20" }, "2026-11-21"), true, "Friday not done, Saturday's Reset: missed");
+  assert.equal(R.roundOver({ ...wk, due: "2026-11-18" }, today), false, "due today still has until the next Reset");
+});
+ok("weekdays only: the weekend never ends the streak (the Reset on Sat and Sun finds it not due)", () => {
+  let t: T = { type: "daily", done: false, repeat: { every: 1, unit: "week", from: "2026-11-16", days: [1, 2, 3, 4, 5] }, due: "2026-11-20", streak: 4, bestStreak: 4 };
+  t = { ...t, ...R.tickPatch(t, "2026-11-20T09:00:00Z") };            // Friday done
+  t = { ...t, ...R.resetPatch(t, "2026-11-21")! };                     // Saturday's Reset
+  assert.equal(t.due, "2026-11-23"); assert.equal(t.streak, 5);
+  assert.equal(R.resetPatch(t, "2026-11-22"), null, "Sunday's Reset leaves it");
+  assert.equal(R.resetPatch(t, "2026-11-23"), null, "Monday's own Reset: due today, not missed");
+  t = { ...t, ...R.tickPatch(t, "2026-11-23T08:00:00Z") };
+  assert.equal(t.streak, 6);
+});
 console.log(`repeat: ${n} passed`);

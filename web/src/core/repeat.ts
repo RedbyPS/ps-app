@@ -172,6 +172,26 @@ export function resetPatch(t: RepeatTask, today: string): Partial<RepeatTask> | 
   return null;
 }
 
+/** Does this Reset end the task's round (PS 1.68, for its mini tasks' streaks, core/subtasks.ts resetSubs)? Done, or
+ *  missed (an every day task not done, a longer one whose date is before today). A longer repeat not due yet: no. */
+export function roundOver(t: RepeatTask, today: string): boolean {
+  if (!isRepeating(t)) return false;
+  return t.done || isEveryDay(t) || (!!t.due && t.due < today);
+}
+
+/** The feature switch for the streak badges (features.json, Settings, Your list). */
+export const STREAK_FEATURE = "task-streaks";
+
+/** The streak's hover words (PS 1.68, feature "task-streaks"): "7 days in a row", "3 weeks in a row", "4 times in a
+ *  row" for the other rules (every other day, weekdays, chosen days), plus the best when it is higher. */
+export function streakWords(n: number, r?: Repeat | null, best?: number): string {
+  const k = Math.max(0, Math.round(n || 0));
+  const unit = !r || (r.unit === "day" && r.every === 1) ? "day" : r.every === 1 && !ruleDays(r) && r.unit !== "day" ? r.unit : "time";
+  const head = `${k} ${unit}${k === 1 ? "" : "s"} in a row`;
+  const b = Math.round(best || 0);
+  return b > k ? `${head}. Best: ${b}` : head;
+}
+
 // ---------- the editors ----------
 export type RepeatKind = "once" | "daily" | "repeat";
 export interface RepeatDraft { kind: RepeatKind; every: number; unit: RepeatUnit; from: string }

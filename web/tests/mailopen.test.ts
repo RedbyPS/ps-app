@@ -60,7 +60,7 @@ ok("wired: the island counts follow the Client emails switch and the panel", () 
   const isl = src("../src/island.ts");
   assert.ok(/const mailOn = mailOnSnap\(s\);/.test(isl));
   assert.ok(isl.includes("const mail = mailOn ? mailCards(") && isl.includes("const leads = mailOn ? leadCards("));
-  assert.ok(isl.includes("islandMailOk(mailOn, tabLayout(s))") && isl.includes("mail: counts ? mail.length : 0, leads: counts ? leads.length : 0"));
+  assert.ok(isl.includes("islandMailOk(mailOn, tabLayout(s))") && isl.includes("mail: counts && mailOn ? openReplies(s).length : 0, leads: counts ? leads.length : 0"));
 });
 ok("wired: the Tab list hears mailOpen, goes to the panel's page, and the panel opens the newest email", () => {
   assert.ok(src("../src/ps.ts").includes('m.type === "mailOpen") requestMailOpen('));
@@ -68,5 +68,19 @@ ok("wired: the Tab list hears mailOpen, goes to the panel's page, and the panel 
   assert.ok(tm.includes("return onMailOpen(go);") && tm.includes("if (p !== curPage.id) goToPage(p);"));
   assert.ok(tm.includes("return onMailOpen(take);") && tm.includes("newestOf(list, via)") && tm.includes('focusId === r.cardId ? " focus" : ""'));
   assert.ok(src("../src/views/taskmap.css").includes(".tm-mail li.focus"));
+});
+// PS 1.68: the envelope counts what the email panel lists (not the pop-up cards), every one, no cap at 20.
+ok("the envelope counts the client emails not dealt with yet, from clients still on the list", () => {
+  const live = new Set(["c1", "c2"]);
+  const many = Array.from({ length: 27 }, (_, i) => ({ handled: false, clientId: i % 2 ? "c1" : "c2" }));
+  assert.equal(M.openMailCount(many, live), 27, "no cap");
+  assert.equal(M.openMailCount([{ handled: true, clientId: "c1" }, { handled: false, clientId: "gone" }, { handled: false, clientId: null }, { clientId: "c2" }], live), 1,
+    "answered or Done, a client deleted, or no client: not counted");
+  assert.equal(M.isOpenReply({ handled: null, clientId: "c1" }, live), true);
+  assert.equal(M.openMailCount([], live), 0);
+});
+ok("the island and the panel read the same rule", () => {
+  assert.ok(src("../src/core/select.ts").includes("isOpenReply(r.data, live)"));
+  assert.ok(src("../src/island.ts").includes("openReplies(s).length"));
 });
 console.log(`${n} passed`);

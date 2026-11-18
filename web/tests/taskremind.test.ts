@@ -206,4 +206,24 @@ ok("the bell's words", () => {
   assert.equal(R.nextWords({ ...daily, days: [1] }, undefined, tb("2026-11-12", "13:00"), TB), "Next: Mon 16 Nov, 09:00");
 });
 
+// ---------- PS 1.68: a reminder set up in the Add a task window, before the task had an id ----------
+ok("the Add a task window's reminder joins the record with the new task's id and a fresh id of its own", () => {
+  const draft = R.newTaskReminder("aaaa1111", "new-task", tb("2026-11-18", "10:20"), TB);
+  let rec = R.emptyRemind();
+  rec = R.addTaskReminder(rec, { ...tr(), id: "aaaa1111", task: "other-task" }, 1);   // that id is taken by now
+  const next = R.addDraftTaskReminder(rec, { ...draft, text: "Call the bank", days: [1, 2, 3, 4, 5] }, "task-new-1", 2);
+  assert.equal(next.list.length, 2);
+  const got = next.list.find((x) => x.task === "task-new-1")!;
+  assert.ok(got && got.id !== "aaaa1111", "a fresh id");
+  assert.equal(got.text, "Call the bank");
+  assert.deepEqual(got.days, [1, 2, 3, 4, 5]);
+  assert.equal(R.reminderOfTask(next, "task-new-1")?.id, got.id);
+});
+ok("the Add window's reminder: junk, no task id, or a task that has one already change nothing", () => {
+  const rec = R.addTaskReminder(R.emptyRemind(), tr(), 1);
+  assert.equal(R.addDraftTaskReminder(rec, null, "task-new-1", 2), rec);
+  assert.equal(R.addDraftTaskReminder(rec, { id: "bad id!" }, "task-new-1", 2), rec);
+  assert.equal(R.addDraftTaskReminder(rec, R.newTaskReminder("bbbb2222", "new-task", 0, TB), "", 2), rec);
+  assert.equal(R.addDraftTaskReminder(rec, R.newTaskReminder("bbbb2222", "new-task", 0, TB), TASK, 2).list.length, 1, "one per task");
+});
 console.log(`\n${n} passed`);

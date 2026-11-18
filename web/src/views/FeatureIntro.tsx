@@ -177,6 +177,8 @@ const DONE_PROBES: Record<string, (can: boolean, s: Snapshot) => Promise<"done" 
   [APPROVE_INTRO.id]: async (_can, s) => (!PS || !feature(APPROVE_FEATURE) ? "unknown" : approveIntroProbe(macApprove(), settingsData(s).approveOff)),
   // PS 1.65 Settings assistant: while the feature and its switch are on; Ok ends it for good.
   "settings-assistant-165": foldedUnlessTour(async (_can, s) => (feature("settings-assistant") && s.status === "unlocked" && assistPrefs(settingsData(s).assistant).on ? "open" : "unknown")),
+  // PS 1.68 streaks on repeating tasks: only while the feature is on, for an owner; Ok ends it for good.
+  "task-streaks-168": async (_can, s) => (feature("task-streaks") && s.status === "unlocked" && s.role === "owner" ? "open" : "unknown"),
   screenrec: async () => { askScreenRec(); return introAudience({ mac: PS, st: screenRecNow() }); },
   whatsapp: async (can) => {
     if (!can) return "unknown";   // no own Supabase project to link (yet): wait and look again, never retire for good on what may be a still loading vault
