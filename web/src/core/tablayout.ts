@@ -405,6 +405,21 @@ export function clampRect(r: Rect, vw: number, vh: number): Rect {
   return { ...r, left, top };
 }
 
+/** PS 1.68 (Jan, 18 Nov 2026: "I want the edit button to be visible there as well ... so that we know that we're not
+ *  putting anything below it"): the Edit button's spot is taken. A panel dragged onto it is pushed off it, the short
+ *  way (to its right or below it), and kept on screen. block: the button's rectangle, null when it is not there. */
+export const KEEP_CLEAR_GAP = 8;
+export function keepClear(r: Rect, block: Rect | null, vw: number, vh: number, gap = KEEP_CLEAR_GAP): Rect {
+  if (!block || block.width <= 0 || block.height <= 0) return r;
+  const hit = (x: Rect) => x.left < block.left + block.width + gap && x.left + x.width > block.left - gap
+    && x.top < block.top + block.height + gap && x.top + x.height > block.top - gap;
+  if (!hit(r)) return r;
+  const right = clampRect({ ...r, left: block.left + block.width + gap }, vw, vh);
+  const below = clampRect({ ...r, top: block.top + block.height + gap }, vw, vh);
+  const cost = (x: Rect) => (hit(x) ? Infinity : Math.abs(x.left - r.left) + Math.abs(x.top - r.top));
+  const best = cost(right) <= cost(below) ? right : below;
+  return cost(best) === Infinity ? clampRect({ ...r, left: block.left + block.width + gap, top: block.top + block.height + gap }, vw, vh) : best;
+}
 export type Snapped = { left: number; top: number; gx: number | null; gy: number | null };
 /** Snaps a rectangle being dragged: its edges and centre to the screen's margins and centre lines and to the edges
  *  and centres of the other panels, whichever is nearest within SNAP px, each axis on its own. gx/gy: the line it
@@ -429,6 +444,69 @@ export function snapRect(r: Rect, others: Rect[], vw: number, vh: number, near =
   const s = clampRect({ ...c, left: c.left + bx.move, top: c.top + by.move }, vw, vh);
   return { left: s.left, top: s.top, gx: s.left === c.left + bx.move ? bx.line : null, gy: s.top === c.top + by.move ? by.line : null };
 }
+
+// ---------- PS 1.68: an update never moves, removes or resets anything (Jan, 18 Nov 2026) ----------
+// "On every single update it resets my things ... It deletes all of it and moves it all on the main page." Two rules
+// here, used by core/actions.ts saveTabLayout and views/TaskMap.tsx:
+// 1. A save never drops what this build cannot show. A copy of a panel this build does not know (made by a newer PS, or
+//    a kind an older or newer build renamed, or one switched off here), its place, page, size and settings, a removed
+//    panel this build does not know, and a panel setting this build does not know, all stay in the record exactly as
+//    they were. cleanLayout still leaves them out of what is drawn; the next save puts them back from the saved record.
+// 2. Nothing is saved before the account's own layout has loaded (layoutReady): a draw from the empty layout (the Tab
+//    list before the main page has handed the vault over, a first download still running) is never a base for a save.
+const CFG_KNOWN = new Set(["cal", "of", "open"]);
+/** A copy or original this build cannot show (unknown here, or switched off in this build): never touched by a save. */
+const foreign = (id: string, carried: ReadonlySet<string>) => {
+  if (!ID.test(id)) return false;
+  if (isCopy(id)) return carried.has(id);
+  const s = KNOWN.get(id);
+  return !s || !!s.off;
+};
+const cfgExtra = (v: unknown): Record<string, string | number | boolean> | null => {
+  if (!v || typeof v !== "object" || Array.isArray(v)) return null;
+  const out: Record<string, string | number | boolean> = {};
+  for (const [k, x] of Object.entries(v as Record<string, unknown>).slice(0, 16)) {
+    if (!/^[a-zA-Z][a-zA-Z0-9]{0,23}$/.test(k)) continue;
+    if (typeof x === "boolean" || (typeof x === "number" && Number.isFinite(x)) || (typeof x === "string" && x.length <= 200)) out[k] = x;
+  }
+  return Object.keys(out).length ? out : null;
+};
+/** The layout to write: `next` (what this build changed) plus everything of the saved record this build cannot show. */
+export function carryUnknown(stored: unknown, next: TabLayout): TabLayout {
+  const o = (stored && typeof stored === "object" ? stored : {}) as { pos?: unknown; hidden?: unknown; extra?: unknown; page?: unknown; size?: unknown; cfg?: unknown };
+  const obj = (m: unknown) => (m && typeof m === "object" && !Array.isArray(m) ? Object.entries(m as Record<string, unknown>).slice(0, MAX_SLOTS + MAX_EXTRA) : []);
+  const have = new Set(next.extra ?? []);
+  const carried = new Set(Array.isArray(o.extra) ? o.extra.filter((x): x is string => typeof x === "string" && ID.test(x) && isCopy(x) && !have.has(x)
+    && (!KNOWN.has(kindOf(x)) || !!KNOWN.get(kindOf(x))!.off)) : []);
+  const out: TabLayout = { ...next, pos: { ...next.pos }, hidden: [...next.hidden] };
+  if (carried.size) out.extra = [...(next.extra ?? []), ...carried];
+  for (const [id, p] of obj(o.pos)) {
+    if (!foreign(id, carried) || out.pos[id] || !p || typeof p !== "object") continue;
+    const q = p as Record<string, unknown>;
+    const x = frac(q.x), y = frac(q.y), w = px(q.w), h = px(q.h);
+    if (x !== null && y !== null && w !== null && h !== null) out.pos[id] = { x, y, w, h };
+  }
+  if (Array.isArray(o.hidden)) for (const x of o.hidden) if (typeof x === "string" && !isCopy(x) && foreign(x, carried) && !out.hidden.includes(x)) out.hidden.push(x);
+  const page = { ...(next.page ?? {}) }, size = { ...(next.size ?? {}) }, cfg: Record<string, InstCfg> = { ...(next.cfg ?? {}) };
+  for (const [id, v] of obj(o.page)) if (foreign(id, carried) && !(id in page) && typeof v === "string" && PAGE_ID.test(v) && v !== MAIN_PAGE) page[id] = v;
+  for (const [id, v] of obj(o.size)) { const z = sizeOk(v); if (foreign(id, carried) && !(id in size) && z !== null && z !== 1) size[id] = z; }
+  for (const [id, v] of obj(o.cfg)) {
+    const x = cfgExtra(v);
+    if (!x) continue;
+    if (foreign(id, carried)) { if (!(id in cfg)) cfg[id] = x as InstCfg; continue; }
+    // A panel this build knows, with a setting this build does not: that setting stays (a newer PS made it).
+    const alive = isCopy(id) ? out.extra?.includes(id) : KNOWN.has(id);
+    const extraKeys = Object.entries(x).filter(([k]) => !CFG_KNOWN.has(k));
+    if (alive && extraKeys.length) cfg[id] = { ...Object.fromEntries(extraKeys), ...(cfg[id] ?? {}) } as InstCfg;
+  }
+  if (Object.keys(page).length) out.page = page;
+  if (Object.keys(size).length) out.size = size;
+  if (Object.keys(cfg).length) out.cfg = cfg;
+  return out;
+}
+/** The account's own layout is here to build on: the vault is open and its first download (or the offline copy) is
+ *  in. Until then the Tab list draws its panels where they start, but nothing can be moved, added or saved. */
+export const layoutReady = (unlocked: boolean, lastSync: string | null | undefined) => unlocked && !!lastSync;
 
 // ---------- the record and the PS Tab list's op ----------
 /** Several layout records can exist for a moment (two Macs saving at once): the newest wins, the rest are folded away. */

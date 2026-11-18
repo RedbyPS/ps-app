@@ -116,6 +116,9 @@
 .tm-hovermode[data-mouse-out] .tm-side > .ed-slot[data-hm]:not(.ed-moved) > *:not(:focus-within) { opacity: .05; }
 .tm-hovermode .ed-corner { opacity: .05; transition: opacity .28s ease; }
 .tm-hovermode .ed-corner[data-hm], .tm-hovermode .ed-corner:focus-within, .tm-hovermode .ed-corner.on { opacity: 1; transition-duration: .12s; }
+/* PS 1.68: while editing, the Edit button stays where it always is, lit, above the panels (its spot is taken). */
+.ed-corner.ed-corner-live, .tm-hovermode .ed-corner.ed-corner-live { opacity: 1; }
+.ed-corner-live .ed-btn.on { background: color-mix(in srgb, var(--k-acc, #EC4E86) 22%, var(--k-surface, #160E13)); box-shadow: 0 0 0 3px color-mix(in srgb, var(--k-acc, #EC4E86) 22%, transparent); }
 /* Rules that named a panel as a direct child of its row or column, with the slot in between now. */
 .tm-xrow > .ed-slot > .dx-dock { align-self: auto; }
 .nu-tlrow > .ed-slot > .tm-tl.tm-tl { margin-top: 0; flex: 0 1 auto; min-width: 0; display: flex; }
