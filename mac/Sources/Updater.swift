@@ -92,6 +92,7 @@ final class Updater {
   }
   /// Sets the menu's state (on main) and sends it to the Tab list page.
   func pageSet(_ state: String, _ extra: [String: Any] = [:], unseen: Bool = false) {
+    Hatch.shared.updaterStep(state, frac: extra["progress"] as? Double)   // PS 1.67: the icon builds with every step (Hatch.swift)
     var o: [String: Any] = ["state": state]
     let cur = Updater.parts(PSVersion.name)
     o["current"] = cur.0; if let k = cur.1 { o["currentKeyword"] = k }
@@ -139,6 +140,7 @@ final class Updater {
         nudgeState.updateNow(key: key(plan)); nudgeState.save(Updater.nudgeFile)
         if cardMode == "offer" { ui?.close(); hiddenForProtected = false }
         viaPanel = false; installLatest(auto: false)
+        Hatch.shared.updateStarted()   // PS 1.67: the island leaves and the icon starts to build (Hatch.swift)
       }
     case "macUpdate:finish":
       log.append("page:finish")
@@ -185,6 +187,9 @@ final class Updater {
     if (j.phase == "swapped" || j.phase == "healthy" || j.phase == "ok") && j.to == mine {
       j.shown = true; j.write()
       updatedThisRun = true   // the setup offer may follow (offerSetup)
+      // PS 1.67: the new build finishes the icon the old one built and plays the rest (Hatch.swift); its own 'Updated to'
+      // takes the place of the island's short moment.
+      let hatched = Hatch.shared.afterUpdate(sameRun: false)
       DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { [weak self] in
         // The sign in may still be on its way from the old build (UpdateHandoff, its own thread).
         DispatchQueue.global(qos: .utility).async {
@@ -192,7 +197,7 @@ final class Updater {
           DispatchQueue.main.async {
             let signed = UpdateHandoff.conn >= 0 || UpdatePaths.test
             self?.pageSet("done", ["kind": "app"] as [String: Any], unseen: true)
-            Island.shared.updateDone(version: Updater.parts(PSVersion.name).0)   // PS 1.60: the island's own short moment
+            if !hatched { Island.shared.updateDone(version: Updater.parts(PSVersion.name).0) }   // PS 1.60: the island's own short moment
             // The card only when the Tab list page never said hello (missing or broken web files).
             DispatchQueue.main.asyncAfter(deadline: .now() + 25) {
               guard let self, !self.usePage else { return }
@@ -597,6 +602,7 @@ final class Updater {
   func install(_ p: UpdatePlan) {
     viaPanel = true
     installLatest(auto: true)
+    Hatch.shared.updateStarted()   // PS 1.67 (Hatch.swift)
   }
 
   // MARK: Update now installs the newest release (V1.51, UpdateLatest.swift)
@@ -857,7 +863,8 @@ final class Updater {
             self.app?.checkLocalUpdate()          // reloads the pages as soon as that is safe
             self.busy = false; self.staged = nil; self.plan = .none; self.newest = nil; self.working(false); self.lastInstallEnd = Date()
             self.pageSet("done", ["kind": "web"], unseen: true)   // the Tab list's card says "Updated to" once
-            Island.shared.updateDone(version: Updater.parts(PSVersion.name).0)   // PS 1.60: the island's own short moment
+            // PS 1.67: no relaunch, so this same run finishes the icon and plays the rest (Hatch.swift).
+            if !Hatch.shared.afterUpdate(sameRun: true) { Island.shared.updateDone(version: Updater.parts(PSVersion.name).0) }   // PS 1.60: the island's own short moment
             self.updatedThisRun = true   // the reloaded page may bring a setup menu (setup:can)
             if self.viaPanel || !self.usePage { self.showDone("\(AppName.current) updated", "Now on \(PSVersion.name). No restart needed.") }
           }
@@ -922,6 +929,7 @@ final class Updater {
     psLog("PS update: app swapped (\(from) to \(to)), helper \(h.processIdentifier) takes over")
     DispatchQueue.main.async {
       self.progress("Restarting \(AppName.current)", "Back in a moment", phase: "busy", frac: 1, detail: "", step: "relaunching")
+      Hatch.shared.relaunching(to: to, version: self.manifest?.version)   // PS 1.67: how far the icon got goes to the new build (Hatch.swift)
       if UpdatePaths.test && self.testHold { return }   // the test copy waits for the helper instead
       DispatchQueue.main.asyncAfter(deadline: .now() + 0.9) { NSApp.terminate(nil) }
     }

@@ -2,6 +2,7 @@
 import type { Approval, AwareItem, ClientRec, CTask, DimxZone, Doc, Draft, Meeting, Payment, Reply, Pipeline, Preview, Project, ProjectPrivate, ProjectType, Settings, Suggestion, Tick, Todo, Update, WsMeta , ProjectDoc, Agenda, JournalEntry, Quote, Note, ScreenTimeApp, ScreenTimeDay, ScreenTimeDevice, StLine, TaskGroup } from "./model";
 import { DEFAULT_SETTINGS, newProject, stagesFor, uid, workingIdsOf } from "./model";
 import { OLD_SCENES, movedId, sortPrio, unrankedAfterMove } from "./prio";
+import { islandOnPatch } from "./islandon";
 import { cleanGroups, cleanSecOrder, groupKey, planMove, planUngroup, tabLists, type TaskMove } from "./groups";
 import { addPage, cleanPages, moveSec } from "./lists";
 import { createWorkspace, deleteBlob, doc, docs, put, putBlob, rematchMail, remove, roleConfirmed, setMerger, vaultStore } from "./vault";
@@ -14,7 +15,7 @@ import { applySubOp, tickParentSubs, type SubOp } from "./subtasks";
 import { nextApps, planSplit } from "./screentime";
 import { planLines, toHours, type Timeline } from "./stline";
 import { isUnseen, mergeReply, remindPatch } from "./mailcards";
-import { mergeSettings } from "./cardsync";
+import { mergeSettings, settingsWrite } from "./cardsync";
 import { cleanRuleEntry, mergeSender, setRule, type MailSender, type RuleList } from "./mailrules";
 import { addToLog, DAY_ENDS_DEFAULT, mergeDayLog, workDayOf, type DayLog } from "./daylog";
 import { addEvent, historyOn, type EvKind } from "./taskhist";
@@ -26,7 +27,7 @@ import { planReset } from "./resetplan";
 import { cleanTzPerson, type TzPerson } from "./tzpeople";
 import { cleanTzZones, sameZones, zonesOf, type TzZones } from "./tzzones";
 import type { Zone } from "./tz";
-import { cleanLayout, isDefault, pickLayout, sameLayout, type TabLayout } from "./tablayout";
+import { carryUnknown, cleanLayout, isDefault, pickLayout, sameLayout, type TabLayout } from "./tablayout";
 import { cleanPhoneLayout, isDefaultPhone, pickPhoneLayout, samePhoneLayout, type PhoneLayout } from "./phonelayout";
 import { cleanPhoneDev, shouldBeat, type PhoneDev } from "./phonedevices";
 import * as Dev from "./devicebg";
@@ -40,7 +41,7 @@ const now = () => new Date().toISOString();
 
 // Two devices writing the settings or a reply record join their copies, so a Dismiss on one is never undone
 // by the other's older copy (core/cardsync.ts).
-setMerger("settings", (a, b) => mergeSettings(a as Settings, b as Settings));
+setMerger("settings", (a, b) => mergeSettings(a as Settings, b as Settings, settingsDirty()));
 setMerger("reply", (a, b) => mergeReply(a as Reply, b as Reply));
 setMerger("msender", (a, b) => mergeSender(a as MailSender, b as MailSender));
 setMerger("daylog", (a, b) => mergeDayLog(a as DayLog, b as DayLog));
@@ -97,6 +98,22 @@ export function logTaskEvent(kind: EvKind, ev: { id: string; title: string; p1?:
 /** A card the person moved into Dimension X (never the Urgent migration or a list sent from the Mac or phone). */
 export const noteDimxMove = (id: string, title: string): Promise<void> => logTaskEvent("dimx", { id, title });
 
+// PS 1.68: the settings this device changed and has not sent yet (core/cardsync.ts mergeSettings). When the server has a
+// newer copy, only these come from this device's copy; everything else (pages made on the Mac, a choice made on the
+// phone) stays as the server has it. Kept in localStorage too, so a change waiting from before a restart still knows.
+const DIRTY_KEY = "ps.settingsDirty";
+let dirty: Set<string> | null = null;
+function settingsDirty(): Set<string> | undefined {
+  if (!dirty) { try { const v = JSON.parse(localStorage.getItem(DIRTY_KEY) || "null"); if (Array.isArray(v)) dirty = new Set(v.filter((x): x is string => typeof x === "string").slice(0, 400)); } catch { /* no storage: as before */ } }
+  return dirty ?? undefined;
+}
+function noteDirty(keys: string[], sentBefore: boolean) {
+  const d = sentBefore ? new Set<string>() : settingsDirty() ?? new Set<string>();
+  for (const k of keys) d.add(k);
+  dirty = d;
+  try { localStorage.setItem(DIRTY_KEY, JSON.stringify([...d])); } catch { /* in memory only */ }
+}
+
 export function saveSettings(patch: Partial<Settings>): Promise<void> {
   const run = async () => {
     // No settings yet and nothing downloaded yet: wait for the first download instead of starting a
@@ -104,7 +121,12 @@ export function saveSettings(patch: Partial<Settings>): Promise<void> {
     if (!settings(vaultStore.get())) await firstDownload();
     const snap = vaultStore.get();
     const s = settings(snap);
-    await put<Settings>("settings", { ...DEFAULT_SETTINGS, ...(s?.data || {}), ...patch }, { id: s?.id, ws: null });
+    // PS 1.68: still none (the download took longer than the wait): only the change goes in, never the defaults, so it
+    // can never put the real record's choices back to their defaults when that arrives (core/cardsync.ts settingsWrite).
+    const w = settingsWrite(s?.data, patch, DEFAULT_SETTINGS, !!snap.lastSync);
+    // What was sent before is on the server: the list starts again with this change (a record not sent yet keeps adding).
+    noteDirty(w.changed, !s?.pending);
+    await put<Settings>("settings", w.data, { id: s?.id, ws: null });
     for (const id of extraSettingsIds(vaultStore.get())) await remove(id);   // folded into the one kept
   };
   const p = settingsLane.then(run, run);
@@ -137,11 +159,14 @@ export function saveRemind(change: (rec: RemindRec | null) => RemindRec | null, 
 let layoutLane: Promise<unknown> = Promise.resolve();
 export function saveTabLayout(next: TabLayout, newId?: string): Promise<void> {
   const run = async () => {
+    // PS 1.68: never before the first download, so a layout made from nothing can never take the account's place.
+    if (!docs<TabLayout>("tablayout", null).length && !vaultStore.get().lastSync) await firstDownload();
     const data = cleanLayout(next);
     const { keep, extra } = pickLayout(docs<TabLayout>("tablayout", null));
     if (keep && sameLayout(cleanLayout(keep.data), data)) return;
     if (!keep && isDefault(data)) return;   // V1.55: copies, pages, sizes and settings count as changes too
-    await put<TabLayout>("tablayout", data, { id: keep?.id ?? newId, ws: null });
+    // PS 1.68: what this build cannot show (a newer PS's panels and settings) stays in the record (core/tablayout.ts).
+    await put<TabLayout>("tablayout", keep ? carryUnknown(keep.data, data) : data, { id: keep?.id ?? newId, ws: null });
     for (const d of extra) await remove(d.id);   // a second copy from a race between two Macs
   };
   const p = layoutLane.then(run, run);
@@ -542,6 +567,14 @@ export async function migrateLooks() {
   const old = st?.tmP1Style ? OLD_SCENES[st.tmP1Style] : undefined;
   if (!st || !old) return;
   await saveSettings({ tmP1Style: old.outline, ...(st.tmBg ? {} : { tmBg: old.bg }) });
+}
+/** Once per account (PS 1.67, core/islandon.ts): an island switched off goes back on, and the marker means a later Off stays off. */
+let islandOnBusy = false;
+export async function migrateIslandOn() {
+  const patch = islandOnPatch(settings(vaultStore.get())?.data);
+  if (!patch || islandOnBusy) return;
+  islandOnBusy = true;
+  await saveSettings(patch).finally(() => { islandOnBusy = false; });
 }
 let migratingP1 = false;
 export async function migrateP1() {

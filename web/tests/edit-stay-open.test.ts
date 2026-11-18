@@ -36,7 +36,7 @@ ok("the page sends stay only with Keep off; the Keep tick itself still puts the 
   assert.match(set, /taskMapActions\.keep\(on, !on && stay \? true : undefined\)/);
   assert.match(app, /taskMapActions\.keep = async \(on, stay\) => psPost\(stay \? \{ type: "keep", on, stay: true \} : \{ type: "keep", on \}\)/);
   assert.match(tm, /onKeep=\{\(on\) => setKept\(on\)\}/, "the glass bar's tick: no stay");
-  assert.match(tm, /<EditButton kept=\{kept\} onKeep=\{setKept\}/);
+  assert.match(tm, /<EditButton ready=\{ready\} kept=\{kept\} onKeep=\{setKept\}/);   // PS 1.68: not before the layout is in
 });
 ok("once Keep is off, a click on empty space closes the list; on a button or panel it does not", () => {
   assert.match(tm, /const bg = \(e: React\.MouseEvent\) => \{ if \(e\.target !== e\.currentTarget\) return; clearSel\(\); if \(!kept\) onClose\(\); \};/);

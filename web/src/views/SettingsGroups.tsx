@@ -395,6 +395,11 @@ export const CONTROLS: Controls = {
     const prefs = islandPrefs(settingsData(useVault()).island);
     return <SetRow e={e} plain open body={<IslandSettingsPage prefs={prefs} save={(p) => save({ island: { ...prefs, ...p } })} />} />;
   },
+  // PS 1.67 Hatch: the start animation, this Mac only (ps-mac Hatch.swift); on unless switched off.
+  "start-animation": function StartAnimation({ e }) {
+    const st = usePsSettings();
+    return <SetRow e={e} right={<OnOff label={e.name} on={st?.launchScene !== false} ready={!!st} set={(on) => psPost({ type: "psSettings:launchScene", on })} />} />;
+  },
   "afk": function Afk({ e }) {
     const on = useAfkOn();
     return <SetRow e={e} className="gs-has-switch" right={on === undefined ? undefined : <AfkControls afkOn={on} />} body={<AfkSettings />} />;

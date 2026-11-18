@@ -3,7 +3,7 @@
 // receipt. Every sample below is made up. Messy ones included: a reader that splits decimals, mixes up letters and digits,
 // puts a name and its price on two lines, and Georgian, English, German and Russian words.
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 const P = await import("../src/core/receiptparse.ts");
 
 let n = 0;
@@ -248,6 +248,168 @@ await ok("a date is never read as a price when no total word is found", () => {
   const r = P.parseReceipt("Some Shop\n17.11.2026\nCoffee 4.50", { today: "2026-11-17" });
   assert.equal(r.total, 450);
   assert.ok(r.warn.includes("total-guessed"));
+});
+
+// ---------- receipt accuracy fix: the receipt as a table ----------
+// tests/fixtures/receipts/spar-georgian.txt is the text of the developer's real SPAR receipt (18 Nov 2026) typed from his photo, with the
+// card slip's private lines left out (no card number, terminal, merchant id, RRN or codes) and the store's address, numbers and
+// the time changed. The answer below is what is printed on it.
+// The fixture stays in the private repo (scripts/open-source.mjs leaves it out): without it these tests are skipped.
+const SPAR_FILE = new URL("./fixtures/receipts/spar-georgian.txt", import.meta.url);
+const HAS_SPAR = existsSync(SPAR_FILE);
+const SPAR = HAS_SPAR ? readFileSync(SPAR_FILE, "utf8") : "";
+const spar = async (name: string, fn: () => unknown) => { if (HAS_SPAR) await ok(name, fn); else console.log("skip -", name, "(private fixture not here)"); };
+const SPAR_ANSWER: [string, number | undefined, number][] = [
+  ["პუდინგი/ ვალიო/ პროტეინით/ შოკოლადის/ დამატებული შაქრის გარეშე/ ულაქტოზო/ 180გრ", 4, 1596],
+  ["პური შავი / იფქლი/ პრემიუმ ხორბლის დაჭრილი 500გრ", undefined, 185],
+  ["პუდინგი ვალიო პროტეინით მანგოს ვანილი დამატებული შაქრის გარეშე ულაქტოზო 0.2%", undefined, 399],
+  ["მაიონეზი \"სლობოდა\" ოლივკოვი 400 მლ", undefined, 599],
+  ["პოლიეთილენის პაკეტი /54 X 70/ (სალაროსთვის დიდი სპარი)", undefined, 20],
+];
+const items3 = (r: { items: { n: string; q?: number; p: number }[] }) => r.items.map((i) => [i.n, i.q, i.p]);
+
+await spar("the SPAR receipt: shop, date, five items with their wrapped names, quantity and line total, the total, no warning", () => {
+  const r = P.parseReceipt(SPAR, { today: "2026-11-18" });
+  assert.equal(r.shop, "Spar");
+  assert.equal(r.date, "2026-11-18");
+  assert.equal(r.total, 2799);
+  assert.equal(r.cur, "GEL");
+  assert.deepEqual(items3(r), SPAR_ANSWER);
+  assert.deepEqual(r.warn, []);
+  assert.ok(!r.items.some((i) => /თანხა|ვერსია|BANK|Mastercard/i.test(i.n)), "nothing from the card slip is an item");
+});
+
+await spar("the SPAR receipt read badly: a misread heading, comma decimals, a faint total label, dashes for the rule, no ფასდ. line", () => {
+  const messy = SPAR
+    .replace("ფასდ.\n", "")
+    .replace("დასახელება ფასი რ-ბა ფასი თანხა", "დასახელეზა ფასი რ-ზა ფასი თანზა")
+    .replace(/(\d)\.(\d\d)(?=\s|$)/gm, "$1,$2")
+    .replace("ჯამი: 27,99", "ჯნდლდო: 27,99")
+    .replace(/^\.{20,}$/gm, "- - - - - - - - - - - - - - - - -")
+    .replace("18.11.2026 21:14:24", "18.11 2026 21:14:24");
+  const r = P.parseReceipt(messy, { today: "2026-11-18" });
+  assert.equal(r.shop, "Spar");
+  assert.equal(r.date, "2026-11-18");
+  assert.equal(r.total, 2799);
+  assert.deepEqual(r.items.map((i) => [i.q, i.p]), SPAR_ANSWER.map((x) => [x[1], x[2]]));
+  assert.deepEqual(r.warn, []);
+});
+
+await spar("the SPAR receipt with word positions: a number the reader dropped still lands under the right heading", () => {
+  // Columns as printed: name at the left, then price, quantity, discounted price and line total.
+  const X = { name: 40, price: 470, qty: 580, disc: 680, sum: 790 };
+  let y = 0;
+  const layout = SPAR.split("\n").filter((l) => l.trim()).map((line) => {
+    y += 40;
+    const toks = line.split(" ");
+    const nums: string[] = [];
+    while (toks.length && /^\d+(\.\d+)?$/.test(toks[toks.length - 1]) && nums.length < 4) nums.unshift(toks.pop() as string);
+    const words = toks.map((t, i) => ({ t, x0: X.name + i * 60, y0: y, x1: X.name + i * 60 + 50, y1: y + 24 }));
+    if (/^დასახელება/.test(line)) return ["დასახელება", "ფასი", "რ-ბა", "ფასი", "თანხა"].map((t, i) => ({ t, x0: [X.name, X.price, X.qty, X.disc, X.sum][i] - 20, y0: y, x1: [X.name, X.price, X.qty, X.disc, X.sum][i] + 20, y1: y + 24 }));
+    if (line === "ფასდ.") return [{ t: line, x0: X.disc - 20, y0: y, x1: X.disc + 20, y1: y + 24 }];
+    const cols = nums.length === 4 ? [X.price, X.qty, X.disc, X.sum] : nums.length === 1 ? [X.sum] : [];
+    return [...words, ...nums.map((t, i) => ({ t, x0: cols[i] - 20, y0: y, x1: cols[i] + 20, y1: y + 24 }))];
+  });
+  const r = P.parseReceipt("", { layout, today: "2026-11-18" });
+  assert.deepEqual(items3(r), SPAR_ANSWER);
+  assert.equal(r.total, 2799);
+  // the quantity and the price before the discount went missing on the first item: positions still say which number is which
+  const first = layout.findIndex((l) => l.some((w) => w.t === "15.96"));
+  layout[first] = layout[first].filter((w) => w.t !== "4" && w.t !== "6.45");
+  const r2 = P.parseReceipt("", { layout, today: "2026-11-18" });
+  assert.equal(r2.items[0].p, 1596, "the line total, not the discounted price");
+  // a row the reader split in two (name and numbers side by side) is one row again
+  const rows = P.rowsOfLayout([[{ t: "ო/", x0: 40, y0: 10, x1: 60, y1: 30 }], [{ t: "3", x0: 760, y0: 12, x1: 770, y1: 31 }, { t: ".99", x0: 772, y0: 12, x1: 800, y1: 31 }]]);
+  assert.deepEqual(rows.map((x) => x.text), ["ო/ 3.99"]);
+});
+
+await spar("the old reader's mistakes on the SPAR text are gone: first number, one name piece, slip lines, a guessed total", () => {
+  const r = P.parseReceipt(SPAR, { today: "2026-11-18" });
+  assert.ok(!r.items.some((i) => i.p === 645), "6.45 is the price before the discount, never the line");
+  assert.ok(r.items.every((i) => i.n.length > 20), "every name is whole, not its last printed line");
+  assert.ok(!r.warn.includes("total-guessed"));
+});
+
+await ok("made up Georgian receipts with wrapped names: a Nikora style table, names under the numbers, a missing total line", () => {
+  const a = P.parseReceipt(`ნიკორა
+შპს ნიკორა ტრეიდი
+17.11.2026 19:40
+დასახელება რაოდ. ფასი თანხა
+------------------------------
+ყველი სულგუნი
+ფერმერის 0.535 14.90 7.97
+რძე სოფლის 3.2%
+1ლ 2 3.20 6.40
+კვერცხი C1
+10 ცალი 1 5.90 5.90
+------------------------------
+სულ 20.27
+ნაღდი 50.00
+ხურდა 29.73`, { today: TODAY });
+  assert.equal(a.shop, "Nikora");
+  assert.equal(a.total, 2027);
+  assert.deepEqual(items3(a), [["ყველი სულგუნი ფერმერის", 0.535, 797], ["რძე სოფლის 3.2% 1ლ", 2, 640], ["კვერცხი C1 10 ცალი", undefined, 590]]);
+  assert.deepEqual(a.warn, []);
+
+  const b = P.parseReceipt(`GOODWILL
+18/11/2026
+დასახელება ფასი რ-ბა თანხა
+ლიმონათი ნატახტარი 2.10 3 6.30
+მსხალი 0.5ლ
+ქათმის ფილე 12.90 1 12.90
+გაციებული
+ჯამი 19.20`, { today: "2026-11-18" });
+  assert.equal(b.shop, "Goodwill");
+  assert.deepEqual(items3(b), [["ლიმონათი ნატახტარი მსხალი 0.5ლ", 3, 630], ["ქათმის ფილე გაციებული", undefined, 1290]]);
+  assert.equal(b.total, 1920);
+
+  const c = P.parseReceipt(`ფრესკო
+18.11.2026
+დასახელება ფასი რ-ბა ფასდ. ფასი თანხა
+პომიდორი
+ქართული 4.50 2 3.99 7.98
+................
+თანხა: 7.98 ლ`, { today: "2026-11-18" });
+  assert.equal(c.shop, "Fresco");
+  assert.deepEqual(items3(c), [["პომიდორი ქართული", 2, 798]]);
+  assert.equal(c.total, 798);
+  assert.deepEqual(c.warn, []);
+});
+
+await ok("the total: the total line, the items and the slip are checked against each other", () => {
+  const head = "SPAR\n18.11.2026\nდასახელება ფასი რ-ბა ფასი თანხა\nპური 1.85 1 1.85 1.85\nრძე 3.20 1 3.20 3.20\n";
+  const agree = P.parseReceipt(head + "............\nჯამი: 5.05\nთანხა: 5.05 ლ", { today: "2026-11-18" });
+  assert.equal(agree.total, 505); assert.deepEqual(agree.warn, []);
+  const misread = P.parseReceipt(head + "............\nჯამი: 8.05\nთანხა: 5.05 ლ", { today: "2026-11-18" });
+  assert.equal(misread.total, 505, "the lines and the slip agree, the total line was misread"); assert.deepEqual(misread.warn, []);
+  const clash = P.parseReceipt(head + "............\nჯამი: 8.05\nთანხა: 9.05 ლ", { today: "2026-11-18" });
+  assert.equal(clash.total, 805); assert.ok(clash.warn.includes("total-guessed"), "they all disagree: the developer checks it");
+  const sumOnly = P.parseReceipt(head, { today: "2026-11-18" });
+  assert.equal(sumOnly.total, 505); assert.ok(sumOnly.warn.includes("total-guessed"));
+});
+
+await ok("the shop: a chain named on the card slip, a Georgian name with one letter misread, a store code is not a name", () => {
+  assert.equal(P.findShop(["S100 - თბილისი", "18.11.2026"], ["BANK OF GEORGIA", "შპს რითეილ ჯგუფი", "ხპარი"]), "Spar");
+  assert.equal(P.findShop(["S100 - თბილისი", "18.11.2026"]), "");
+  assert.equal(P.findShop(["ევროპროდუქტი", "ქვითარი"]), "Europroduct");
+  assert.equal(P.findShop(["SMART", "Vake"]), "Smart");
+  assert.equal(P.findShop(["Smartphone repair shop"]), "Smartphone repair shop");
+});
+
+await ok("wrapped names: pieces of one word are glued, whole words get a space", () => {
+  assert.equal(P.joinWrapped(["პროტეინით/ შოკო", "ლადის/ დამატებუ", "ლი შაქრის", "გარეშე"], 16), "პროტეინით/ შოკოლადის/ დამატებული შაქრის გარეშე");
+  assert.equal(P.joinWrapped(["/ იფქლი/ პრემიუმ", "ხორბლის"], 16), "/ იფქლი/ პრემიუმ ხორბლის");
+  assert.equal(P.joinWrapped(["(სალაროსთვის", "დიდი"], 16), "(სალაროსთვის დიდი");
+});
+
+await ok("dates the reader bent: a comma or a space for a dot", () => {
+  assert.deepEqual(P.datesIn("18,11,2026"), ["2026-11-18"]);
+  assert.deepEqual(P.datesIn("18.11 2026 02:14"), ["2026-11-18"]);
+  assert.deepEqual(P.datesIn("3.99 2.10"), []);
+});
+
+await spar("the private fixture holds no card, terminal or bank codes", () => {
+  assert.ok(!/\*{3,}|\d{4}\*+\d{4}|RRN|AID|ISSUER|ტერმინალი|მერჩანტი|ავტორიზ|პასუხის კოდი|A0000/.test(SPAR));
 });
 
 console.log(`receiptparse: ${n} passed`);

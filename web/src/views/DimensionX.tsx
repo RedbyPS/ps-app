@@ -21,6 +21,7 @@
 // Each move stays on screen as done for a moment (the hold) while PS's floating window round trips
 // through its main window, so a two step move never flickers.
 import { morphFade, morphFrames } from "../ui/morphframes";
+import { wheelMorph } from "../gos/launch";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { DIMX_COLORS, type AwareItem, type DimxItem, type DimxStyle, type DimxZone, type Doc, type Todo } from "../core/model";
@@ -82,6 +83,12 @@ const insertAt = <T,>(arr: T[], item: T, i: number) => [...arr.slice(0, i), item
 export function morph(win: HTMLElement | null, x: HTMLElement | null, dim: HTMLElement | null, dir: "in" | "out", parts: { body: string; tint: string; flat?: boolean } = { body: ".dx-content", tint: ".dx-morph" }): Promise<void> {
   if (!win) return Promise.resolve();
   win.getAnimations().forEach((a) => a.cancel());
+  // PS 1.67 the phone's wheel menu: a window it launched zooms out of the item's spot and back into it (gos/launch.ts).
+  const wheel = wheelMorph(win, dir);
+  if (wheel) {
+    dim?.animate([{ opacity: 0 }, { opacity: 1 }], { duration: dir === "out" ? 300 : 420, easing: "ease", fill: dir === "out" ? "forwards" : "none", direction: dir === "out" ? "reverse" : "normal" });
+    return wheel;
+  }
   const p = win.getBoundingClientRect();
   const b = x?.getBoundingClientRect();
   const quick = reduced() || !b || b.width < 4 || p.width < 4;

@@ -7,7 +7,7 @@ import type { Brief, CalendarSnap, CampaignStats, ClientRec, CTask, IEmail, Paym
 import { parseImportFile, runImport } from "./core/importer";
 import { agenda, clientViews, projectViews, settingsData } from "./core/select";
 import { applyNotesOp } from "./core/notescard";
-import { maybeAutoReset, migrateClaudeAdds, migrateLooks, migrateP1, saveSettings } from "./core/actions";
+import { maybeAutoReset, migrateClaudeAdds, migrateIslandOn, migrateLooks, migrateP1, saveSettings } from "./core/actions";
 import { addChatDone, chatDoneFrom } from "./core/chatdone";
 import { NotesDock } from "./views/NotesDock";
 import { TaskMap } from "./views/TaskMap";
@@ -335,7 +335,7 @@ function OwnerShell() {
   // The website's other pages, fetched quietly once the list is up (pages.ts). PS on a Mac has them built in.
   useEffect(() => { if (!PS) prefetchPages(); }, []);
   useEffect(() => {
-    const tick = () => { void maybeAutoReset(); void migrateClaudeAdds(); void migrateP1(); void migrateLooks(); };
+    const tick = () => { void maybeAutoReset(); void migrateClaudeAdds(); void migrateP1(); void migrateLooks(); void migrateIslandOn(); };
     tick();
     const t = setInterval(tick, 60_000);
     return () => clearInterval(t);

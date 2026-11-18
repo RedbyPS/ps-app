@@ -136,6 +136,10 @@ export const PHONE_CONTROLS: Controls = {
     return <SetRow e={e} right={<Switch on={on} onChange={(v) => { haptic("press"); setPhonePref("island", v); }} label={e.name} />}
       body={nativeIslandOn(g) ? <Note>The Dynamic island over every app is on, so that one shows inside PS too and this one waits.</Note> : undefined} open={on && nativeIslandOn(g)} />;
   },
+  "phone-wheel": function WheelRow({ e }: RowProps) {
+    const on = usePhonePref("wheel");
+    return <SetRow e={e} right={<Switch on={on} onChange={(v) => { haptic("press"); setPhonePref("wheel", v); }} label={e.name} />} />;
+  },
   "phone-add-button": function AddButton({ e }: RowProps) {
     const on = usePhonePref("addButton");
     return <SetRow e={e} right={<Switch on={on} onChange={(v) => { haptic("press"); setPhonePref("addButton", v); }} label={e.name} />} />;

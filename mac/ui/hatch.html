@@ -1,0 +1,404 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src 'self' file:; style-src 'unsafe-inline'; script-src 'unsafe-inline'">
+<title>Hatch</title>
+<!--
+  PS 1.67 "Hatch" (Animation 1 of the update demos, 18 Nov 2026), drawn in a see-through window over the
+  whole screen (Sources/Hatch.swift). The rules and timings that matter are in Sources/HatchCore.swift. The page never
+  plays a sound itself: it asks the Mac ({type:"sfx"}), which plays it only when the island's sound switch, Do Not Disturb
+  and private mode allow (quiet). Only transform and opacity move, so the main thread of PS never waits on it.
+  The island is never drawn here: PS's real island (Island.swift) pinches into a dot itself, the page only carries a dot
+  of black down from there, and at the end the Mac grows the real island out of the blob (its own shape, looks, tick and task).
+  The Mac calls window.__hatch.build(o) / progress(f) / tuck() / finish(o) / arrived(a) / skip(); the page answers with
+  {type:"ready"}, {type:"cover"}, {type:"arrive", blob} (the blob is at the island's place: the Mac answers arrived({real,
+  target})), {type:"tucked"} and {type:"done"}.
+-->
+<style>
+:root{--island:#060608}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{width:100%;height:100%;overflow:hidden;background:transparent;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",sans-serif;-webkit-font-smoothing:antialiased;-webkit-user-select:none;user-select:none;cursor:default}
+#veil{position:fixed;inset:0;pointer-events:none;opacity:0;background:radial-gradient(circle at 50% 45%,rgba(12,18,32,.30),rgba(8,12,24,.62))}
+#fx{position:fixed;inset:0;pointer-events:none;overflow:hidden}
+.cv{position:absolute;inset:0;width:100%;height:100%}
+.abs{position:absolute}
+.tile{position:absolute;background-image:url(hatch-icon.png);background-repeat:no-repeat;will-change:transform,opacity}
+.pc{position:absolute;inset:0;background:url(hatch-icon.png) center/100% 100% no-repeat;will-change:transform}
+.inside{position:absolute;left:38%;top:6%;width:24%;height:46%;border-radius:50% 50% 45% 45%;background:radial-gradient(circle at 50% 70%,#1c2230,#050507 70%);opacity:0}
+.crack{position:absolute;inset:0;width:100%;height:100%;overflow:visible}
+.glow{position:absolute;inset:-30%;border-radius:50%;background:radial-gradient(circle,rgba(190,225,255,.5),rgba(190,225,255,0) 62%);opacity:0}
+.blob{position:absolute;border-radius:50%;background:radial-gradient(circle at 35% 30%,#3a4252 0%,#0c0d12 45%,var(--island) 70%);will-change:transform}
+.ring{position:absolute;border-radius:50%;border:3px solid rgba(255,255,255,.85);box-shadow:0 0 18px rgba(170,215,255,.7)}
+.bar{position:absolute;height:4px;border-radius:4px;background:rgba(255,255,255,.22);overflow:hidden;opacity:0}
+.bar i{display:block;height:100%;border-radius:4px;background:linear-gradient(90deg,#9fd0ff,#fff);transform-origin:0 50%;transform:scaleX(0);transition:transform .25s ease-out}
+#ver{position:fixed;left:0;right:0;margin:0 auto;width:max-content;text-align:center;opacity:0;color:#fff;will-change:transform}
+#ver .lbl{text-shadow:0 1px 10px rgba(0,0,0,.45);font-size:15px;font-weight:500;letter-spacing:.01em;opacity:0;margin-bottom:4px}
+#ver .digits{font-size:40px;font-weight:700;line-height:1;letter-spacing:-.01em;font-variant-numeric:tabular-nums;display:flex;justify-content:center;filter:drop-shadow(0 2px 10px rgba(0,0,0,.35))}
+#ver .dcol{display:inline-block;height:1em;overflow:hidden}
+#ver .strip{display:block}
+#ver .strip span{display:block;height:1em;line-height:1em}
+#ver .dot{display:inline-block;line-height:1em;margin:0 .02em}
+</style>
+</head>
+<body>
+<div id="veil"></div>
+<div id="fx"></div>
+<div id="ver" aria-live="polite"><div class="lbl"></div><div class="digits"></div></div>
+<script>
+(() => {
+'use strict';
+const $ = s => document.querySelector(s);
+const fx = $('#fx');
+const post = o => { try { window.webkit.messageHandlers.hatch.postMessage(JSON.stringify(o)); } catch (e) {} };
+const sfx = name => post({ type: 'sfx', name });
+
+/* ---------- run control: a skip or a new start cancels everything in flight ---------- */
+let RUN = 0, SPEED = 1;
+class Cancel extends Error {}
+const guard = id => { if (id !== RUN) throw new Cancel(); };
+const sleep = (ms, id) => new Promise((res, rej) => setTimeout(() => id === RUN ? res() : rej(new Cancel()), ms / SPEED));
+function A(el, kf, opts) { const a = el.animate(kf, Object.assign({ fill: 'forwards' }, typeof opts === 'number' ? { duration: opts } : opts)); if (SPEED !== 1) a.playbackRate = SPEED; return a; }
+async function play(el, kf, opts, id) { const a = A(el, kf, opts); try { await a.finished; } catch (e) { throw new Cancel(); } guard(id); return a; }
+function loop(id, fn) {
+  // Real elapsed time, and a timer beside each frame: a slowed frame clock (a hidden page) can never stall the scene.
+  return new Promise((res, rej) => {
+    let t = 0, last = performance.now(), over = false, tok = 0;
+    function f() {
+      if (over) return;
+      if (id !== RUN) { over = true; return rej(new Cancel()); }
+      const now = performance.now(), dt = Math.min(100, now - last) * SPEED; last = now; t += dt;
+      if (fn(t, dt) === true) { over = true; return res(); }
+      next();
+    }
+    function next() { const k = ++tok; requestAnimationFrame(() => { if (k === tok) f(); }); setTimeout(() => { if (k === tok) f(); }, 80); }
+    next();
+  });
+}
+const quiet = p => p.catch(() => {});
+function mk(tag, cls, parent, css) { const e = document.createElement(tag); if (cls) e.className = cls; if (css) Object.assign(e.style, css); (parent || fx).appendChild(e); return e; }
+const px = v => v + 'px';
+const clamp = (v, a = 0, b = 1) => Math.max(a, Math.min(b, v));
+
+/* ---------- the scene's state ---------- */
+const S0 = { mode: 'update', reduce: false, ver: '', words: { updated: 'Updated to' }, isl: null, target: null };
+let o = Object.assign({}, S0);
+let g = null;            // geometry
+let wrap = null, tiles = [], shown = 0, lastTick = 0, bar = null, covered = false;
+
+function geo() {
+  const W = innerWidth, H = innerHeight;
+  const S = Math.round(Math.max(118, Math.min(240, Math.min(W, H) * .36)) / 2) * 2;
+  const t = o.target || { x: W / 2 - 60, y: 6, w: 120, h: 30 };
+  return { W, H, S, cx: W / 2, cy: Math.round(H * .45), t, tcx: t.x + t.w / 2, tcy: t.y + t.h / 2 };
+}
+function veil(on, ms) { A($('#veil'), [{ opacity: on ? 0 : getComputedStyle($('#veil')).opacity }, { opacity: on ? (o.mode === 'launch' ? .45 : 1) : 0 }], { duration: ms, easing: 'ease-out' }); }
+
+function cover(id) {
+  if (covered) return;
+  covered = true;
+  post({ type: 'cover' });   // the Mac takes the real island away (it has already pinched it into a dot)
+}
+/* The island leaves: the real one pinches itself into a dot (Island.swift); from there a dot of black drops into the middle,
+   where the icon will build. */
+function islandExit(dropTo) {
+  if (!o.isl || o.reduce) return;
+  const d = Math.max(8, Math.round(o.isl.h * .45)), x = o.isl.x + o.isl.w / 2, y = o.isl.y + o.isl.h / 2;
+  const dot = mk('div', 'blob', fx, { left: px(x - d / 2), top: px(y - d / 2), width: px(d), height: px(d), opacity: 0 });
+  A(dot, [{ transform: 'translate(0,0)', opacity: 1, offset: 0 }, { transform: 'translate(0,4px)', opacity: 1, offset: .15 },
+          { transform: 'translate(0,' + (dropTo - y) + 'px) scale(.5)', opacity: 0 }], { duration: 650, delay: 280, easing: 'ease-in' });
+  setTimeout(() => dot.remove(), 1000);
+  sfx('hatch-shrink'); setTimeout(() => sfx('hatch-drop'), 400 / SPEED);
+}
+/* The blob is at the island's place: the Mac grows the REAL island out of it, or says it will not show (switched off,
+   nothing on it, 1Password or Signal): then the blob pops into sparks. At a start it may wait a moment for the island. */
+let arrivedRes = null;
+function arrived(a) { if (arrivedRes) { const r = arrivedRes; arrivedRes = null; r(a || {}); } }
+async function born(id, B, blobs) {
+  const a = await new Promise(res => { arrivedRes = res; post({ type: 'arrive', blob: B }); setTimeout(() => arrived({ real: false }), 2200); });
+  guard(id);
+  const t = a.target || g.t, cx = t.x + t.w / 2, cy = t.y + t.h / 2;
+  (blobs || []).forEach(b => b.remove());
+  if (!a.real) { if (!o.reduce) { shock(cx, cy, 40); sparks(cx, cy); sfx('hatch-bloop'); } await sleep(400, id); return; }
+  if (!o.reduce) {
+    const ring = mk('div', 'ring', fx, { left: px(t.x), top: px(t.y), width: px(t.w), height: px(t.h), borderRadius: px(Math.min(t.h / 2, 22)), borderWidth: '2px' });
+    A(ring, [{ transform: 'scale(1)', opacity: 0 }, { transform: 'scale(1.1,1.4)', opacity: .9, offset: .25 }, { transform: 'scale(1.6,2.4)', opacity: 0 }], { duration: 900, easing: 'cubic-bezier(.2,.8,.3,1)' });
+  }
+  sfx('hatch-gulp');
+  g.t = t; g.tcx = cx; g.tcy = cy;   // the number hangs under the real island
+  await sleep(o.reduce ? 350 : 900, id);   // settled, its task line faded in
+}
+function shock(x, y, size) {
+  if (o.reduce) return;
+  for (let k = 0; k < 2; k++) {
+    const r = mk('div', 'ring', fx, { left: px(x - size / 2), top: px(y - size / 2), width: px(size), height: px(size) });
+    A(r, [{ transform: 'scale(.2)', opacity: 1 }, { transform: 'scale(' + (5 - k * 1.5) + ')', opacity: 0 }], { duration: 800 + k * 200, delay: k * 120, easing: 'cubic-bezier(.15,.8,.3,1)' });
+  }
+}
+function sparks(x, y) { confetti(RUN, x, y, 26, { power: .5 }); }
+const CONF = ['#ffffff', '#a8d4ff', '#ffd6a8', '#c7b8ff', '#9fe8c9', '#ffb3c7'];
+function confetti(id, x, y, n, { power = 1, up = 0 } = {}) {
+  if (o.reduce) return;
+  const cv = mk('canvas', 'cv'), dpr = Math.min(2, devicePixelRatio || 1);
+  cv.width = Math.round(innerWidth * dpr); cv.height = Math.round(innerHeight * dpr);
+  const ctx = cv.getContext('2d'); ctx.scale(dpr, dpr);
+  const ps = [];
+  for (let i = 0; i < n; i++) {
+    const a = Math.random() * Math.PI * 2, v = (3 + Math.random() * 9) * power;
+    ps.push({ x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v * .8 - up - Math.random() * 3 * power, r: Math.random() * 6.3, vr: (Math.random() - .5) * .35, w: 5 + Math.random() * 5, h: 3 + Math.random() * 4, c: CONF[i % CONF.length], life: 1500 + Math.random() * 1000, ph: Math.random() * 6 });
+  }
+  quiet(loop(id, (el, dt) => {
+    const k = dt / 16.67; ctx.clearRect(0, 0, innerWidth, innerHeight); let alive = 0;
+    for (const p of ps) {
+      if (el > p.life) continue; alive++;
+      p.vx *= Math.pow(.985, k); p.vy = p.vy * Math.pow(.985, k) + .22 * k; p.x += p.vx * k; p.y += p.vy * k; p.r += p.vr * k;
+      ctx.globalAlpha = clamp((p.life - el) / 500); ctx.fillStyle = p.c;
+      ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.r); ctx.scale(1, Math.cos(el * .012 + p.ph)); ctx.fillRect(-p.w / 2, -p.h / 2, p.w, p.h); ctx.restore();
+    }
+    if (!alive) { cv.remove(); return true; }
+  }).catch(() => cv.remove()));
+}
+
+/* ---------- the icon, built from tiles in step with the progress ---------- */
+function makeIcon() {
+  const { S, cx, cy } = g;
+  wrap = mk('div', 'abs', fx, { left: px(cx - S / 2), top: px(cy - S / 2), width: px(S), height: px(S) });
+  const glow = mk('div', 'glow', wrap);
+  A(glow, [{ opacity: 0 }, { opacity: 1 }], 1200);
+  const N = S >= 180 ? 8 : 6, ts = S / N;
+  tiles = []; shown = 0; lastTick = 0;
+  for (let r = 0; r < N; r++) for (let c = 0; c < N; c++) {
+    const t = mk('div', 'tile', wrap, { left: px(c * ts), top: px(r * ts), width: px(ts + .7), height: px(ts + .7), backgroundSize: S + 'px ' + S + 'px', backgroundPosition: (-c * ts) + 'px ' + (-r * ts) + 'px', opacity: 0 });
+    tiles.push({ t, o: (N - 1 - r) + Math.abs(c - (N - 1) / 2) * .55 + Math.random() * 1.7 });
+  }
+  tiles.sort((a, b) => a.o - b.o);   // from the bottom middle up, a little at random
+  bar = mk('div', 'bar', fx, { left: px(cx - 70), top: px(cy + S / 2 + 26), width: '140px' });
+  bar.appendChild(document.createElement('i'));
+  if (o.reduce) A(wrap, [{ opacity: 0 }, { opacity: 1 }], 400);
+}
+function showTo(f, fast) {
+  if (!wrap) return;
+  const want = Math.floor(clamp(f) * tiles.length);
+  if (bar) { if (bar.style.opacity !== '1') { bar.style.opacity = '1'; } bar.firstChild.style.transform = 'scaleX(' + clamp(f).toFixed(4) + ')'; }
+  const S = g.S;
+  while (shown < want) {
+    const { t } = tiles[shown++];
+    t.style.opacity = '';
+    if (o.reduce) { t.style.opacity = '1'; continue; }
+    const a = Math.random() * Math.PI * 2, d = S * (.45 + Math.random() * .6);
+    A(t, [{ transform: 'translate(' + Math.cos(a) * d + 'px,' + (Math.sin(a) * d - S * .25) + 'px) rotate(' + ((Math.random() - .5) * 220) + 'deg) scale(.15)', opacity: 0 }, { transform: 'none', opacity: 1 }],
+      { duration: fast ? 420 : 700, easing: 'cubic-bezier(.2,1.25,.4,1)', fill: 'none' });
+  }
+  const now = performance.now();
+  if (!o.reduce && shown - lastTick >= 3 && now - (showTo.at || 0) > 110) { lastTick = shown; showTo.at = now; sfx('hatch-tick' + Math.min(4, Math.floor(clamp(f) * 5))); }
+}
+function revealNow(f) {
+  const want = Math.floor(clamp(f) * tiles.length);
+  while (shown < want) tiles[shown++].t.style.opacity = '1';
+  if (bar) { bar.style.opacity = '1'; bar.firstChild.style.transition = 'none'; bar.firstChild.style.transform = 'scaleX(' + clamp(f).toFixed(4) + ')'; }
+  lastTick = shown;
+}
+function clear() {
+  fx.innerHTML = ''; wrap = null; tiles = []; shown = 0; bar = null;
+  const v = $('#ver'); v.getAnimations().forEach(a => a.cancel()); v.style.opacity = 0;
+  $('#veil').getAnimations().forEach(a => a.cancel()); $('#veil').style.opacity = 0;
+}
+
+/* ---------- 1. before the relaunch: the island leaves, the icon builds with the progress ---------- */
+function build(opts) {
+  const fresh = !wrap;
+  o = Object.assign({}, S0, opts || {});
+  SPEED = 1;
+  if (fresh) {
+    RUN++; clear(); covered = false;
+    g = geo();
+    cover(RUN);
+    islandExit(g.cy);
+    veil(true, 800);
+    makeIcon();
+  }
+  showTo(o.built || 0);
+}
+function progress(f) { showTo(f); }
+/* Waiting for Relaunch to finish (or Esc while it downloads): the icon tucks itself away and the island comes back. */
+async function tuck() {
+  const id = ++RUN;
+  try {
+    if (wrap) A(wrap, [{ transform: 'none', opacity: 1 }, { transform: 'scale(.6) translateY(30px)', opacity: 0 }], { duration: 420, easing: 'ease-in' });
+    if (bar) A(bar, [{ opacity: 1 }, { opacity: 0 }], 300);
+    veil(false, 450);
+    await sleep(460, id);
+  } catch (e) { if (!(e instanceof Cancel)) throw e; }
+  clear(); covered = false;
+  post({ type: 'tucked' });
+}
+
+/* ---------- 2 to 4. the new version running: finish, crack, fall, bounce, hatch; then the number ---------- */
+async function finish(opts) {
+  const id = ++RUN;
+  o = Object.assign({}, S0, opts || {});
+  SPEED = o.mode === 'launch' ? 1.8 : 1;   // the start scene: about three seconds
+  if (!wrap) {
+    clear(); covered = false; g = geo(); cover(id); islandExit(g.cy); makeIcon();
+    // After the relaunch: the pieces the old build showed are there at once, so the scene picks up where it stopped.
+    const was = clamp(o.built || 0);
+    if (was > 0) { revealNow(was); veil(true, 120); } else veil(true, 600);
+  } else { g = geo(); }
+  try {
+    if (o.reduce) await finishReduced(id); else await finishFull(id);
+  } catch (e) { if (!(e instanceof Cancel)) { post({ type: 'error', why: String(e && e.message || e) }); } else return; }
+  if (id === RUN) { clear(); post({ type: 'done' }); }
+}
+async function finishFull(id) {
+  const { S, cx, cy, H } = g;
+  // the last pieces fly in (all of it, quickly, when the old build left nothing)
+  const from = shown / Math.max(1, tiles.length), dur = o.mode === 'launch' ? 1000 : 500 + 900 * (1 - from);
+  await loop(id, el => { const p = from + (1 - from) * Math.min(1, el / dur); showTo(p, true); return el >= dur; });
+  if (bar) A(bar, [{ opacity: 1 }, { opacity: 0 }], 300);
+  await sleep(o.mode === 'launch' ? 150 : 700, id);
+  sfx('hatch-chime');
+  // three seamless pieces in place of the tiles, the crack line ready
+  const pieces = mk('div', 'abs', wrap, { inset: '0', transformOrigin: '50% 100%' });
+  const inside = mk('div', 'inside', pieces);
+  const zig = [[50, 0], [46.5, 9], [53, 18], [47.5, 27], [53, 35], [48.5, 43], [50, 50.4]];
+  const P = a => a.map(p => p[0] + '% ' + p[1] + '%').join(',');
+  mk('div', 'pc', pieces, { clipPath: 'polygon(0% 50%,100% 50%,100% 100%,0% 100%)', webkitClipPath: 'polygon(0% 50%,100% 50%,100% 100%,0% 100%)' });
+  const tlp = 'polygon(0% 0%,' + P(zig) + ',0% 50.4%)', trp = 'polygon(100% 0%,100% 50.4%,' + P(zig.slice().reverse()) + ')';
+  const tl = mk('div', 'pc', pieces, { clipPath: tlp, webkitClipPath: tlp, transformOrigin: '50% 50%' });
+  const tr = mk('div', 'pc', pieces, { clipPath: trp, webkitClipPath: trp, transformOrigin: '50% 50%' });
+  tiles.forEach(x => x.t.remove()); tiles = [];
+  A(pieces, [{ transform: 'scale(1)' }, { transform: 'scale(1.06)', offset: .4 }, { transform: 'scale(1)' }], { duration: 600, easing: 'ease-in-out', fill: 'none' });
+  await sleep(o.mode === 'launch' ? 300 : 650, id);
+  // the crack, from the top down to the middle
+  const svgNS = 'http://www.w3.org/2000/svg';
+  const crack = document.createElementNS(svgNS, 'svg'); crack.setAttribute('viewBox', '0 0 100 100'); crack.setAttribute('class', 'crack'); crack.setAttribute('preserveAspectRatio', 'none');
+  const pts = zig.map(p => p.join(',')).join(' ');
+  crack.innerHTML = '<polyline points="' + pts + '" fill="none" stroke="#fff" stroke-opacity=".7" stroke-width="2.6" stroke-linejoin="round" pathLength="1" stroke-dasharray="1" stroke-dashoffset="1"/><polyline points="' + pts + '" fill="none" stroke="#33414d" stroke-width="1.1" stroke-linejoin="round" pathLength="1" stroke-dasharray="1" stroke-dashoffset="1"/>';
+  pieces.appendChild(crack);
+  sfx('hatch-crack');
+  crack.querySelectorAll('polyline').forEach(pl => A(pl, [{ strokeDashoffset: 1 }, { strokeDashoffset: .66, offset: .12 }, { strokeDashoffset: .66, offset: .3 }, { strokeDashoffset: .33, offset: .42 }, { strokeDashoffset: .33, offset: .67 }, { strokeDashoffset: 0, offset: .8 }, { strokeDashoffset: 0 }], { duration: 700, easing: 'linear' }));
+  A(wrap, [0, 1, 2].flatMap(i => [{ transform: 'rotate(0deg)', offset: i * .3 }, { transform: 'rotate(' + (i % 2 ? -1.6 : 1.6) + 'deg)', offset: i * .3 + .05 }, { transform: 'rotate(0deg)', offset: i * .3 + .12 }]).concat([{ transform: 'rotate(0deg)', offset: 1 }]), { duration: 700, fill: 'none' });
+  await sleep(o.mode === 'launch' ? 600 : 1000, id);
+  // it falls and hits the bottom of this screen, whatever its size
+  const dy = H - (cy + S / 2);
+  const fallMs = Math.max(380, Math.sqrt(Math.max(1, dy)) * 23);
+  sfx('hatch-whistle');
+  await play(wrap, [{ transform: 'translateY(0)' }, { transform: 'translateY(' + dy + 'px)' }], { duration: fallMs, easing: 'cubic-bezier(.55,0,1,.45)' }, id);
+  sfx('hatch-thud');
+  A(pieces, [{ transform: 'none' }, { transform: 'scale(1.13,.82)', offset: .3 }, { transform: 'scale(.95,1.06)', offset: .65 }, { transform: 'none' }], { duration: 420, easing: 'ease-out', fill: 'none' });
+  // and bounces up a little
+  const bh = Math.min(110, H * .13);
+  const bounce = A(wrap, [{ transform: 'translateY(' + dy + 'px)' }, { transform: 'translateY(' + (dy - bh) + 'px)' }], { duration: 320, delay: 60, easing: 'cubic-bezier(.2,.7,.35,1)' });
+  await sleep(200, id);
+  // at the bounce the shell opens and the island hatches out as a blob
+  A(tl, [{ transform: 'none' }, { transform: 'rotate(-17deg) translateX(-3%)' }], { duration: 300, easing: 'cubic-bezier(.3,1.5,.5,1)' });
+  A(tr, [{ transform: 'none' }, { transform: 'rotate(17deg) translateX(3%)' }], { duration: 300, easing: 'cubic-bezier(.3,1.5,.5,1)' });
+  A(inside, [{ opacity: 0 }, { opacity: 1 }], 200);
+  crack.style.display = 'none';
+  sfx('hatch-bloop');
+  const B = Math.max(24, Math.round(S * .14));
+  const y0 = cy + dy - bh, emerge = S * .62, D = (y0 - emerge) - g.tcy, DX = g.tcx - cx;
+  const blobs = [1, .72, .52, .36].map((s, i) => mk('div', 'blob', fx, { left: px(cx - B * s / 2), top: px(y0 - B * s / 2), width: px(B * s), height: px(B * s), opacity: i ? .9 - i * .15 : 1 }));
+  const travel = blobs.map((b, i) => A(b, [
+    { transform: 'translate(0,0) scale(.2)', offset: 0 },
+    { transform: 'translate(0,' + (-emerge) + 'px) scale(1.18,.86)', offset: .26 },
+    { transform: 'translate(' + (DX * .16 + 10) + 'px,' + (-emerge - D * .16) + 'px) scale(.82,1.3)', offset: .42 },
+    { transform: 'translate(' + (DX * .58 - 9) + 'px,' + (-emerge - D * .58) + 'px) scale(.72,1.5)', offset: .66 },
+    { transform: 'translate(' + (DX * .93 + 2) + 'px,' + (-emerge - D * .93) + 'px) scale(.9,1.15)', offset: .88 },
+    { transform: 'translate(' + DX + 'px,' + (-emerge - D) + 'px) scale(' + (i ? .3 : 1) + ')', opacity: i ? 0 : 1, offset: 1 }
+  ], { duration: 1300, delay: i * 55, easing: 'cubic-bezier(.4,.05,.25,1)' }));
+  await bounce.finished.catch(() => {}); guard(id);
+  // the icon falls off the bottom
+  sfx('hatch-whistle');
+  A(wrap, [{ transform: 'translateY(' + (dy - bh) + 'px) rotate(0deg)' }, { transform: 'translateY(' + (dy + S * 1.6) + 'px) rotate(9deg)' }], { duration: 650, easing: 'cubic-bezier(.5,0,.9,.5)' });
+  setTimeout(() => sfx('hatch-whoosh'), 250 / SPEED);
+  await travel[0].finished.catch(() => {}); guard(id);
+  blobs.slice(1).forEach(b => b.remove());
+  // the real island grows out of the blob at its place; only once it has settled does anything else come
+  await born(id, B, blobs.slice(0, 1));
+  if (o.mode !== 'update' || !o.ver) { veil(false, 500); await sleep(520, id); return; }
+  await sleep(260, id);
+  await number(id);
+}
+/* The new number bursts out in the middle, rises to just under the island and reads 'Updated to' over it. */
+async function number(id) {
+  const { cx, cy, S } = g;
+  setupVer();
+  const v = $('#ver');
+  const top = Math.max(40, g.t.y + g.t.h + 14);
+  v.style.top = px(top);
+  const T = verPlace(cx, cy);
+  v.style.opacity = 1;
+  sfx('hatch-burst'); shock(cx, cy, S * .5); confetti(id, cx, cy, Math.round(110 + S * .3), { up: 2 });
+  await play(v, [{ transform: T(0), opacity: 0 }, { transform: T(2.9), opacity: 1, offset: .6 }, { transform: T(2.4), opacity: 1 }], { duration: 560, easing: 'cubic-bezier(.2,.9,.3,1.2)' }, id);
+  await sleep(520, id);
+  sfx('hatch-whoosh');
+  rollDigits(1100);
+  await play(v, [{ transform: T(2.4), opacity: 1 }, { transform: 'translate(0px,0px) scale(1)', opacity: 1 }], { duration: 950, easing: 'cubic-bezier(.3,1.2,.4,1)' }, id);
+  sfx('hatch-land');
+  A($('#ver .lbl'), [{ opacity: 0, transform: 'translateY(8px)' }, { opacity: .92, transform: 'none' }], { duration: 420, easing: 'ease-out' });
+  veil(false, 900);
+  await sleep(1700, id);
+  // it goes up into the island, and What's new comes down out of it
+  await play(v, [{ transform: 'none', opacity: 1 }, { transform: 'translateY(' + (-(top - g.tcy) * .6) + 'px) scale(.4)', opacity: 0 }], { duration: 380, easing: 'ease-in' }, id);
+}
+function setupVer() {
+  const d = $('#ver .digits'); d.innerHTML = '';
+  $('#ver .lbl').textContent = o.words.updated || 'Updated to';
+  $('#ver .lbl').style.opacity = 0;
+  let ci = 0;
+  [...String(o.ver)].forEach(ch => {
+    if (ch === '.') { const s = mk('span', 'dot', d); s.textContent = '.'; return; }
+    const n = +ch, loops = 2 + ci++, seq = [];
+    for (let k = 0; k <= loops * 10; k++) seq.push((n + k) % 10);
+    const col = mk('span', 'dcol', d), strip = mk('span', 'strip', col);
+    strip.innerHTML = seq.map(x => '<span>' + x + '</span>').join('');
+    col.dataset.len = seq.length - 1;
+  });
+}
+function rollDigits(dur) {
+  [...document.querySelectorAll('#ver .dcol')].forEach((c, i) => A(c.firstChild, [{ transform: 'translateY(0)' }, { transform: 'translateY(-' + c.dataset.len + 'em)' }], { duration: dur + i * 200, easing: 'cubic-bezier(.12,.6,.18,1)' }));
+  sfx('hatch-digits');
+}
+function verPlace(x, y) {
+  const v = $('#ver'); v.style.transform = 'none';
+  const r = v.getBoundingClientRect(), d = v.querySelector('.digits').getBoundingClientRect();
+  const dx = d.left + d.width / 2, dy = d.top + d.height / 2;
+  v.style.transformOrigin = (dx - r.left) + 'px ' + (dy - r.top) + 'px';
+  return s => 'translate(' + (x - dx) + 'px,' + (y - dy) + 'px) scale(' + s + ')';
+}
+/* Reduce Motion: a simple fade. The icon fades out, the island fades in at its place, then the words fade in and out. */
+async function finishReduced(id) {
+  showTo(1);
+  await sleep(300, id);
+  sfx('hatch-chime');
+  if (wrap) await play(wrap, [{ opacity: 1 }, { opacity: 0 }], { duration: 450, easing: 'ease-in' }, id);
+  if (bar) bar.style.opacity = 0;
+  await born(id, 24, []);
+  if (o.mode !== 'update' || !o.ver) { veil(false, 400); await sleep(420, id); return; }
+  setupVer();
+  [...document.querySelectorAll('#ver .dcol')].forEach(c => { c.firstChild.style.transform = 'translateY(-' + c.dataset.len + 'em)'; });
+  const v = $('#ver');
+  v.style.top = px(Math.max(40, g.t.y + g.t.h + 14)); v.style.transform = 'none';
+  $('#ver .lbl').style.opacity = .92;
+  await play(v, [{ opacity: 0 }, { opacity: 1 }], { duration: 400 }, id);
+  veil(false, 600);
+  await sleep(1500, id);
+  await play(v, [{ opacity: 1 }, { opacity: 0 }], { duration: 400 }, id);
+}
+/* Esc or a click: everything goes at once, quietly, and the Mac carries on (the island back, then What's new). */
+function skip() {
+  RUN++;
+  const parts = [fx, $('#ver'), $('#veil')];
+  parts.forEach(p => { try { p.animate([{ opacity: getComputedStyle(p).opacity }, { opacity: 0 }], { duration: 180, fill: 'forwards' }); } catch (e) {} });
+  setTimeout(() => { clear(); fx.style.opacity = ''; parts.forEach(p => p.getAnimations().forEach(a => a.cancel())); post({ type: 'done', skipped: true }); }, 200);
+}
+document.addEventListener('mousedown', () => post({ type: 'click' }));
+window.__hatch = { build, progress, tuck, finish, arrived, skip };
+const ready = () => post({ type: 'ready' });
+const img = new Image(); img.src = 'hatch-icon.png';
+(img.decode ? img.decode() : Promise.resolve()).catch(() => {}).then(ready);
+})();
+</script>
+</body>
+</html>

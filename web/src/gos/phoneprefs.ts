@@ -1,9 +1,11 @@
-// Two switches for this phone only (PS 1.66): the island drawn inside PS and the round Add task button. Both on by default.
+// Switches for this phone only (PS 1.66): the island drawn inside PS and the round Add task button. PS 1.67: the wheel menu
+// (gos/PhoneWheel.tsx; off brings back the hamburger at the top left). All on by default.
 // Kept on this device (each phone and each iPhone web app chooses for itself), so no shell change and nothing synced.
 import { useSyncExternalStore } from "react";
+import { phoneIslandOnce } from "../core/islandon";
 
-export type PhonePrefKey = "island" | "addButton";
-const KEY: Record<PhonePrefKey, string> = { island: "ps.phone.inAppIsland", addButton: "ps.phone.addButton" };
+export type PhonePrefKey = "island" | "addButton" | "wheel";
+const KEY: Record<PhonePrefKey, string> = { island: "ps.phone.inAppIsland", addButton: "ps.phone.addButton", wheel: "ps.phone.wheel" };
 const subs = new Set<() => void>();
 const cache: Partial<Record<PhonePrefKey, boolean>> = {};
 
@@ -11,6 +13,8 @@ const cache: Partial<Record<PhonePrefKey, boolean>> = {};
 export function phonePref(k: PhonePrefKey): boolean {
   if (k in cache) return cache[k]!;
   let on = true;
+  // PS 1.67, once per phone: an Island inside PS switched off here goes back on (core/islandon.ts); a later Off stays off.
+  if (k === "island") { try { phoneIslandOnce(localStorage); } catch { /* storage off: nothing to turn back on */ } }
   try { on = localStorage.getItem(KEY[k]) !== "off"; } catch { /* storage off: the default */ }
   cache[k] = on;
   return on;
