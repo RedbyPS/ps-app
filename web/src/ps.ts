@@ -6,7 +6,7 @@
 //   page  -> shell: window.webkit.messageHandlers.ps.postMessage(json)
 //   shell -> page:  window.__ps.apply(msg)  (main window)  /  window.__psOverlay.load(state)  (overlay)
 import { cleanCurrency } from "./core/receiptparse";
-import { addTimeReminder, cleanTimeRemind } from "./core/nlremind";
+import { addDraftReminder, addTimeReminder, cleanTimeRemind } from "./core/nlremind";
 import { cleanCols, cleanSpeed } from "./core/activitymon";
 import { RCPT_KIND, cleanReceipt } from "./core/receipts";
 import { removeReceipt } from "./receipts";
@@ -322,7 +322,7 @@ type ShellMsg = { type: "tick"; id: string; done?: boolean } | { type: "work"; i
       standing?: { title: string; items: { id: string; text: string }[] }[] }
   | { type: "timelineOrder"; ids: string[] } | { type: "timelineHidden"; ids: string[] }
   | { type: "timelines"; list: TimelineItem[] } | { type: "headline"; text: string } | { type: "sound"; tmSound?: number; tmMuted?: boolean }
-  | { type: "add"; title: string; due: string | null; kind: "once" | "daily"; order?: number; repeat?: unknown; p1?: unknown; clientId?: unknown; notes?: unknown; unranked?: unknown; sqOn?: unknown; sqAnon?: unknown; group?: unknown; remind?: unknown } | { type: "sync" } | { type: "tap"; on: boolean }
+  | { type: "add"; title: string; due: string | null; kind: "once" | "daily"; order?: number; repeat?: unknown; p1?: unknown; clientId?: unknown; notes?: unknown; unranked?: unknown; sqOn?: unknown; sqAnon?: unknown; group?: unknown; remind?: unknown; reminder?: unknown; est?: unknown } | { type: "sync" } | { type: "tap"; on: boolean }
   | { type: "psSettings"; data: PsSettings }
   | { type: "tab"; enabled: boolean; trusted: boolean; on: boolean }
   | { type: "waReply"; id: string } | { type: "mailOpen"; via: string }
@@ -835,9 +835,16 @@ export function startPsBridge() {
           // (core/squadanon.ts), from the Add task box.
           ...(m.sqOn === true ? { sqOn: true } : {}), ...(typeof m.sqAnon === "boolean" ? { sqAnon: m.sqAnon } : {}),
           // V1.55: typed while one of the developer's own lists showed: into that list's task group (core/lists.ts addGroupFor).
-          ...(typeof m.group === "string" && /^[a-z0-9]{4,24}$/.test(m.group) ? { group: m.group } : {}) })
-          // PS 1.65: a time typed in plain words becomes a reminder on the new task (core/nlremind.ts).
-          .then((id) => { const r = cleanTimeRemind(m.remind); if (r && typeof id === "string") void addTimeReminder(id, r); }).catch(() => {});
+          ...(typeof m.group === "string" && /^[a-z0-9]{4,24}$/.test(m.group) ? { group: m.group } : {}),
+          // PS 1.68: an estimate picked in the Add a task window (core/timeest.ts cleanEst).
+          ...(cleanEst(m.est) ? { est: cleanEst(m.est), estBy: null } : {}) })
+          // PS 1.65: a time typed in plain words becomes a reminder on the new task (core/nlremind.ts). PS 1.68: a reminder set up
+          // in the Add a task window wins over it (one reminder per task); it is cleaned again in core/remind.ts addDraftTaskReminder.
+          .then((id) => {
+            if (typeof id !== "string") return;
+            if (m.reminder && typeof m.reminder === "object") { void addDraftReminder(id, m.reminder); return; }
+            const r = cleanTimeRemind(m.remind); if (r) void addTimeReminder(id, r);
+          }).catch(() => {});
       }
       else if (m.type === "aware" && Array.isArray(m.list)) {
         void saveSettings({ aware: m.list.filter((a) => a && typeof a.id === "string" && typeof a.text === "string")

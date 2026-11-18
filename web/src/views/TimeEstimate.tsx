@@ -179,6 +179,27 @@ export function EditTime({ d, title, est, setEst }: { d: Doc<Todo>; title: strin
 }
 const useVaultSnap = () => useSyncExternalStore(vaultStore.subscribe, vaultStore.get, vaultStore.get);
 
+/** PS 1.68: the estimate in the Add a task window's Advanced, the same picker as a task's Edit (Jan, 18 Nov 2026: adding a task
+ *  offers what editing does). Left on No estimate, a name used before still gets its usual time when it is added. Only with
+ *  estimates switched on. `row`: drawn as a label and a cell of the Advanced grid. */
+export function AddTime({ title, est, setEst, label, rowCls }: { title: string; est: number | null; setEst: (m: number | null) => void; label: string; rowCls: string }) {
+  const v = timeView(useVaultSnap());
+  const estOn = v.on && v.prefs.est;
+  const usual = useMemo(() => (estOn && title.trim() ? T.usualMin(T.pastTimes(v.done(), title)) : null), [estOn, v, title]);
+  if (!estOn) return null;
+  return (
+    <>
+      <span className={label}>{T.TE_WORDS.estimate}</span>
+      <div className={rowCls}>
+        <EstPicker value={est} onPick={setEst} compact />
+        {usual !== null && est !== usual && (
+          <span className="te-usual">{T.TE_WORDS.usually(usual)}<button type="button" className="te-link" onClick={() => { sfx.click(); setEst(usual); }}>{T.TE_WORDS.set}</button></span>
+        )}
+      </div>
+    </>
+  );
+}
+
 // ---------- the overload line ----------
 let shownDay: string | null = null;   // the day this page showed the line (so it is marked when it goes by itself)
 export function OverloadLine({ lists }: { lists: TabLists }) {

@@ -34,7 +34,8 @@ import { useNlDates } from "./NlDates";
 import { useVoiceCapture, VoiceMic, VoicePanel } from "./VoiceCapture";
 import type { ReviewRow } from "../core/voicecapture";
 import { nlAddOpts, nlRule } from "../core/nldates";
-import { addTimeReminder, type TimeRemind } from "../core/nlremind";
+import { addDraftReminder, addTimeReminder, type TimeRemind } from "../core/nlremind";
+import type { Reminder } from "../core/remind";
 import { addTodo, approveSuggestion, awareDone, awareToList, awareUndone, suggestionToAware, suggestionToDimx, resetTodos, deleteTodo, noteDimxMove, dismissSuggestion, saveSettings, setReplyHandled, setTodoOrder, setWorkingOn, subtaskOp, toggleTodo, setTodoDone, setTodosDone, clearTodos, reviveTodos, buryTodos, restoreTodo, updateTodo, moveTasks, ungroupTasks, setDnd, setJournal } from "../core/actions";
 import { accepts, cleanGroups, dropAbovePrioIsP1, groupKey, hitSection, mergeOrder, newGroupId, sectionOrder, tabLists, type TabLists, type TaskMove } from "../core/groups";
 import { fmtDate, todayISO, useVault } from "../ui/kit";
@@ -111,7 +112,7 @@ import { Storm, type StormKind } from "./Storm";
 import { rainLayers } from "../core/looksample";
 import { DimensionX, dimxIsOpen, morph } from "./DimensionX";
 import { ChecklistScreens } from "./ChecklistReminder";
-import { EditTime, EstBadge, EstHint, OverloadLine } from "./TimeEstimate";
+import { AddTime, EditTime, EstBadge, EstHint, OverloadLine } from "./TimeEstimate";
 import { cleanEst } from "../core/timeest";
 import { openSettings, useSettingsWanted, type Preview, type SettingsOwner } from "./SettingsScreen";
 import { SettingsHost } from "./SettingsGroups";
@@ -171,7 +172,7 @@ import { Rain } from "./Rain";
 import { TrailLayer, trailOnList } from "./Trail";
 import { appName } from "../core/appname";
 import { webCalLine, webShows } from "../core/webtodo";
-import { TaskBell, openTaskRemind, reminderWords, useTaskReminder } from "./TaskRemind";
+import { DraftRemindPop, TaskBell, closeRemindPop, openTaskRemind, reminderWords, remindPopOpen, useTaskReminder } from "./TaskRemind";
 import { okTaskId } from "../core/remind";
 
 // What a tick or a click does. The PS Mac app's floating window swaps these for messages to
@@ -241,7 +242,8 @@ export const taskMapActions: {
   editing: (on: boolean) => void; clearClipboard: () => Promise<unknown>;
   headline: (text: string) => Promise<unknown>;
   add: (t: { title: string; due: string | null; type: Todo["type"]; order?: number; repeat?: Repeat | null; p1?: boolean; clientId?: string | null; notes?: string | null; unranked?: boolean; sqOn?: boolean; sqAnon?: boolean; group?: string | null;
-    remind?: TimeRemind | null }) => Promise<unknown>;   // remind: PS 1.65, a typed time (core/nlremind.ts), added once the task has its id
+    remind?: TimeRemind | null; reminder?: Reminder | null; est?: number | null }) => Promise<unknown>;   // remind: PS 1.65, a typed time (core/nlremind.ts), added once the task has its id
+  // reminder (PS 1.68): the annoying reminder set up in the Add a task window, added once the task has its id (it wins over a typed time); est: its estimate
   sound: (patch: { tmSound?: number; tmMuted?: boolean }) => Promise<unknown>;
   homeTz: (id: string | null) => Promise<unknown>;
   timelines: (list: TimelineItem[]) => Promise<unknown>;
@@ -322,9 +324,10 @@ export const taskMapActions: {
   timelines: (list) => saveSettings({ timelines: list }),
   homeTz: (id) => saveSettings({ tmHomeTz: id }),
   headline: (text) => saveSettings({ tmHeadline: text }),
-  add: async ({ remind, ...t }) => {
-    const id = await addTodo({ ...t, order: t.order ?? undefined });
-    if (remind && typeof id === "string") void addTimeReminder(id, remind);
+  add: async ({ remind, reminder, est, ...t }) => {
+    const e = cleanEst(est);
+    const id = await addTodo({ ...t, order: t.order ?? undefined, ...(e ? { est: e, estBy: null } : {}) });
+    if (typeof id === "string") { if (reminder) void addDraftReminder(id, reminder); else if (remind) void addTimeReminder(id, remind); }
     return id;
   },
   sound: (patch) => saveSettings(patch),
@@ -1932,6 +1935,10 @@ function AddTaskWindow({ prio, clients, docked, onClose }: { prio: Doc<Todo>[]; 
   const max = ranked.length + 1;
   const [added, setAdded] = useState<{ n: number; last: string } | null>(null);
   const [sq, setSq] = useState<SquadAdd>({ sqOn: false });   // G Squad: Share with G Squad (off to start, V1.43), Anonymise this task? (views/GSquadTask.tsx)
+  // PS 1.68 (Jan, 18 Nov 2026: adding a task offers what editing does): the annoying reminder and the estimate, for this task only.
+  const [rem, setRem] = useState<Reminder | null>(null);
+  const [remOpen, setRemOpen] = useState(false);
+  const [est, setEst] = useState<number | null>(null);
   const [gate] = useState(() => addGate());
   const titleRef = useRef<HTMLInputElement>(null);
   const win = useRef<HTMLDivElement>(null);
@@ -1963,8 +1970,9 @@ function AddTaskWindow({ prio, clients, docked, onClose }: { prio: Doc<Todo>[]; 
   useEffect(() => {
     if (PS) psPost({ type: "dimx", open: true }); else taskMapActions.editing(true);
     const w = window as Window & { __psDimxClose?: () => boolean };
-    const esc = () => { if (!voiceEsc.current()) onClose(); return true; };
-    const key = (e: KeyboardEvent) => { if (e.key === "Escape") { e.preventDefault(); e.stopImmediatePropagation(); if (!voiceEsc.current()) onClose(); } };
+    // PS 1.68: the reminder pop-up over it (views/TaskRemind.tsx DraftRemindPop) takes Esc first.
+    const esc = () => { if (closeRemindPop()) return true; if (!voiceEsc.current()) onClose(); return true; };
+    const key = (e: KeyboardEvent) => { if (e.key === "Escape") { if (remindPopOpen()) return; e.preventDefault(); e.stopImmediatePropagation(); if (!voiceEsc.current()) onClose(); } };
     window.addEventListener("keydown", key, true);
     w.__psDimxClose = esc;
     // Focus inside the tap that opened it, so a phone's keyboard opens together with the window and
@@ -2021,12 +2029,13 @@ function AddTaskWindow({ prio, clients, docked, onClose }: { prio: Doc<Todo>[]; 
       // V1.55: typed while one of the developer's own lists shows: it joins that list's group, at its end (views/ListPager.tsx).
       ...(addGroupHere(sh.type) ? { group: addGroupHere(sh.type), order: undefined } : {}),
       ...(typedN?.time ? { remind: nl.reminderFor(typedN) } : {}),
+      ...(rem ? { reminder: rem } : {}), ...(est ? { est } : {}),
     });
     sfx.drop();
     // Clear at once and keep the keyboard: the next one can be typed straight away. Advanced was for this task only.
     type("");
     if (el) { el.value = ""; if (document.activeElement !== el) el.focus({ preventScroll: true }); el.setSelectionRange(0, 0); }
-    setO(quickDefaults(todayISO())); setRule(freshRule()); setAdv(false); tp.reset(); nl.reset(); setSq({ sqOn: false });
+    setO(quickDefaults(todayISO())); setRule(freshRule()); setAdv(false); tp.reset(); nl.reset(); setSq({ sqOn: false }); setRem(null); setEst(null);
     setAdded((a) => ({ n: (a?.n ?? 0) + 1, last: v }));
     void Promise.resolve(id).then((x) => { if (typeof x === "string") showRow(x); }).catch(() => {});
   };
@@ -2114,13 +2123,25 @@ function AddTaskWindow({ prio, clients, docked, onClose }: { prio: Doc<Todo>[]; 
                   </select>
                 </div>
               </>}
+              {/* PS 1.68: the estimate and the Annoying 15 min reminder, as in a task's Edit. The reminder is kept with this task and
+                  saved once it is added (core/remind.ts addDraftTaskReminder). */}
+              <AddTime title={title} est={est} setEst={setEst} label="tm-add-l" rowCls="tm-add-row" />
+              <span className="tm-add-l">{ADD_REM_LABEL}</span>
+              <div className="tm-add-row">
+                <button type="button" className={`tm-ed-chip tm-ed-rem${rem ? " on" : ""}`} onClick={() => { sfx.click(); setRemOpen(true); }}>
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" /><path d="M13.7 21a2 2 0 0 1-3.4 0" /></svg>
+                  {reminderWords(!!rem)}
+                </button>
+              </div>
             </div>
           </div>
         )}
+        {remOpen && <DraftRemindPop title={title} once={shown.kind === "once"} value={rem} onClose={() => setRemOpen(false)}
+          onSave={(r, daily) => { setRem(r); if (daily) setWhen({ kind: "daily" }); }} />}
         <div className="tm-add-foot">
           <span className="tm-pop-note">{adv ? "These settings are for this task only." : "Enter adds it, and it stays open for the next one. Esc closes."}</span>
           <button type="button" className={`tm-ed-chip tm-add-advbtn${adv ? " on" : ""}`} onMouseDown={keep} onClick={toggleAdv} aria-expanded={adv}
-            title="Notes, how often, date, priority and client for this task">
+            title="Notes, how often, date, priority, client, estimate and reminder for this task">
             Advanced<svg {...ICON} aria-hidden="true"><path d="M6 9l6 6 6-6" /></svg>
           </button>
           <button type="button" className="tm-ed-save tm-add-go" onMouseDown={keep} onClick={add}>Add task</button>
@@ -2131,6 +2152,8 @@ function AddTaskWindow({ prio, clients, docked, onClose }: { prio: Doc<Todo>[]; 
 }
 
 const GOS = import.meta.env.MODE === "gos";
+/** PS 1.68: the label of the reminder row in the Add a task window's Advanced (waiting for the owner's approval). */
+const ADD_REM_LABEL = "Reminder";
 
 // Every other zone, built once (about 400 of them).
 let zoneOptionsCache: ReactNode = null;
