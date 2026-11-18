@@ -32,6 +32,7 @@ Be honest with the person about all of this:
   nothing, none of it runs yet, the owner merges by hand, and a merged change reaches friends' apps with the
   owner's next release. Say so; never claim a pull request "will merge by itself" before that.
 - **Never edit** `web/ps-version.json`, `web/ps-notes.json` or `web/ps-public-approvals.json` in a pull request.
+  The one exception is the release pull request (`layers-and-versions.md`, "A friend's shared release, step by step").
 
 ### The checks on every pull request
 

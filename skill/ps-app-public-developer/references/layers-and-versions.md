@@ -195,3 +195,58 @@ that their build will show the same number as `main` until the owner gives them 
 3. **Until the owner switches G Squad builds on, never make a shared claim.** It would take a number and build
    nothing. Today a merged change reaches friends' apps through the owner's next release; say so.
 4. What's new in a G Squad build shows only words the owner approved. Put the suggested line in the pull request.
+   Exception: a person the owner lets release approves their own words in their release pull request (below).
+
+## A friend's shared release, step by step
+
+For a person the owner has said may release (Write access is enough; the owner says so on the channel or in
+`contributors.md`). Written from the first friend release (1.68, Jan, 18 Nov 2026). Whoever releases next: fix
+anything here that turned out wrong, in the same way, by a pull request to this skill.
+
+What GitHub does with a shared claim, so the steps make sense: the claim is an annotated tag `v<version>` on a commit
+of `main`. The release workflow (`.github/workflows/release.yml`) stamps the number from the TAG into the build
+(`.github/scripts/stamp-version.mjs`), takes the release name from `names` in `web/ps-version.json`, and the What's
+new words for that number from `web/ps-notes.json`, but only if `web/ps-public-approvals.json` holds their code
+(`web/scripts/ps-public.mjs notes-text`). So the words and the name must be ON MAIN at the tagged commit.
+
+0. **Check first.** `gh variable get GSQUAD_RELEASES --repo RedbyPS/ps-app` prints `on`. Every pull request the
+   owner said must come first has merged (`gh pr view <n> --json state`). The owner's standing rules for releases
+   are kept (below). `collab hello` for messages from the owner's AI.
+1. **Every piece merged.** All the update's pull requests are merged into `main` and `main` passes its checks.
+   Look at the whole diff since the last release tag (`git diff v<last>..upstream/main --stat`) for anything that
+   must not be in it (the owner's protected files, the owner's standing rules).
+2. **Number and name.** On a fresh `main`:
+   `node tools/claim-version.mjs --by <release name> --kind shared --floor <last released version> --keywords web/scripts/ps-keywords.json --dry-run --json`
+   gives the next number and a free name. Use `--floor <last released version>` (for example 1.67), never the
+   version in `web/ps-version.json` after your release pull request has bumped it, or the claim skips a number.
+3. **The release pull request** (branch `<release name>/release-<version>`), editing ONLY these three files, the way
+   the owner's own releases do (see the owner's last release commit, for example `git show <its sha> -- web/ps-*.json`):
+   - `web/ps-version.json`: `"version"` to the new number, `names["<version>"]` the name, and
+     `releases["<version>"] = {"by": "<release name>", "shared": true}`.
+   - `web/ps-notes.json`: the new version's What's new lines, short, plain words, no dashes.
+   - Show the person the exact lines. Only after their yes to those exact words:
+     `cd web && node scripts/ps-public.mjs show` (prints the code), then `node scripts/ps-public.mjs approve <code>`,
+     which writes `web/ps-public-approvals.json`. Check `node scripts/ps-public.mjs approved` exits 0.
+   - Push, open the pull request, it merges by itself once the checks pass.
+4. **`collab post release-started`** with the version.
+5. **Claim.** On the merged `main` commit: run step 2 again without `--dry-run` and with `--commit <that sha>`.
+   Check the number and name match what the release pull request wrote. If someone claimed in between and the
+   number moved, stop: never edit a tag, make a follow up release pull request for the new number.
+6. **Watch the build.** `gh run list --repo RedbyPS/ps-app --workflow release.yml -L 3`, then `gh run watch <id>`.
+   Jobs: claim, checks, build mac, build phone, sign mac, sign phone, publish. About 25 minutes.
+   - **A failure: stop.** Never delete, move or reuse the tag, never claim again for the same code. Save the failed
+     log (`gh run view <id> --log-failed > file`), find the line that says what failed, and send it to the owner's
+     AI on the channel. A run can be built again from the same tag with Actions, "G Squad release", Run workflow,
+     tag `v<version>`, once the cause is fixed on `main` by the owner.
+   - **Never re-run a tag whose commit is not the code you mean.** A tag points at one commit forever: check
+     `git log -1 v<version>` before any rebuild (1.67's tag pointed at the 1.66 code).
+7. **Check it is out**: the G Squad channel repo has the new release, then `collab post release-live`.
+8. **Update this skill** with anything that was different from these steps (a pull request to
+   `skill/ps-app-public-developer`), so the next release does not hit the same wall.
+
+### The owner's standing release rules (until the owner changes them)
+
+- The 1.67 Hatch update animation stays in every release: never change, remove or replace
+  `mac/Sources/Hatch.swift`, `mac/Sources/HatchCore.swift`, `mac/ui/hatch.html` or the `Hatch.shared.afterUpdate`
+  calls in `mac/Sources/Updater.swift`. It shows "Updated to" over the new number by itself.
+- If sign mac fails: stop, do not re-tag, send the log to the owner's AI on the channel.
