@@ -16,7 +16,8 @@ import { localMirrorOut, localOp, localSubscribe, setLocalMirror } from "./local
 import { __mirrorLoad, lock, nudge, put, reconnect, refreshGmail, remove, saveLocalCalendar, sb, setMirrorWriter, setPkgLog, setPsKeepOpen, setPsRememberHook, unlockRemembered, vaultStore, sync } from "./core/vault";
 import { calendarSnap, campaignStats, latestBrief, openReplies, settingsData } from "./core/select";
 import { DIMX_COLORS, DIMX_FX, DIMX_SIZES, type ClientRec, type DimxItem, type DimxStyle, type Doc, type Goal, type Reply, type Settings, type TimelineItem, type Todo } from "./core/model";
-import { addTodo, approveSuggestion, awareDone, awareToList, awareUndone, suggestionToAware, suggestionToDimx, resetTodos, saveScreenTime, saveScreenLine, deleteTodo, dismissSuggestion, saveSettings, setReplyHandled, setTodoOrder, setWorkingOn, subtaskOp, toggleTodo, setTodoDone, setTodosDone, clearTodos, reviveTodos, buryTodos, restoreTodo, updateTodo, addMatchAddr, setMailRule, saveDraft, moveTasks, ungroupTasks, setDnd, setJournal, saveTabLayout, saveRemind, savePhoneLayout } from "./core/actions";
+import { addTodo, approveSuggestion, awareDone, awareToList, awareUndone, suggestionToAware, suggestionToDimx, resetTodos, saveScreenTime, saveScreenLine, deleteTodo, dismissSuggestion, saveSettings, setReplyHandled, setTodoOrder, setWorkingOn, subtaskOp, toggleTodo, setTodoDone, setTodosDone, clearTodos, reviveTodos, buryTodos, restoreTodo, updateTodo, addMatchAddr, setMailRule, saveDraft, moveTasks, ungroupTasks, moveTaskToIdea, moveIdeaToTask, tidyMoves, setDnd, setJournal, saveTabLayout, saveRemind, savePhoneLayout } from "./core/actions";
+import { cleanDimxOp } from "./core/dimxmove";
 import { cleanMailRuleOp } from "./core/mailrules";
 import { cleanGroups, cleanSecOrder, type TaskMove } from "./core/groups";
 import { LIST_NAME_MAX, cleanPagesLooks, tidyName } from "./core/lists";
@@ -426,7 +427,7 @@ function cleanTaskMove(t: Record<string, unknown>): TaskMove | null {
   const to = typeof t.to === "string" ? t.to : "";
   const index = Number(t.index);
   if (!ids.length || !(to === "new" || cleanSecOrder([to]).length) || !Number.isFinite(index)) return null;
-  return { ids, to, index: Math.max(0, Math.round(index)) };
+  return { ids, to, index: Math.max(0, Math.round(index)), ...(t.inbox === true ? { inbox: true } : {}) };
 }
 function cleanPatch(p: Record<string, unknown>) {
   const o: Partial<Todo> = {};
@@ -702,6 +703,8 @@ export function startPsBridge() {
           if (m) void moveTasks(m, group ? { group, order: cleanSecOrder(g!.order), page, pageName, pageOrder } : undefined);
         }
         if (typeof patch.ungroup === "string") void ungroupTasks(patch.ungroup);
+        // PS 1.68 Dimension X: a task to an idea, an idea to a task, or a half done move finished (core/dimxmove.ts).
+        { const o = cleanDimxOp(patch.dimxOp); if (o) void (o.op === "toIdea" ? moveTaskToIdea(o.id, o.zone, o.index) : o.op === "toTask" ? moveIdeaToTask(o.id, { order: o.order, p1: o.p1 }) : tidyMoves()); }
         // The Completed section and the right click menu (core/completed.ts): Resurrect, Clear, their Undo, a deleted task put back.
         { const o = cleanTodoOp(patch.todoOp); if (o) void runTodoOp(o); }
         // Mac settings > Gmail replies: Always notify me, Mute, take off a list, or link a sender to a client.

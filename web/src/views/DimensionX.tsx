@@ -38,6 +38,7 @@ import { settingsData } from "../core/select";
 import { renamedPrio, typedEdit, typedOrder, type PrioNum } from "../core/typedprio";
 import { DimxLists, MoveMenu, listsEscape } from "./DimxLists";
 import { INBOX_NAME } from "../core/aiinbox";
+import { insertDimx } from "../core/dimxmove";
 import "./dimx.css";
 
 type Zone = DimxZone | "prio" | "ai";
@@ -67,13 +68,6 @@ const WIN_RADIUS = 26;
 const uid = () => crypto.randomUUID();
 const nowIso = () => new Date().toISOString();
 
-/** Puts a card into its band at a position counted inside that band only. */
-function insertDimx(list: DimxItem[], item: DimxItem, index: number): DimxItem[] {
-  const rest = list.filter((x) => x.id !== item.id);
-  const band = rest.filter((x) => x.zone === item.zone);
-  const at = index < band.length ? rest.indexOf(band[index]) : band.length ? rest.indexOf(band[band.length - 1]) + 1 : rest.length;
-  return [...rest.slice(0, at), item, ...rest.slice(at)];
-}
 const insertAt = <T,>(arr: T[], item: T, i: number) => [...arr.slice(0, i), item, ...arr.slice(i)];
 
 /**
@@ -390,6 +384,9 @@ function Board({ prio, aware, dimx, inbox, ready, escRef, view, onClose }: {
     void taskMapActions.aware([]);
   }, [ready, aware]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // PS 1.68: each time the board opens, a move that was cut in half (the same id as a card and as a task) is finished.
+  useEffect(() => { if (ready) void taskMapActions.dimxTidy(); }, [ready]);
+
   const [drag, setDrag] = useState<Drag | null>(null);
   const dragRef = useRef(drag);
   dragRef.current = drag;
@@ -441,32 +438,24 @@ function Board({ prio, aware, dimx, inbox, ready, escRef, view, onClose }: {
       void taskMapActions.reorder(next.filter((p) => !p.pending).map((p) => p.id), on !== p1.has(card.id) ? { id: card.id, on } : undefined);
       return card.key;
     }
-    // Across: put it in its new place first, then take it out of the old one, so nothing is ever lost.
+    // Across (PS 1.68, core/dimxmove.ts): ONE move that keeps the item's id. The page holding the vault writes the new
+    // place first and then takes the old one away; a move sent twice, or cut in half, never leaves two copies.
     const text = card.text.trim();
-    const patch: Partial<View> = {};
-    let key: string, into: () => Promise<unknown>;
-    if (isBand(to)) {
-      const item: DimxItem = { id: uid(), text: text.slice(0, 500), zone: to, createdAt: nowIso() };
-      patch.dimx = insertDimx(cur.dimx, item, index);
-      key = `d:${item.id}`;
-      into = async () => { await taskMapActions.dimx(patch.dimx!); void taskMapActions.dimxMoved(item.id, item.text); };   // one move, noted once
-    } else {
-      const pid = `pending-${uid()}`;
+    if (isBand(to) && from === "prio") {
+      if (!prioDocs.current.has(card.id)) return card.key;
+      keep({ dimx: insertDimx(cur.dimx, { id: card.id, text: text.slice(0, 500), zone: to, createdAt: nowIso() }, index), prio: cur.prio.filter((p) => p.id !== card.id) });
+      void taskMapActions.toIdea(card.id, to, index);
+      return `d:${card.id}`;
+    }
+    if (to === "prio" && isBand(from)) {
       const order = orderAt(index);
       // Dropped among the Priority 1 cards: it joins that group.
       const p1 = index < cur.prio.filter((p) => p.p1).length;
-      patch.prio = insertAt(cur.prio, { id: pid, title: text, pending: true, p1 }, index);
-      key = `p:${pid}`;
-      into = () => taskMapActions.add({ title: text.slice(0, 500), due: null, type: "once", order, ...(p1 ? { p1: true } : {}) });
+      keep({ prio: insertAt(cur.prio.filter((p) => p.id !== card.id), { id: card.id, title: text, pending: true, p1 }, index), dimx: cur.dimx.filter((x) => x.id !== card.id) });
+      void taskMapActions.toTask(card.id, { order, p1 });
+      return `p:${card.id}`;
     }
-    let out: () => Promise<unknown>;
-    if (isBand(from)) { patch.dimx = (patch.dimx ?? cur.dimx).filter((x) => x.id !== card.id); const list = patch.dimx; out = () => taskMapActions.dimx(list); }
-    else { patch.prio = (patch.prio ?? cur.prio).filter((p) => p.id !== card.id); out = () => isBand(to) ? taskMapActions.moveOut(card.id) : taskMapActions.remove(card.id); }
-    keep(patch);
-    // A band to a band is handled above, so `into` and `out` never write the same list twice.
-    void into();
-    void out();
-    return key;
+    return card.key;
   };
 
   /** A task out of the AI Inbox (core/aiinbox.ts): onto Your task list it keeps its id and its AI badge and only
@@ -490,12 +479,10 @@ function Board({ prio, aware, dimx, inbox, ready, escRef, view, onClose }: {
       return `p:${card.id}`;
     }
     if (!isBand(to)) return card.key;
-    const item: DimxItem = { id: uid(), text: card.text.trim().slice(0, 500), zone: to, createdAt: nowIso() };
-    const next = insertDimx(cur.dimx, item, index);
-    keep({ dimx: next, ai: rest });
-    void taskMapActions.dimx(next).then(() => taskMapActions.dimxMoved(item.id, item.text));
-    void taskMapActions.moveOut(card.id);   // a move, not a delete
-    return `d:${item.id}`;
+    // A move, not a delete: the card keeps the task's id (core/dimxmove.ts), one op for the page holding the vault.
+    keep({ dimx: insertDimx(cur.dimx, { id: card.id, text: card.text.trim().slice(0, 500), zone: to, createdAt: nowIso() }, index), ai: rest });
+    void taskMapActions.toIdea(card.id, to, index);
+    return `d:${card.id}`;
   };
   /** An inbox task deleted, with Undo (it comes back with everything it had). */
   const removeInbox = (card: Card) => {

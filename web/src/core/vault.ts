@@ -13,6 +13,7 @@ import { applyInbound as applyWaInbound, applyStatus, chatKey, groupChats, match
 import { applyInbound, applySent, buildMatcher, clientForInbound, parseAddress, type GmailInbound, type GmailSent } from "./mail";
 import { logInbound, mailVerdict, ownAccounts, staleSenders, type MailSender } from "./mailrules";
 import { DEFAULT_SETTINGS, uid } from "./model";
+import { staleEditOfDeleted } from "./dimxmove";
 import { notify } from "./notify";
 import { ownerInviteLink, publicBase, type OwnerInviteRow } from "./ownerInvite";
 import { parseRole } from "./account";
@@ -77,7 +78,12 @@ const OWNER_KINDS = new Set<Kind>(["client", "pprivate", "todo", "meeting", "dra
 type Merger = (local: unknown, remote: unknown) => unknown;
 const mergers = new Map<Kind, Merger>();
 export function setMerger(kind: Kind, fn: Merger) { mergers.set(kind, fn); }
-const mergeable = () => [...outbox.keys()].some((id) => { const k = snap.docs.get(id)?.kind; return !!k && mergers.has(k); });
+const mergeable = () => [...outbox.entries()].some(([id, r]) => {
+  const k = snap.docs.get(id)?.kind;
+  // PS 1.68: an edit of a task made on a copy from the server is checked against the server first (a tiny probe when
+  // nothing moved), so a task deleted or moved away on another device is not brought back by it (pullRecords).
+  return !!k && (mergers.has(k) || (k === "todo" && !r.deleted && r.updated_at !== null));
+});
 
 interface Row {
   id: string;
@@ -1465,6 +1471,10 @@ async function pullRecords(full: boolean): Promise<boolean> {
       const old = rows.get(r.id);
       if (!old || old.ct !== r.ct || old.deleted !== r.deleted) changed = true;
       rows.set(r.id, r);
+      // PS 1.68: a task another device deleted (or moved to Dimension X) after the copy this device's unsent edit was made
+      // on: the edit is dropped, or sending it would bring the task back and it would be in two places (core/dimxmove.ts).
+      const mine = outbox.get(r.id);
+      if (mine && staleEditOfDeleted(snap.docs.get(r.id)?.kind, { deleted: mine.deleted, base: mine.updated_at }, r)) { outbox.delete(r.id); changed = true; }
       if (mergers.size && outbox.has(r.id) && !r.deleted && (!old || old.ct !== r.ct)) await mergeInto(r);
     }
   }
