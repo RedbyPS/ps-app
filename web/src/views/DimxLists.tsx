@@ -5,7 +5,7 @@
 // and per task: tick, move to another list, delete (with Undo). Pages that hold panels (Edit mode) are left out.
 // Every change goes through the same functions as the list's own menus (views/ListPager.tsx), so it is one write each.
 // Also MoveMenu: the small menu that sends a task to another list, or out of the AI Inbox (core/aiinbox.ts).
-// PS 1.68 (Jan, 18 Nov 2026): press, hold and drag a task to reorder it inside a list, onto another list, or in from Your
+// PS 1.68 (the developer's friend, 18 Nov 2026): press, hold and drag a task to reorder it inside a list, onto another list, or in from Your
 // task list and the AI Inbox on the right. The drag is Dimension X's own (views/DimensionX.tsx Board: the same lifted
 // card, the gap that opens, the glide into place, Esc puts it back), so the Lists view gets `dnd` from the Board and each
 // section is a drop place (data-zone "s:<section>"). The Move menu offers every place, grouped and coloured by level:

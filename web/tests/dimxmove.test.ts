@@ -117,7 +117,7 @@ ok("an AI Inbox task dragged into a list section joins it at the drop place and 
   assert.deepEqual(planMove(lists, { ids: ["zz"], to: "g:g1", index: 0, inbox: true }, [task("zz", "Z")]), []);
 });
 
-// The bug Jan saw on the Mac (18 Nov 2026): the Tab list window holds no keys, so any write it makes itself is refused
+// The bug seen on the Mac (18 Nov 2026): the Tab list window holds no keys, so any write it makes itself is refused
 // (core/vault.ts mirror writer); a move to Ideas called an action that was not sent to the main window, the delete was
 // refused, and the task stayed on the list too. Every write Dimension X makes must be one the Mac sends across.
 ok("every action Dimension X calls is sent to the main window on the Mac", () => {

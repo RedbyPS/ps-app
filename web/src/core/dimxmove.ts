@@ -1,4 +1,4 @@
-// Moves between Dimension X's ideas (settings.dimx) and tasks (todo records), PS 1.68. Jan, 18 Nov 2026: a task moved
+// Moves between Dimension X's ideas (settings.dimx) and tasks (todo records), PS 1.68. The developer's friend, 18 Nov 2026: a task moved
 // from Your tasks to Ideas "sometimes" stayed in both places, and moving things around made duplicate tasks.
 //
 // The rule: a move keeps the item's id on both sides. A task that becomes an idea gives its id to the card, a card that
