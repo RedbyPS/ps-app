@@ -12,6 +12,7 @@ import { CURRENCIES, parseReceipt } from "../core/receiptparse";
 import { draftChanged, draftOf, itemPriceBad, receiptOfDraft, type RcDraft, type Receipt } from "../core/receipts";
 import { receiptPhoto, removeReceipt, saveReceipt, useReceiptCurrency } from "../receipts";
 import { toISODate } from "../ui/kit";
+import { coverCrop, fitSize, likeness, sameTurn, stillRect, type Rect } from "../core/receiptframe";
 import "./receiptscan.css";
 
 export const RS_WORDS = {
@@ -162,29 +163,110 @@ export function ReceiptTyped({ onClose }: { onClose: () => void }) {
 }
 
 // ---------- the phone camera ----------
-/** One still of the whole view: a colour copy for the saved photo and a grey, contrast stretched copy for the reader. */
-function grab(v: HTMLVideoElement): { photo: string; ocr: string } | null {
+// ---------- taking the picture ----------
+// Receipt accuracy fix (after 1.66). Before, the picture read was one frame of the video stream (about 1920 x 1080), and the
+// WHOLE frame, while the preview fills the screen with object-fit: cover and shows only its middle. Now: the lens is asked to
+// focus, a full resolution still is taken (ImageCapture.takePhoto, where the phone has it), and both the still and the fallback
+// frame are cut to exactly what the preview showed (core/receiptframe.ts). The cleaning for the reader (grey, contrast,
+// threshold, straightening, enlarging small print) is done by the phone on its own thread (ps-gos ReceiptPrep.kt), never here.
+// Everything below is awaited work (decode, encode, the still): nothing holds the page's thread for long.
+
+type Track = MediaStreamTrack;
+/** The focus modes the camera offers ("continuous", "single-shot", ...), none when it does not say. */
+const focusModes = (t: Track | undefined): string[] => {
+  try { const c = (t?.getCapabilities?.() ?? {}) as Record<string, unknown>; return Array.isArray(c.focusMode) ? c.focusMode.filter((m): m is string => typeof m === "string") : []; } catch { return []; }
+};
+type ImageCaptureLike = { takePhoto(s?: Record<string, unknown>): Promise<Blob>; getPhotoCapabilities?(): Promise<{ imageWidth?: { max?: number }; imageHeight?: { max?: number } }> };
+const wait = (ms: number) => new Promise<void>((ok) => window.setTimeout(ok, ms));
+const within = <T,>(p: Promise<T>, ms: number): Promise<T | null> => Promise.race([p.catch(() => null), wait(ms).then(() => null)]);
+
+/** Focus once now, where the camera can (then back to following focus). */
+async function focusNow(track: Track | undefined): Promise<void> {
+  try {
+    const modes = focusModes(track);
+    if (!track) return;
+    if (modes.includes("single-shot")) {
+      await within(track.applyConstraints({ advanced: [{ focusMode: "single-shot" } as MediaTrackConstraintSet] }), 800);
+      await wait(450);
+      if (modes.includes("continuous")) void track.applyConstraints({ advanced: [{ focusMode: "continuous" } as MediaTrackConstraintSet] }).catch(() => {});
+    }
+  } catch { /* a camera without focus control */ }
+}
+
+/** A full resolution still from the camera, or null (no ImageCapture, refused, or too slow). */
+async function takeStill(track: Track | undefined): Promise<ImageBitmap | null> {
+  const IC = (window as unknown as { ImageCapture?: new (t: MediaStreamTrack) => ImageCaptureLike }).ImageCapture;
+  if (!IC || !track || track.readyState !== "live") return null;
+  try {
+    const ic = new IC(track);
+    const caps = ic.getPhotoCapabilities ? await within(ic.getPhotoCapabilities(), 1500) : null;
+    const big = caps?.imageWidth?.max && caps?.imageHeight?.max ? { imageWidth: caps.imageWidth.max, imageHeight: caps.imageHeight.max } : undefined;
+    const blob = (await within(ic.takePhoto(big), 6000)) ?? (big ? await within(ic.takePhoto(), 6000) : null);
+    if (!blob) return null;
+    return await createImageBitmap(blob);   // turned upright from the photo's own orientation mark
+  } catch { return null; }
+}
+
+/** A small grey copy of a part of a picture, for comparing the still with the frame. */
+function smallGray(src: CanvasImageSource, r: Rect): Float32Array | null {
+  const c = document.createElement("canvas");
+  c.width = 24; c.height = 32;
+  const g = c.getContext("2d", { willReadFrequently: true });
+  if (!g) return null;
+  g.drawImage(src, r.x, r.y, r.w, r.h, 0, 0, c.width, c.height);
+  const d = g.getImageData(0, 0, c.width, c.height).data;
+  const out = new Float32Array(c.width * c.height);
+  for (let i = 0; i < out.length; i++) out[i] = d[i * 4] * 0.3 + d[i * 4 + 1] * 0.59 + d[i * 4 + 2] * 0.11;
+  return out;
+}
+
+/** One part of a picture drawn at most `max` pixels on its long side, as a JPEG data URL (encoded off the page's thread). */
+async function jpegOf(src: CanvasImageSource, r: Rect, max: number, q: number): Promise<string | null> {
+  const size = fitSize(r.w, r.h, max);
+  const c = document.createElement("canvas");
+  c.width = size.w; c.height = size.h;
+  const g = c.getContext("2d");
+  if (!g) return null;
+  g.imageSmoothingQuality = "high";
+  g.drawImage(src, r.x, r.y, r.w, r.h, 0, 0, size.w, size.h);
+  for (const qq of [q, q - 0.1, q - 0.2]) {
+    const blob = await new Promise<Blob | null>((ok) => c.toBlob(ok, "image/jpeg", qq));
+    if (!blob) return null;
+    const url = await new Promise<string | null>((ok) => { const fr = new FileReader(); fr.onload = () => ok(typeof fr.result === "string" ? fr.result : null); fr.onerror = () => ok(null); fr.readAsDataURL(blob); });
+    if (url && url.length < OCR_URL_MAX) return url;
+  }
+  return null;
+}
+/** The phone takes pictures up to 8 000 000 characters as a data URL (ps-gos ScanText MAX_URL); kept well under it. */
+const OCR_URL_MAX = 7_500_000;
+/** The picture read: up to 3200 pixels on its long side (the phone enlarges a smaller one), the saved photo 1600 (shrunk again on Save). */
+const OCR_SIDE = 3200, PHOTO_SIDE = 1600;
+
+/** What the preview shows, focused, from a full resolution still when there is one: a colour photo to keep and a sharp copy to read. */
+async function capture(v: HTMLVideoElement, track: Track | undefined): Promise<{ photo: string; ocr: string; still: boolean } | null> {
   const vw = v.videoWidth, vh = v.videoHeight;
   if (!vw || !vh) return null;
-  const k = Math.min(1, 2200 / Math.max(vw, vh));
-  const c = document.createElement("canvas");
-  c.width = Math.round(vw * k); c.height = Math.round(vh * k);
-  const ctx = c.getContext("2d", { willReadFrequently: true });
-  if (!ctx) return null;
-  ctx.drawImage(v, 0, 0, c.width, c.height);
-  const photo = c.toDataURL("image/jpeg", 0.85);
-  const img = ctx.getImageData(0, 0, c.width, c.height), d = img.data;
-  const hist = new Uint32Array(256);
-  for (let i = 0; i < d.length; i += 4) { const y = (d[i] * 77 + d[i + 1] * 150 + d[i + 2] * 29) >> 8; d[i] = y; hist[y]++; }
-  const total = d.length / 4;
-  let lo = 0, hi = 255, acc = 0;
-  for (; lo < 255; lo++) { acc += hist[lo]; if (acc > total * 0.02) break; }
-  acc = 0;
-  for (; hi > 0; hi--) { acc += hist[hi]; if (acc > total * 0.02) break; }
-  const span = Math.max(1, hi - lo);
-  for (let i = 0; i < d.length; i += 4) { const y = Math.max(0, Math.min(255, ((d[i] - lo) * 255) / span)); d[i] = d[i + 1] = d[i + 2] = y; }
-  ctx.putImageData(img, 0, 0);
-  return { photo, ocr: c.toDataURL("image/jpeg", 0.92) };
+  const f = coverCrop(vw, vh, v.clientWidth || vw, v.clientHeight || vh);
+  await focusNow(track);
+  const frameRect: Rect = { x: Math.round(f.x * vw), y: Math.round(f.y * vh), w: Math.max(1, Math.round(f.w * vw)), h: Math.max(1, Math.round(f.h * vh)) };
+  let frame: ImageBitmap | null = null;
+  try { frame = await createImageBitmap(v); } catch { frame = null; }
+  const still = await takeStill(track);
+  let src: CanvasImageSource | null = frame, rect = frameRect, usedStill = false;
+  if (still) {
+    const sr = stillRect(still.width, still.height, vw, vh, f);
+    const a = frame ? smallGray(frame, frameRect) : null, b = smallGray(still, sr);
+    // the still is used when it is the same way up and looks like the preview at that moment
+    if (sameTurn(vw, vh, still.width, still.height) && (!a || !b || likeness(a, b) >= 0.5)) { src = still; rect = sr; usedStill = true; }
+  }
+  if (!src) src = v;
+  try {
+    const ocr = await jpegOf(src, rect, OCR_SIDE, 0.92);
+    const photo = await jpegOf(src, rect, PHOTO_SIDE, 0.85);
+    return ocr && photo ? { photo, ocr, still: usedStill } : null;
+  } finally {
+    frame?.close(); still?.close();
+  }
 }
 
 export function ReceiptScan({ onClose }: { onClose: () => void }) {
@@ -210,6 +292,8 @@ export function ReceiptScan({ onClose }: { onClose: () => void }) {
       if (!live || !v) { s.getTracks().forEach((t) => t.stop()); return; }
       stream.current = s;
       v.srcObject = s;
+      // keep the lens following focus where the camera lets the page ask (most phones do it anyway)
+      try { const tr = s.getVideoTracks()[0]; if (focusModes(tr).includes("continuous")) void tr.applyConstraints({ advanced: [{ focusMode: "continuous" } as MediaTrackConstraintSet] }).catch(() => {}); } catch { /* no focus control */ }
       try { await v.play(); } catch { /* plays when the first frame is in */ }
       if (live) setCam("on");
     })();
@@ -218,15 +302,15 @@ export function ReceiptScan({ onClose }: { onClose: () => void }) {
   const shoot = async () => {
     const v = video.current;
     if (!v || cam !== "on" || phase !== "cam") return;
-    const g = grab(v);
-    if (!g) return;
     haptic("press"); setSay(""); setPhase("reading");
+    const g = await capture(v, stream.current?.getVideoTracks()[0]);
+    if (!g) { setSay(RS_WORDS.failed); setPhase("cam"); haptic("reject"); return; }
     const a = await receiptScan.read(g.ocr);
     if ("error" in a) {
       setSay(a.error === "model" ? RS_WORDS.model : a.error === "timeout" ? RS_WORDS.tooLong : RS_WORDS.failed);
       setPhase("cam"); haptic("reject"); return;
     }
-    const p = parseReceipt(a.text, { currency: cur, today: toISODate(new Date()) });
+    const p = parseReceipt(a.text, { currency: cur, today: toISODate(new Date()), ...(a.layout ? { layout: a.layout } : {}) });
     stopCam();
     haptic("drop");
     setShot({ photo: g.photo, start: draftOf(p), warns: p.warn, from: "scan" });

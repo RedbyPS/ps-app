@@ -17,3 +17,16 @@ class ReceiptTextTest {
         assertEquals(0f, ReceiptText.confidence(emptyList()), 0.01f)
     }
 }
+
+class ReceiptWordsTest {
+    private fun w(t: String, x: Int, start: Boolean, conf: Float = 80f) = ReceiptText.Word(t, conf, x, 10, x + 40, 30, start)
+
+    @Test fun wordsAreGroupedIntoLinesWithTheirBoxes() {
+        val lines = ReceiptText.lines(listOf(w("ო/", 10, true), w("180გრ", 60, false), w("6.45", 400, false), w("15.96", 700, false),
+            w("  ", 10, true), w("~", 10, true, 3f), w("სულ", 10, true), w("27.99", 700, false)))
+        assertEquals(listOf("ო/ 180გრ 6.45 15.96", "სულ 27.99"), lines.map { l -> l.joinToString(" ") { it.text } })
+        val json = ReceiptText.layoutJson(lines)
+        assertEquals(2, json.length())
+        assertEquals("[\"15.96\",700,10,740,30]", json.getJSONArray(0).getJSONArray(3).toString())
+    }
+}

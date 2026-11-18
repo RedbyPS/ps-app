@@ -1149,6 +1149,8 @@ export interface RebootSettings {
 export interface PsSettings {
   reboot?: RebootSettings; error?: string;
   triggerKey?: "tab" | "rightOption"; screenTime?: boolean;
+  /** PS 1.67 Settings, the start animation (ps-mac Hatch.swift, UserDefaults hatch.launch): on unless switched off on this Mac. */
+  launchScene?: boolean;
   /** Security, "Remind me to set up the restart helper" (ps-mac HelperAlert.swift, UserDefaults helperAlert.remind): on unless switched off. */
   helperRemind?: boolean;
   /** This Mac's own computer name (PS 1.65, for the device list in Settings, Looks). */

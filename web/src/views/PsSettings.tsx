@@ -60,6 +60,7 @@ export function PsSettingsView({ onBack, overlay }: { onBack?: () => void; overl
       <TabSettings />
 
       <ScreenTimeSection />
+      <StartAnimationSection />
 
       {overlay && <AppNameSetting />}
       <IslandPlace moved={!!st?.islandMoved} ready={!!st} prefs={islandPrefs(settingsData(s).island)} save={saveVault} />
@@ -96,6 +97,31 @@ export function PsSettingsView({ onBack, overlay }: { onBack?: () => void; overl
       )}
 
     </div>
+  );
+}
+
+/** PS 1.67, the start animation (Hatch): every time PS starts, the icon builds itself, cracks, drops and hatches the
+ *  island. This Mac only, kept by PS (ps-mac Hatch.swift); on unless switched off. In every build, the public one too. */
+export function StartAnimationSection() {
+  const st = usePsSettings();
+  const on = st ? st.launchScene !== false : true;
+  return (
+    <section className="panel stack" aria-labelledby="hatch-set-h">
+      <div className="row" style={{ gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+        <h2 className="h2" id="hatch-set-h">Start animation</h2>
+        {st && <span className={`pill ${on ? "good" : "ink"}`}>{on ? "On" : "Off"}</span>}
+      </div>
+      <label className="st-switch">
+        <input type="checkbox" className="check" checked={on} disabled={!st}
+          onChange={(e) => psPost({ type: "psSettings:launchScene", on: e.target.checked })} />
+        <span className="stack tight" style={{ gap: 2 }}>
+          <b className="small">Play the start animation when {appName()} opens</b>
+          <span className="xs muted">
+            The icon builds itself, drops and hatches the Dynamic Island. It takes a couple of seconds; Esc or a click skips it.
+          </span>
+        </span>
+      </label>
+    </section>
   );
 }
 

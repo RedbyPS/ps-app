@@ -2,6 +2,7 @@
 import type { Approval, AwareItem, ClientRec, CTask, DimxZone, Doc, Draft, Meeting, Payment, Reply, Pipeline, Preview, Project, ProjectPrivate, ProjectType, Settings, Suggestion, Tick, Todo, Update, WsMeta , ProjectDoc, Agenda, JournalEntry, Quote, Note, ScreenTimeApp, ScreenTimeDay, ScreenTimeDevice, StLine, TaskGroup } from "./model";
 import { DEFAULT_SETTINGS, newProject, stagesFor, uid, workingIdsOf } from "./model";
 import { OLD_SCENES, movedId, sortPrio, unrankedAfterMove } from "./prio";
+import { islandOnPatch } from "./islandon";
 import { cleanGroups, cleanSecOrder, groupKey, planMove, planUngroup, tabLists, type TaskMove } from "./groups";
 import { addPage, cleanPages, moveSec } from "./lists";
 import { createWorkspace, deleteBlob, doc, docs, put, putBlob, rematchMail, remove, roleConfirmed, setMerger, vaultStore } from "./vault";
@@ -542,6 +543,14 @@ export async function migrateLooks() {
   const old = st?.tmP1Style ? OLD_SCENES[st.tmP1Style] : undefined;
   if (!st || !old) return;
   await saveSettings({ tmP1Style: old.outline, ...(st.tmBg ? {} : { tmBg: old.bg }) });
+}
+/** Once per account (PS 1.67, core/islandon.ts): an island switched off goes back on, and the marker means a later Off stays off. */
+let islandOnBusy = false;
+export async function migrateIslandOn() {
+  const patch = islandOnPatch(settings(vaultStore.get())?.data);
+  if (!patch || islandOnBusy) return;
+  islandOnBusy = true;
+  await saveSettings(patch).finally(() => { islandOnBusy = false; });
 }
 let migratingP1 = false;
 export async function migrateP1() {

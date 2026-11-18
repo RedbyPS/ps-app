@@ -749,7 +749,9 @@ final class SetupIsland {
   /// Shows what should show now. False when nothing shows.
   @discardableResult private func render() -> Bool {
     let want: SetupIslandModel.Look
-    if loadLabel != nil { want = .loading }
+    // PS 1.67 Hatch: no island of any kind while the update or start scene plays (it gives birth to the island).
+    if Island.shared.hatchHeld { want = .hidden }
+    else if loadLabel != nil { want = .loading }
     else if let t = transient { want = t }
     else if guide.running, guide.current != nil, !guide.quiet, !guide.hidden { want = .hint }
     else { want = .hidden }
