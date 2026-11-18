@@ -98,15 +98,17 @@ export function accepts(key: string, types: Todo["type"][]): boolean {
 
 /** ids: the tasks moved, top to bottom. index: where they land among the section's rows as shown
  *  (moved rows already in that section count). */
-export type TaskMove = { ids: string[]; to: string; index: number };
+export type TaskMove = { ids: string[]; to: string; index: number; inbox?: boolean };   // inbox (PS 1.68): the tasks come out of the AI Inbox
 
 /** The saves a move makes: the order of its new section (Priority 1 and Priorities count as one
  *  order, as before), and the moved tasks' group, Priority 1 and "no priority yet" flags. */
-export function planMove(lists: TabLists, m: TaskMove): { id: string; patch: Partial<Todo> }[] {
+/** inbox (PS 1.68, Dimension X): tasks on no list yet (the AI Inbox, core/aiinbox.ts) that join the section, and leave the inbox in the same write. */
+export function planMove(lists: TabLists, m: TaskMove, inbox: Doc<Todo>[] = []): { id: string; patch: Partial<Todo> }[] {
   // No Priority 1 group yet: the very top of Priorities starts one (as a drag within it does).
   if (m.to === "prio" && m.index === 0 && !lists.p1.length) m = { ...m, to: "p1" };
   const find = new Map<string, Doc<Todo>>();
   for (const l of [lists.ranked, lists.daily, ...lists.groups.values()]) for (const d of l) find.set(d.id, d);
+  for (const d of inbox) if (d.data.aiInbox === true && !find.has(d.id)) find.set(d.id, d);
   const moved = m.ids.map((id) => find.get(id)).filter((d): d is Doc<Todo> => !!d);
   const gid = groupOf(m.to);
   if (!moved.length || !accepts(m.to, moved.map((d) => d.data.type)) || (gid && !lists.groups.has(gid))) return [];
@@ -126,6 +128,7 @@ export function planMove(lists: TabLists, m: TaskMove): { id: string; patch: Par
     const t = d.data, patch: Partial<Todo> = {};
     if (t.order !== i) patch.order = i;
     if (ids.has(d.id)) {
+      if (t.aiInbox === true) patch.aiInbox = false;
       if ((t.group ?? null) !== (gid ?? null)) patch.group = gid ?? null;
       if (t.type !== "daily") {
         if (!!t.p1 !== (m.to === "p1")) patch.p1 = m.to === "p1";
