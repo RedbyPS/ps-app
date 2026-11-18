@@ -336,7 +336,7 @@ final class App: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMess
     DND.shared.onChange.append { Toast.shared.dndChanged(); Reminders.shared.dndChanged(); Updater.shared.conditionsChanged() }   // Do Not Disturb: held cards come up when it ends
     // V1.58: who is signed in decides the 1Password and Signal rules (BuildRules.swift), so a change re-applies them.
     Owner.onChange = { [weak self] in TabWatch.shared.protectedChanged(); SafePeek.shared.refresh(); Island.shared.rulesChanged(); self?.sendSettings() }
-    Protected.onChange = { [weak self] in Posture.shared.place(); self?.replyWin.protectedChanged(); TabWatch.shared.protectedChanged(); SafePeek.shared.refresh(); Reminders.shared.check(); Toast.shared.protectedChanged(); Island.shared.protectedChanged(); Popup.shared.protectedChanged(); Updater.shared.conditionsChanged(); Soundboard.shared.protectedChanged(); HelperAlert.shared.protectedChanged() }
+    Protected.onChange = { [weak self] in Posture.shared.place(); self?.replyWin.protectedChanged(); TabWatch.shared.protectedChanged(); SafePeek.shared.refresh(); Reminders.shared.check(); Toast.shared.protectedChanged(); Island.shared.protectedChanged(); Popup.shared.protectedChanged(); Updater.shared.conditionsChanged(); Soundboard.shared.protectedChanged(); HelperAlert.shared.protectedChanged(); Hatch.shared.protectedChanged() }
     TabWatch.shared.start()
     KeyLayout.watch()
     KeyLayout.onChange = { [weak self] in self?.sendSettings(); self?.sendTabState(force: true) }   // V1.47: key labels follow the layout
@@ -644,6 +644,7 @@ final class App: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMess
     if !selfTest && !DND.shared.mutes("system") { showPopup() }
     // Updates from the synced Drive folder (Updater.swift); after an install, the DMG is ejected.
     Updater.shared.start(app: self)
+    Hatch.shared.atLaunch()   // PS 1.67: the start scene, unless switched off or this start follows an update (Hatch.swift)
     Installer.ejectIfAsked()
     if selfTest && UpdaterSelfTest.run(self) { return }
     if let dir = ProcessInfo.processInfo.environment["PS_SELFTEST"] { SelfTest.run(self, dir) }
@@ -821,7 +822,8 @@ final class App: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMess
     }
     // A panel the page never closes (a reload, a lost message) must not hold the queue for good: after 30 minutes it is let go.
     let since = Date()
-    let o = IslandQueue.shared.enqueue(id: id, kind: "whatsnew", priority: .normal, ttl: 120, show: { go() },
+    // PS 1.67: after an update What's new waits for the Hatch scene (it may wait for 1Password or Signal to go first).
+    let o = IslandQueue.shared.enqueue(id: id, kind: "whatsnew", priority: .normal, ttl: Hatch.shared.holding ? HatchCore.updateWait + 120 : 120, show: { go() },
                                        visible: { Date().timeIntervalSince(since) < 1800 }, dropped: { tell("{\"state\":\"go\"}") })
     switch o {
     case .showNow: go()
@@ -885,6 +887,7 @@ final class App: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMess
     d["tabStaysChosen"] = w.staysChoice != nil
     d["slashKeys"] = ["slash": k.slash, "dot": k.dot, "layout": k.name]
     d["screenTime"] = ScreenTime.shared.enabled
+    d["launchScene"] = Hatch.shared.launchOn   // PS 1.67: Settings, the start animation (Hatch.swift)
     d["helperRemind"] = HelperAlert.shared.remind   // Security > Remind me to set up the restart helper (HelperAlert.swift)
     d["afk"] = Afk.shared.settingsJSON()
     d["mediaGuard"] = MediaGuard.shared.settingsJSON()
@@ -1493,6 +1496,8 @@ final class App: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMess
       if let keys = msg["keys"] as? [String] { AiDone.shared.taken(Array(keys.prefix(100))) }
     case "psSettings:helperRemind" where fromMain || fromOverlay:   // Security > Remind me to set up the restart helper (HelperAlert.swift)
       if let on = msg["on"] as? Bool { HelperAlert.shared.setRemind(on); sendSettings() }
+    case "psSettings:launchScene" where fromMain || fromOverlay:   // PS 1.67: Settings, Play the start animation (Hatch.swift)
+      if let on = msg["on"] as? Bool { Hatch.shared.launchOn = on; sendSettings() }
     case "psSettings:screenTime" where fromMain || fromOverlay:   // the switch in PS > Settings, or Turn on in the screen time pop-up
       if let on = msg["on"] as? Bool { ScreenTime.shared.enabled = on; sendSettings() }
     case "screentime:send" where fromMain:          // the page asks for the latest totals (opening the card)
@@ -1688,7 +1693,7 @@ final class App: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMess
     case "lowpower:get" where fromMain:         // and macOS Low Power Mode right now
       LowPower.shared.tellOs()
     case "island" where fromMain:               // the Dynamic Island's state (src/island.ts, Island.swift)
-      if let st = msg["state"] as? [String: Any] { Island.shared.fromPage(st); SetupIsland.shared.islandState(st); AssistIsland.shared.islandState(st); Afk.shared.islandState(st) }
+      if let st = msg["state"] as? [String: Any] { Island.shared.fromPage(st); SetupIsland.shared.islandState(st); AssistIsland.shared.islandState(st); Afk.shared.islandState(st); Hatch.shared.islandState(st) }
     case "setupIsland" where fromMain || fromOverlay:   // the setup menu opened or closed (views/Welcome.tsx, SetupIsland.swift)
       SetupIsland.shared.menu(open: msg["menu"] as? Bool ?? false)
     case "island:intro" where fromOverlay:               // PS 1.60: a "Did you know?" intro asks to come out of the island (views/FeatureIntro.tsx)

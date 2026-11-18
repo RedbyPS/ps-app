@@ -71,6 +71,9 @@ cp "$HERE/ui/update.html" "$APP/Contents/Resources/update.html"
 cp "$HERE/ui/supabase.html" "$APP/Contents/Resources/supabase.html"
 # V1.49: the token guide's step card (Sources/SetupGuide.swift), docked beside the browser.
 cp "$HERE/ui/guide.html" "$APP/Contents/Resources/guide.html"
+# PS 1.67: the Hatch update and start scenes (Sources/Hatch.swift) and the icon they build (512 px is plenty on screen).
+cp "$HERE/ui/hatch.html" "$APP/Contents/Resources/hatch.html"
+sips -Z 512 "$HERE/icon/icon-1024.png" --out "$APP/Contents/Resources/hatch-icon.png" >/dev/null
 node "$WEB/scripts/ps-kit.mjs" "$APP/Contents/Resources/project-kit"
 
 # V1.58 layers (core tools/assemble.mjs): an assembled tree has ps-build.json at its top (flavour, commits, the

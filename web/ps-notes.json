@@ -312,5 +312,14 @@
    "The AFK timer asks the first time if you want it, like the posture reminder.",
    "Fixes: the Purchases button opens again on the Mac, and Settings shows who made PS."
   ]
+ },
+ "1.67": {
+  "en": [
+   "Hatch: after an update, PS builds its icon, cracks it open and hatches your island.",
+   "A short version plays every time PS opens. Esc skips it, or turn it off in Settings, Dynamic Island.",
+   "The Dynamic Island is on for everyone again. Turn it off for good in Settings.",
+   "Phone: hold the round button bottom left for the wheel menu. Every screen opens full screen.",
+   "Receipts read more accurately."
+  ]
  }
 }

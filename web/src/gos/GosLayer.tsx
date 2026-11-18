@@ -50,6 +50,13 @@ import { panelOpen } from "../core/phonepanels";
 import { PhoneIsland } from "./PhoneIsland";
 import { usePhonePref } from "./phoneprefs";
 import type { MomentOpen } from "../core/phoneisland";
+// PS 1.67 the wheel menu (bottom left; replaces the hamburger while Settings, This phone, Wheel menu is on).
+import { PhoneWheel } from "./PhoneWheel";
+import { wheelItems, type Pt, type WheelId } from "./wheel";
+import { closeLaunched, launch } from "./launch";
+import { goToSleep } from "../sleepmode/engine";
+import { sleepModeOf } from "../core/sleepmode";
+import { openWhatsNew } from "../views/WhatsNew";
 
 type Pane = "plan" | "list" | "inbox";
 // PS Fitness is a pop up over any of them since V1.29 (fitness/FitnessPop.tsx). V1.56: "page:<id>" is a page of panels
@@ -215,6 +222,14 @@ export function GosLayer() {
   // PS 1.66 the round Add task button (bottom right on every page and panel) and the island inside PS. Each has its own switch
   // in Settings, This phone (gos/phoneprefs.ts); both on by default.
   const fabOn = usePhonePref("addButton");
+  const wheelOn = usePhonePref("wheel");
+  useEffect(() => {
+    const r = document.documentElement;
+    if (wheelOn) r.dataset.gosWheel = ""; else delete r.dataset.gosWheel;
+    return () => { delete r.dataset.gosWheel; };
+  }, [wheelOn]);
+  // Which hidden buttons the home had last time it was drawn: the wheel on the Vault pages (no home under them) offers the same.
+  const seen = useRef(new Map<string, boolean>());
   useEffect(() => {
     const r = document.documentElement;
     if (fabOn) r.dataset.gosFab = ""; else delete r.dataset.gosFab;
@@ -265,6 +280,52 @@ export function GosLayer() {
     }
     go(o as View);
   };
+  // ---------- the wheel (PS 1.67) ----------
+  const has = (sel: string) => {
+    if (!document.querySelector(".gos-home")) return seen.current.get(sel) ?? true;   // the Vault pages: as the home last had it
+    const v = !!document.querySelector(`.gos-home ${sel}`);
+    seen.current.set(sel, v);
+    return v;
+  };
+  const wheelList = () => wheelItems({ red, has, show: (id) => (id === "sleep" ? sleepModeOf(settingsData(s)).show : true) });
+  const wheelLive = () => {
+    const text = (sel: string) => document.querySelector(`.gos-home ${sel}`)?.textContent?.replace(/\s+/g, " ").trim() || "";
+    const out: Partial<Record<WheelId, string>> = {};
+    const st = text(".tm-st-v"), tl = text(".tm-tl-pill").replace(/^Timelines\s*/, ""), nu = text(".nu-pill").match(/\d+/)?.[0];
+    if (st) out.screentime = `${st} today, on this phone and your Macs.`;
+    if (tl) out.timelines = `Next: ${tl}`;
+    if (nu) out.numerology = `Today's number is ${nu}.`;
+    const dndOn = !!document.querySelector(".gos-wh-dnd .dnd-btn.on");
+    out.dnd = dndOn ? "On now. Lift here to see what it mutes or turn it off." : "Off. Lift here to turn it on.";
+    return out;
+  };
+  // Launch an item full screen out of its spot (gos/launch.ts). A screen the wheel opened before steps aside first.
+  const wheelLaunch = (id: WheelId, at: Pt, size: number) => {
+    primeSfx();
+    const from = { getBoundingClientRect: () => new DOMRect(at.x - size / 2, at.y - size / 2, size, size) } as unknown as Element;
+    const run = () => {
+      if (settingsOpen && id !== "settings") openSettings(null);
+      if (id !== "gym" && fitPop.get() === "open") fitPop.min();   // a workout steps aside to its bubble, like an app to the background
+      if (id === "sleep") { launch(at, size, () => { void goToSleep(); }, "none"); return; }
+      if (id === "dnd") {
+        const btn = () => document.querySelector<HTMLElement>(".gos-wh-dnd .dnd-btn");
+        const wasOn = !!document.querySelector(".gos-wh-dnd .dnd-btn.on");
+        // Off: on at once, then its sheet (what it mutes, how long, off) so there is something to see. On: the sheet.
+        launch(at, size, () => { btn()?.click(); if (!wasOn) window.setTimeout(() => btn()?.click(), 160); }, "none");
+        return;
+      }
+      if (id === "gym") { fitPop.open(from); return; }   // Fitness grows out of the spot by itself (fitness/FitnessPop.tsx)
+      if (id === "sounds") { launch(at, size, () => openSoundboard(from as HTMLElement), "own"); return; }
+      if (id === "whatsnew") { launch(at, size, () => openWhatsNew()); return; }
+      if (id === "plan" || id === "inbox") { launch(at, size, () => { setShow(null); if (view !== id) { setView(id); } }, "home"); return; }
+      if (id === "vault") { launch(at, size, () => go("vault"), "none"); return; }
+      const it = MENU.find((m) => m.id === id);
+      if (!it) return;
+      if (id === "clipboard") { launch(at, size, () => { document.querySelector<HTMLElement>(`.gos-home ${it.sel}`)?.click(); }, "none"); return; }
+      launch(at, size, () => pick(it), id === "clocks" ? "home" : "layer");
+    };
+    if (closeLaunched()) window.setTimeout(run, 140); else run();
+  };
   return createPortal(
     <>
       <FitnessPop />
@@ -281,10 +342,12 @@ export function GosLayer() {
         // Shown by gos.css only while the Plan pane has no Meetings panel (an account with no calendar yet).
         <div className="gos-plan-empty" role="status">
           <b>No meetings coming up</b>
-          <span>Time zones, Timelines, Goals and the rest are in the menu, top left.</span>
+          <span>{wheelOn ? "Time zones, Timelines, Goals and the rest are on the wheel: hold the round button at the bottom left." : "Time zones, Timelines, Goals and the rest are in the menu, top left."}</span>
         </div>
       )}
-      {view !== "vault" && <GosMenu open={menu} onOpen={setMenu} red={red} onPick={pick} />}
+      {view !== "vault" && !wheelOn && <GosMenu open={menu} onOpen={setMenu} red={red} onPick={pick} />}
+      {wheelOn && <PhoneWheel items={wheelList} live={wheelLive} onLaunch={wheelLaunch} />}
+      {wheelOn && <span className="gos-wh-dnd" aria-hidden="true">{dnd}</span>}
       {view === "plan" && show && (
         <button type="button" className="gos-show-back" onClick={() => { haptic("press"); setShow(null); }} aria-label="Back to Meetings">
           <svg {...sv} width={18} height={18} strokeWidth={2.4}><path d="M15 6l-6 6 6 6" /></svg>

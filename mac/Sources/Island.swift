@@ -295,6 +295,11 @@ final class IslandModel: ObservableObject {
   /// V1.55: a card just dropped out of the island (1) or went back into it (a smaller gulp): the island swells for a
   /// moment and springs back. Drawn only (a scale of the shape), so the shape the Tab list and the cards hear of never moves.
   @Published var swell: CGFloat = 0
+  /// PS 1.67 Hatch (Island.hatchExit, hatchBorn): the real island pinched into a dot or growing out of the blob, and its row
+  /// faded out while it does. 1 and 1 at every other time.
+  @Published var hatchSX: CGFloat = 1
+  @Published var hatchSY: CGFloat = 1
+  @Published var hatchRow: Double = 1
   /// The glide to or from the black band over a full screen app: the shape leans into the move for a moment (signed,
   /// below 0 it travels left; IslandPlace.glide), then springs back as it settles. Drawn only, like swell.
   @Published var travel: CGFloat = 0
@@ -566,7 +571,7 @@ struct IslandView: View {
               Capsule().fill(Color.black)
               Capsule().stroke(Color.white.opacity(m.glowing || m.popping != nil ? 0.6 : 0.12), lineWidth: 1)
                 .shadow(color: .white.opacity(m.glowing || m.popping != nil ? 0.5 : 0), radius: 6)
-              barRow(r).frame(width: r.width, height: r.height).clipShape(Capsule())
+              barRow(r).frame(width: r.width, height: r.height).clipShape(Capsule()).opacity(m.hatchRow)
             }
           } else if m.pill {
             let shape = IslandShape(top: m.expanded ? m.openRadius : r.height / 2, bottom: m.expanded ? m.openRadius : r.height / 2)
@@ -574,7 +579,7 @@ struct IslandView: View {
               pillBack(shape)
               shape.stroke(edgeC.opacity(m.glowing ? 0.75 : 0), lineWidth: 1.4)
                 .shadow(color: edgeC.opacity(m.glowing ? 0.65 : 0), radius: 9)
-              content(r).frame(width: r.width, height: r.height, alignment: .top).clipShape(shape)
+              content(r).frame(width: r.width, height: r.height, alignment: .top).clipShape(shape).opacity(m.hatchRow)
             }
           } else {
             let shape = NotchShape(parts: m.notchParts())
@@ -582,11 +587,13 @@ struct IslandView: View {
               notchBack(shape)
               shape.stroke(Color.white.opacity(m.glowing ? 0.75 : 0), lineWidth: 1.4)
                 .shadow(color: .white.opacity(m.glowing ? 0.65 : 0), radius: 9)
-              content(r).frame(width: r.width, height: r.height, alignment: .top).clipShape(shape)
+              content(r).frame(width: r.width, height: r.height, alignment: .top).clipShape(shape).opacity(m.hatchRow)
             }
           }
         }
         .frame(width: r.width, height: r.height)
+        // PS 1.67 Hatch: pinched into a dot as the update starts, grown out of the blob at the end (Island.hatchExit, hatchBorn).
+        .scaleEffect(x: m.hatchSX, y: m.hatchSY, anchor: .center)
         // V1.55: a card drops out of the island (or goes back in): it swells down and a little wider, then springs back.
         .scaleEffect(x: 1 + m.swell * 0.055, y: 1 + m.swell * min(0.24, 9 / max(r.height, 1)), anchor: .top)
         // The glide to or from the black band: wider along the way, pulled from the side it leaves.
@@ -1292,7 +1299,7 @@ final class Island {
     if g != model.geo { model.geo = g }
     syncAnchor()
     let want = model.st.mode != "off" && IslandRules.show(protectedFront: Protected.front, rules: BuildRules.now)
-      && model.hasContent && hiddenUntil == nil
+      && model.hasContent && hiddenUntil == nil && !hatchHeld
     if !want {
       if p.isVisible { p.orderOut(nil) }
       setPresence(.dock, "the island is not showing")   // out of the Dock only while the island shows over full screen
@@ -1336,6 +1343,79 @@ final class Island {
     p.orderOut(nil)
     p.orderFrontRegardless()
     psLog("PS island: was missing from this desktop (\(why)), back on every desktop")
+  }
+  // ---------- PS 1.67 Hatch (Hatch.swift): the island is born by the update and start scenes ----------
+  /// While the scene plays the island is off screen: the scene draws its own, takes it away, and gives birth to it at its
+  /// place. Let go, it fades in where the scene's own island settled (never over 1Password or Signal: place() decides).
+  private(set) var hatchHeld = false
+  private var hatchExiting = false
+  func hatchHold(_ on: Bool) {
+    guard on != hatchHeld else { return }
+    hatchHeld = on
+    if !on { hatchPlain() }
+    guard let p = panel else { return }
+    if on || test || NSWorkspace.shared.accessibilityDisplayShouldReduceMotion { place(); return }
+    p.alphaValue = 0
+    place()
+    if p.isVisible { NSAnimationContext.runAnimationGroup({ c in c.duration = 0.28; p.animator().alphaValue = 1 }, completionHandler: { p.alphaValue = 1 }) }
+    else { p.alphaValue = 1 }
+  }
+  /// The scale and the row back to normal at once (no animation): after a pinch, or a scene that ended early.
+  private func hatchPlain() {
+    var t = Transaction(); t.disablesAnimations = true
+    withTransaction(t) { model.hatchSX = 1; model.hatchSY = 1; model.hatchRow = 1 }
+  }
+  /// The scene starts: the REAL island leaves. Its row fades, it pinches into a dot of its own black (its real shape,
+  /// looks and colours), then it is held off; the scene page carries the dot down from there. Off screen already: held at once.
+  func hatchExit() {
+    guard !hatchHeld, !hatchExiting else { return }
+    guard let p = panel, p.isVisible, hiddenUntil == nil, !model.away, !test else { hatchHold(true); return }
+    if NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
+      hatchExiting = true
+      NSAnimationContext.runAnimationGroup({ c in c.duration = 0.25; p.animator().alphaValue = 0 }, completionHandler: { [weak self] in
+        self?.hatchExiting = false; self?.hatchHold(true); p.alphaValue = 1 })
+      return
+    }
+    let r = model.shapeRect()
+    hatchExiting = true
+    withAnimation(.easeOut(duration: 0.12)) { model.hatchRow = 0 }
+    withAnimation(.easeIn(duration: 0.28)) { model.hatchSX = max(0.04, r.height * 0.45 / max(1, r.width)); model.hatchSY = 0.45 }
+    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+      guard let self else { return }
+      self.hatchExiting = false
+      self.hatchHold(true)
+      self.hatchPlain()                                 // ordered out by now: ready to come back at full size
+    }
+  }
+  /// The scene's blob reached the island's place: the REAL island is born out of it, from the blob's size, with a spring
+  /// that overshoots a little, then its row (the task, the tick on its side) fades in once it has settled. False when it
+  /// is not coming on screen (switched off, nothing to show, 1Password or Signal in front): the scene pops the blob instead.
+  @discardableResult func hatchBorn(blob: CGFloat) -> Bool {
+    guard hatchHeld else { return onScreen }
+    let r = model.shapeRect()
+    var t = Transaction(); t.disablesAnimations = true
+    withTransaction(t) { model.hatchSX = max(0.04, blob / max(1, r.width)); model.hatchSY = max(0.04, blob / max(1, r.height)); model.hatchRow = 0 }
+    hatchHeld = false
+    place()
+    guard let p = panel, p.isVisible, !test else { hatchPlain(); return false }
+    if NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
+      hatchPlain(); p.alphaValue = 0
+      NSAnimationContext.runAnimationGroup({ c in c.duration = 0.3; p.animator().alphaValue = 1 }, completionHandler: { p.alphaValue = 1 })
+      return true
+    }
+    withAnimation(.spring(response: 0.5, dampingFraction: 0.55)) { model.hatchSX = 1; model.hatchSY = 1 }
+    DispatchQueue.main.asyncAfter(deadline: .now() + 0.55) { [weak self] in
+      withAnimation(.easeOut(duration: 0.35)) { self?.model.hatchRow = 1 }
+    }
+    return true
+  }
+  /// Where the island will rest (bottom left origin, points) while the scene holds it off, or nil when it would not
+  /// show (switched off, nothing to show, hidden by its line or sent away).
+  func restShape() -> NSRect? {
+    guard panel != nil, model.st.mode != "off", model.hasContent, hiddenUntil == nil, away == nil else { return nil }
+    let (g, _) = IslandGeo.read()
+    let f = frameFor(g), r = model.restRect()
+    return NSRect(x: f.minX + r.minX, y: f.maxY - r.maxY, width: r.width, height: r.height)
   }
   /// Cheap check (one property read): only when it shows but is missing from the desktop in front does it rejoin.
   private func followSpace(_ why: String) {

@@ -52,5 +52,7 @@
   .rs-sheet, .rs-sheet.nopic { width: 100vw; max-height: 100vh; border-radius: 0; height: 100vh; }
   .rs-body { grid-template-columns: 1fr; }
   .rs-pic { max-height: 32vh; }
+  /* the whole photo, smaller, not its top part in a scroll box (the developer took that for a wrong photo) */
+  .rs-pic img { width: auto; max-width: 100%; max-height: calc(32vh - 2px); margin: 0 auto; }
   .rs-row { grid-template-columns: 1fr 1fr; }
 }

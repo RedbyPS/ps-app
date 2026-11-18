@@ -546,6 +546,7 @@ export interface Settings {
   popupsSeen?: import("./newpopups").PopupsSeen;   // V1.56: the "new in this version" pop-ups (AI task API, Auto approve, open source) already shown or found, per pop-up (ISO), any device (core/newpopups.ts)
   walkSeen?: import("./walkthrough").WalkSeen;   // V1.58: the "what is new" walkthrough steps already seen, per step (ISO), any device (core/walkthrough.ts)
   p1Migrated?: boolean;          // the top task became P1 once when P1 turned optional (18 Oct 2026)
+  islandOn167?: boolean;         // PS 1.67: the Dynamic Island was turned back on once for this account (core/islandon.ts); a later Off stays off
   notifyLog?: { at: string; text: string }[];   // the last 24 hours of notification pop-ups (kept even when they are off)
   tmNotify?: boolean;
   tmStHours?: number;
