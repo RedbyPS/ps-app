@@ -911,8 +911,10 @@ struct IslandView: View {
       .padding(.horizontal, small ? 0 : 9).padding(.vertical, small ? 0 : 5)
       .background(small ? Color.clear : c.opacity(0.16))
       .clipShape(Capsule())
+      .contentShape(Capsule())
     }
     .buttonStyle(.plain)
+    .help(IslandMailOpen.hover(via: via, n: n))   // PS 1.68: what the number counts, in plain words
   }
 
   // ---------- PS 1.65 Low power mode: the leaf and its card ----------

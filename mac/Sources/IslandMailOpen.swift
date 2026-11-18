@@ -17,4 +17,16 @@ enum IslandMailOpen {
   }
   /// How long after showing the Tab list the message goes (the same wait as a WhatsApp card's Reply, main.swift).
   static let delay: Double = 0.35
+  /// PS 1.68 (Jan, 18 Nov 2026: "it says 20 emails but I have no clue what these 20 emails are"): the words on hover. The page
+  /// counts what the email panel lists (src/core/mailopen.ts isOpenReply), so the number and the panel agree.
+  /// Words wait for the owner's approval.
+  static func hover(via: String, n: Int) -> String {
+    let k = max(0, n)
+    let one = k == 1
+    switch via {
+    case gmail: return "\(k) client email\(one ? "" : "s") not dealt with yet. Click to see \(one ? "it" : "them") in the email panel."
+    case instantly: return "\(k) lead repl\(one ? "y" : "ies") not dealt with yet. Click to see \(one ? "it" : "them") in the email panel."
+    default: return ""
+    }
+  }
 }

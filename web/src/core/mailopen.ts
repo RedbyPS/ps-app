@@ -46,5 +46,18 @@ export function mailPanelId(l: TabLayout | null | undefined): string | null {
   return (l.extra ?? []).find((id) => kindOf(id) === "mail") ?? null;
 }
 
+/** PS 1.68 (Jan, 18 Nov 2026: the island said 20 emails "but I have no clue what these 20 emails are"): the envelope counts the
+ *  client emails the email panel lists, the ones not dealt with yet from a client still on the list (core/select.ts openReplies
+ *  uses this same test). It used to count the pop-up cards not dismissed yet, which also held emails already answered or marked
+ *  Done and stopped at 20, so the number matched nothing on screen. */
+export function isOpenReply(r: { handled?: boolean | null; clientId?: string | null }, liveClients: ReadonlySet<string>): boolean {
+  return !r.handled && !!r.clientId && liveClients.has(r.clientId);
+}
+export function openMailCount(replies: Iterable<{ handled?: boolean | null; clientId?: string | null }>, liveClients: ReadonlySet<string>): number {
+  let n = 0;
+  for (const r of replies) if (isOpenReply(r, liveClients)) n++;
+  return n;
+}
+
 /** May the island show its email counts? Only with the panel to open: Client emails on and the panel on the Tab list. */
 export const islandMailOk = (mailOn: boolean, l: TabLayout | null | undefined) => mailOn && mailPanelId(l) !== null;

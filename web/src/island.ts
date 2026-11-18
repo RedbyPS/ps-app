@@ -6,7 +6,7 @@
 // Private mode: the island shows a mask and "Private mode" with Show instead of the hidden title; a click there comes
 // back as {type:"islandAction", action:"privateOff"} and turns private mode off, and the real task is sent at once.
 import { vaultStore, type Snapshot } from "./core/vault";
-import { calendarSnap, settingsData, tabLayoutDoc, todos } from "./core/select";
+import { calendarSnap, openReplies, settingsData, tabLayoutDoc, todos } from "./core/select";
 import { mailOnSnap } from "./core/mailsnap";
 import { islandMailOk } from "./core/mailopen";
 import { cleanLayout } from "./core/tablayout";
@@ -74,7 +74,9 @@ function cardsNow(s: Snapshot, now: number): { mail: number; leads: number; card
   for (const c of ai.msgs) cards.push({ id: c.id, kind: "chat", title: c.text, sub: c.from, url: "", privTitle: AI_MSG_PRIVATE, at: Date.parse(c.at) || 0, fresh: c.fresh });
   // The counts open the Tab list's email panel (core/mailopen.ts): none while it is taken off the Tab list in Edit mode.
   const counts = islandMailOk(mailOn, tabLayout(s));
-  return { mail: counts ? mail.length : 0, leads: counts ? leads.length : 0, cards };
+  // PS 1.68: the envelope counts what the email panel lists (core/mailopen.ts isOpenReply), every one, not the pop-up cards (which
+  // also held emails already dealt with and stopped at 20). The cards above still decide what pops the island open.
+  return { mail: counts && mailOn ? openReplies(s).length : 0, leads: counts ? leads.length : 0, cards };
 }
 function tabLayout(s: Snapshot) { const d = tabLayoutDoc(s); return d ? cleanLayout(d.data) : null; }
 
