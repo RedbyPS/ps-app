@@ -194,8 +194,15 @@ if (existsSync("dist/client/todolist-mobile/index.html")) {
   console.log(`postbuild: G Squad mobile web app at /todolist-mobile/ (${files.length} files kept offline)`);
 }
 
+// V1.69 hotfix: a file that is not under /client/ps/ (the Mac update channels: the public one and the maker's own
+// folder) is a real 404, never the page fallback below. The developer's M4 looked for its new own channel note about 45 s after
+// the 1.69 install, before the deploy was live, got the web page with status 200 and logged "the update note is
+// unreadable". Netlify serves a file that exists before any rule, so the channel files themselves are unchanged.
+mkdirSync("dist/client/ps", { recursive: true });
+writeFileSync("dist/client/ps/404.html", "<!doctype html><title>Not found</title><p>Not found.</p>\n");
 writeFileSync("dist/_redirects", `/              /client/              302
 /client         /client/              301
+/client/ps/*    /client/ps/404.html   404
 /client/*       /client/index.html    200
 /campaigns      /client/index.html    200
 /campaigns/*    /client/index.html    200

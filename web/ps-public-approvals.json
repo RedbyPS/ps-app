@@ -439,5 +439,20 @@
   ],
   "by": "red",
   "shared": true
+ },
+ "1.70": {
+  "code": "47f7b60bc22f",
+  "at": "2026-11-19T11:31:50.107Z",
+  "keyword": "Vice City",
+  "notes": [
+   "A countdown under your headline shows how much of your day is left. Change it in Settings, Countdown text.",
+   "At zero it asks 'End day now?', and the island can remind you how much time is left.",
+   "Each Priority 1 task shows how long is left of its 24 hours.",
+   "The buttons at the top right now live in one menu, and Pomodoro moved into Edit.",
+   "A new sign in picture, also in Backgrounds as 'Neon city'.",
+   "If holding Tab does nothing, the island tells you which app has the keyboard and how to fix it."
+  ],
+  "by": "red",
+  "shared": true
  }
 }

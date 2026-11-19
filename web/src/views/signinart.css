@@ -1,0 +1,79 @@
+/* The sign in picture (PS 1.70, views/SignInArt.tsx). Only transform and opacity animate. */
+.si-art { position: relative; width: 100%; max-width: 340px; margin: 0 auto; pointer-events: none; user-select: none;
+  animation: si-art-rise .95s cubic-bezier(.16, 1, .3, 1) both; }
+@keyframes si-art-rise { from { opacity: 0; transform: translate3d(0, 22px, 0) scale(.955); } }
+
+/* The soft neon glow behind the frame: it breathes. */
+.si-art-glow {
+  position: absolute; inset: 8% 6% -2%; border-radius: 30px; z-index: 0;
+  background: radial-gradient(60% 70% at 18% 40%, rgba(255, 47, 158, .75), transparent 70%),
+    radial-gradient(60% 70% at 84% 58%, rgba(38, 224, 255, .6), transparent 70%),
+    radial-gradient(40% 50% at 50% 35%, rgba(255, 181, 71, .45), transparent 70%);
+  filter: blur(26px); opacity: .5; animation: si-art-breathe 6.5s ease-in-out 1s infinite alternate;
+}
+@keyframes si-art-breathe { from { opacity: .34; } to { opacity: .62; } }
+
+/* The frame: a thin edge of light that runs slowly round it (a turning conic layer behind the picture, clipped). */
+.si-art-frame {
+  position: relative; z-index: 1; aspect-ratio: 3 / 2; padding: 1.5px; border-radius: 20px; overflow: hidden; isolation: isolate;
+  background: rgba(255, 255, 255, .08);
+  box-shadow: 0 22px 46px -22px rgba(10, 0, 20, .85), 0 2px 10px -4px rgba(0, 0, 0, .5);
+}
+.si-art-small .si-art-frame { aspect-ratio: 3 / 1; border-radius: 16px; }
+.si-art-frame::before {
+  content: ""; position: absolute; left: 50%; top: 50%; width: 160%; aspect-ratio: 1; margin: -80% 0 0 -80%; z-index: 0;
+  background: conic-gradient(from 0deg, transparent 0deg, rgba(255, 47, 158, .95) 40deg, transparent 95deg, transparent 150deg,
+    rgba(139, 92, 255, .9) 190deg, rgba(38, 224, 255, .95) 225deg, transparent 280deg, transparent 360deg);
+  animation: si-art-spin 9s linear infinite; will-change: transform;
+}
+@keyframes si-art-spin { to { transform: rotate(1turn); } }
+
+.si-art-pic { position: relative; z-index: 1; width: 100%; height: 100%; border-radius: 18.5px; overflow: hidden; background: #0b0614; will-change: transform; }
+.si-art-small .si-art-pic { border-radius: 14.5px; }
+.si-art-pic img {
+  position: absolute; left: -4%; top: -4%; width: 108%; height: 108%; max-width: none; max-height: none; object-fit: cover; object-position: 50% 32%; display: block;
+  transform-origin: 50% 32%; animation: si-art-drift 26s ease-in-out infinite alternate;
+}
+@keyframes si-art-drift { from { transform: scale(1) translate3d(0, 0, 0); } to { transform: scale(1.05) translate3d(-1%, .6%, 0); } }
+
+/* The globe's warm glow, pulsing gently (the globe sits at the middle, a third of the way down). */
+.si-art-orb {
+  position: absolute; left: 50%; top: 32%; width: 46%; aspect-ratio: 1; margin: -23% 0 0 -23%;
+  background: radial-gradient(circle, rgba(255, 196, 92, .5), rgba(255, 140, 40, .16) 45%, transparent 68%);
+  mix-blend-mode: screen; opacity: .45; animation: si-art-orb 4.2s ease-in-out 1.1s infinite alternate;
+}
+.si-art-small .si-art-orb { top: 50%; width: 30%; margin: -15% 0 0 -15%; }
+@keyframes si-art-orb { from { opacity: .3; transform: scale(.94); } to { opacity: .85; transform: scale(1.04); } }
+
+/* A slow light sweep now and then. */
+.si-art-sweep {
+  position: absolute; top: -20%; bottom: -20%; left: 0; width: 60%;
+  background: linear-gradient(100deg, transparent 0%, rgba(255, 255, 255, .0) 30%, rgba(255, 255, 255, .2) 50%, rgba(255, 255, 255, 0) 70%, transparent 100%);
+  transform: translate3d(-120%, 0, 0) skewX(-12deg); animation: si-art-sweep 8s cubic-bezier(.45, 0, .2, 1) 1.4s infinite;
+}
+@keyframes si-art-sweep { 0% { transform: translate3d(-120%, 0, 0) skewX(-12deg); } 38%, 100% { transform: translate3d(230%, 0, 0) skewX(-12deg); } }
+
+/* A soft edge so the picture sits in its frame. */
+.si-art-shade { position: absolute; inset: 0; border-radius: inherit; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .08), inset 0 -30px 40px -20px rgba(8, 2, 16, .55); }
+
+@media (prefers-reduced-motion: reduce) {
+  .si-art { animation: si-art-fade .4s ease both; }
+  .si-art-glow, .si-art-frame::before, .si-art-pic img, .si-art-orb, .si-art-sweep { animation: none; }
+  .si-art-sweep { display: none; }
+}
+@keyframes si-art-fade { from { opacity: 0; } }
+
+/* ---------- where it sits ---------- */
+/* The Mac's Sign in window (PsSignIn.tsx): the picture on top, the app icon resting on its lower edge, the words and
+   fields under it, each rising in a beat after the picture. */
+.ps-si.has-art { padding-top: 40px; }
+.ps-si.has-art .ps-si-head .ps-si-icon { width: 64px; height: 64px; margin: -56px 0 0; position: relative; z-index: 2; }
+.ps-si.has-art .ps-si-head, .ps-si.has-art > :not(.si-art):not(.ps-si-head) { animation: si-art-after .7s cubic-bezier(.16, 1, .3, 1) .18s both; }
+.ps-si.has-art > :not(.si-art):not(.ps-si-head) { animation-delay: .28s; }
+@keyframes si-art-after { from { opacity: 0; transform: translate3d(0, 10px, 0); } }
+@media (prefers-reduced-motion: reduce) { .ps-si.has-art .ps-si-head, .ps-si.has-art > :not(.si-art):not(.ps-si-head) { animation: none; } }
+
+/* PS GOS (the lock card) and the iPhone web app (the hero): the picture first, full width of the card. */
+.lock-card > .si-art, .psm-hero > .si-art { max-width: 420px; margin-bottom: 4px; }
+/* The iPhone web app: its round mark rests on the picture's lower edge, like the Mac's icon. */
+.psm-hero > .si-art + .psm-mark { margin-top: -44px; position: relative; z-index: 2; }

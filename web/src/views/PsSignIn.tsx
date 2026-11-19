@@ -7,8 +7,18 @@ import { psPost, rememberChoice, setRememberChoice } from "../ps";
 import icon from "../assets/ps-icon.png";
 import "./pssignin.css";
 import { appName } from "../core/appname";
+import { SignInArt } from "./SignInArt";
+import { artFits, artStepDown } from "../core/signinart";
 
-export function PsSignInShell({ title, sub, children }: { title: string; sub?: string; children: ReactNode }) {
+/** art (PS 1.70): the developer's neon city picture in the middle of the screen (views/SignInArt.tsx); "small" a short band of it
+ *  for the longer forms, so the window still fits a small screen. */
+export function PsSignInShell({ title, sub, art: want = "full", children }: { title: string; sub?: string; art?: "full" | "small" | "none"; children: ReactNode }) {
+  const avail = typeof screen !== "undefined" ? screen.availHeight : 0;
+  const [art, setArt] = useState(() => artFits(want, avail));
+  const artRef = useRef(art);
+  artRef.current = art;
+  const wantWas = useRef(want);   // another form (sign in, recovery) starts again from its own choice
+  useEffect(() => { if (wantWas.current !== want) { wantWas.current = want; setArt(artFits(want, avail)); } }, [want, avail]);
   const box = useRef<HTMLDivElement>(null);
   useEffect(() => {
     document.documentElement.classList.add("ps-si-on");
@@ -20,16 +30,19 @@ export function PsSignInShell({ title, sub, children }: { title: string; sub?: s
     let last = 0;
     const send = () => {
       const h = Math.ceil(el.getBoundingClientRect().height);
+      // Taller than the screen allows (a long form on a small screen): the picture steps down, band first, then none.
+      if (artStepDown(artRef.current, h, avail)) { setArt((a) => (a === "full" ? "small" : "none")); return; }
       if (h > 0 && h !== last) { last = h; psPost({ type: "signin:size", h }); }
     };
     send();
     const ro = new ResizeObserver(send);
     ro.observe(el);
     return () => ro.disconnect();
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
   return (
     <div className="ps-si-page">
-      <div className="ps-si" ref={box}>
+      <div className={`ps-si${art !== "none" ? " has-art" : ""}`} ref={box}>
+        {art !== "none" && <SignInArt size={art} />}
         <header className="ps-si-head">
           <img className="ps-si-icon" src={icon} alt="" width={84} height={84} draggable={false} />
           <h1>{title}</h1>

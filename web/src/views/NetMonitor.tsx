@@ -18,6 +18,7 @@ import { secondLocal } from "../second/store";
 import { byDay, CAUSES, causeOf, devicesSeen, dropStats, dur, type Drop, type Uptime } from "../core/lastonline";
 import "./cstats.css";
 import "./netmonitor.css";
+import { TopIcon } from "./topicons";
 
 // ---------- what PS sends ----------
 type Pair = [number, number];                       // [received, sent]
@@ -142,8 +143,8 @@ export function NetButton() {
   return (
     <>
       <button ref={btn} type="button" className={`tm-pill-btn icon nm-btn${phase !== "closed" ? " on" : ""}`} onClick={(e) => { if (e.button === 0) open(); }} aria-expanded={phase === "open"} aria-label="Open the network monitor" title="Network monitor (this Mac only)">
-        {/* an Ethernet port */}
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M3 5h18v12h-4.5v3h-9v-3H3z" /><path d="M7.5 9v3M10.5 9v3M13.5 9v3M16.5 9v3" /></svg>
+        {/* Up and down arrows, data out and in (PS 1.70: the old Ethernet port read as a plug), the menu's own (views/topicons.tsx) */}
+        <TopIcon id="net" size={16} stroke={2.1} />
       </button>
       {phase !== "closed" && host && createPortal(
         <div className="dx-layer cs-layer nm-layer" onMouseDown={(e) => e.stopPropagation()}>

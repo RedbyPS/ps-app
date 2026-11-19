@@ -63,6 +63,13 @@ final class SafePeek {
   private(set) var lastStatus: OSStatus = noErr
   /// Secure Input stuck on in the background (SecureInput.swift tells, debounced). Main thread.
   var secureStuck = false { didSet { if oldValue != secureStuck { refresh() } } }
+  /// PS 1.70: the app in front holds Secure Input (SecureInput.swift onFront, debounced). Main thread. The hotkey is
+  /// armed then only while the Tab blocked card is switched on, and only to see a hold (SafePeekCore.holdShowsCard).
+  var secureFront = false { didSet { if oldValue != secureFront { refresh() } } }
+  /// PS 1.70: this hold brings the Tab blocked card, not the list (decided when Tab went down).
+  private var cardHold = false
+  /// Tab is held right now, seen by the hotkey (TabBlocked leaves the hold to it then).
+  var isDown: Bool { down }
   /// A quick tap is being sent on to a normal app: the hotkey is off until it has gone by.
   private var passingOn = false
   /// Self test: how many quick taps were sent on (a test copy never sends a key).
@@ -93,7 +100,8 @@ final class SafePeek {
     return SafePeekCore.Inputs(protectedFront: Protected.front, secureStuck: secureStuck, enabled: w.enabled,
                                triggerKey: w.triggerKey, kept: app.kept, editing: w.editing, appActive: w.appActive,
                                frontIgnored: w.frontIgnored, held: down, passingOn: passingOn, shown: app.shown,
-                               tabOverProtected: BuildRules.now.tabOverProtected)
+                               tabOverProtected: BuildRules.now.tabOverProtected,
+                               secureFront: secureFront && TabBlocked.shared.on)
   }
 
   /// Registers or drops the two hotkeys to match the moment. Called on every change that matters.
@@ -101,7 +109,10 @@ final class SafePeek {
     guard let app, let i = inputs() else { return }
     // `held` in the rules: never drop the key while it is held.
     let w = TabWatch.shared
-    var want = Set(SafePeekCore.wantTab(i) ? OpenKeysCore.blindHolds(w.shortcutList, legacy: w.customList == nil) : [])
+    var holds = OpenKeysCore.blindHolds(w.shortcutList, legacy: w.customList == nil)
+    let why = SafePeekCore.blind(i)
+    if why == .secureFront { holds = holds.filter { $0 == OpenKeysCore.TAB } }   // PS 1.70: only Tab, only to see a hold
+    var want = Set(SafePeekCore.wantTab(i) ? holds : [])
     if down { want.insert(downCode) }
     for code in Set(holdRefs.keys).union(testHolds).subtracting(want) { hold(code, on: false) }
     for code in want where holdRefs[code] == nil && !testHolds.contains(code) { hold(code, on: true) }
@@ -113,13 +124,13 @@ final class SafePeek {
            key: kVK_Escape, id: 2)
     // One line when it arms or drops for Secure Input. Golden rule: never a line for 1Password or Signal coming to
     // the front or going (that would write down WHEN they were used), so those changes are not logged at all.
-    let forSecure = armed && !Protected.front && secureStuck
+    let forSecure: SafePeekCore.Blind? = armed && !Protected.front && (why == .secureInput || why == .secureFront) ? why : nil
     if forSecure != loggedSecure {
       loggedSecure = forSecure
-      psLog(SafePeekCore.logLine(armed: forSecure, why: forSecure ? .secureInput : nil))
+      psLog(SafePeekCore.logLine(armed: forSecure != nil, why: forSecure))
     }
   }
-  private var loggedSecure = false
+  private var loggedSecure: SafePeekCore.Blind?
 
   private static func holdId(_ code: Int) -> UInt32 { code == OpenKeysCore.TAB ? 1 : UInt32(1000 + code) }
   private func hold(_ code: Int, on: Bool) {
@@ -176,8 +187,13 @@ final class SafePeek {
         if !app.kept { app.hideOverlay() }
         return
       }
-      timer = Timer(timeInterval: HOLD_SECONDS, repeats: false) { [weak self] _ in
+      // PS 1.70: with Secure Input held by the app in front, a hold brings the Tab blocked card (after a longer hold);
+      // anything shorter is a quick tap and goes on to the app below.
+      cardHold = code == OpenKeysCore.TAB && inputs().map { SafePeekCore.holdShowsCard(SafePeekCore.blind($0)) } == true
+      timer = Timer(timeInterval: cardHold ? TabBlockedCore.holdFor : HOLD_SECONDS, repeats: false) { [weak self] _ in
         guard let self, self.down, !app.shown else { return }
+        // Not blind any more (Secure Input went off a moment ago, before the next look): the list, as for any hold.
+        if self.cardHold && TabBlocked.shared.sawHold(signal: "hotkey") { return }
         self.held(app)
       }
       RunLoop.main.add(timer!, forMode: .common)

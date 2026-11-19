@@ -26,6 +26,7 @@ import { startSquad } from "../squad/engine";
 import { setP1Post } from "../squad/p1engine";
 import { startGymSquad } from "../squad/gym";
 import { gymShellMessage, gymWake, startGymWatch } from "../gymwatch";
+import { dayShellMessage, startDayCount } from "../daycount";
 import { remShellMessage, remWake, startRemWatch } from "../remwatch";
 import { calRefreshIfStale, startCalRefresh } from "../calrefresh";
 import { visibleEvents } from "../core/meethide";
@@ -236,6 +237,7 @@ function onMessage(m: Record<string, unknown>) {
     case "cardAction": if (!mailCardMessage(m as { type?: string; id?: string; action?: string })) chatCardMessage(m as { type?: string; id?: string; action?: string }); break;   // a G Squad message card (g:) goes to the chat
     case "screentime": screenTime(m); break;
     case "gymAck": gymShellMessage(m); break;   // Acknowledge on the ring or a gym notification (ps-gos Gym.kt)
+    case "dayAct": dayShellMessage(m as { act?: unknown; key?: unknown }); break;   // PS 1.70 End day now? or a time left reminder answered in a notification (ps-gos DayEnd.kt)
     case "remAct": remShellMessage(m); break;   // a reminder notification answered: Yes or Remind me in (ps-gos Remind.kt)
     case "rem:ready": remWake(true); break;     // the shell started again: send it the plan as it is
   }
@@ -291,6 +293,7 @@ export function startGos() {
         startDnd(gosPost, "phone");   // Do Not Disturb: the shell's own call alarms follow it too (Notifier.kt)
         startGymWatch(gosPost);   // the gym plan: the shell notifies and rings by itself (src/gymwatch.ts, ps-gos Gym.kt)
         startRemWatch(gosPost);   // the Annoying 15 min reminders: the shell notifies by itself (src/remwatch.ts, ps-gos Remind.kt)
+        startDayCount(gosPost, "phone");   // PS 1.70 the day countdown: the shell notifies by itself while PS is closed (src/daycount.ts, ps-gos DayEnd.kt)
         startSquad();   // G Squad (V1.40): the phone counts as working while PS runs on it, and shares tasks (src/squad/engine.ts)
         startGymSquad();   // G Squad Fitness (V1.40): your Fitness and Sleep cards and the boards (src/squad/gym.ts)
         startCalRefresh(() => state.visible);   // the calendar every 2 minutes, only while PS is on screen; the server reads Google every minute (src/calrefresh.ts)
@@ -351,6 +354,7 @@ export function startMobileWeb() {
   addEventListener("offline", () => { state = { ...state, online: false }; subs.forEach((f) => f()); });
   // PS 1.66: the island drawn inside the app (gos/PhoneIsland.tsx) reads the same island state; there is no shell to post it to.
   startIsland(() => {});
+  startDayCount(null, "web");   // PS 1.70 the day countdown's card, drawn inside the page (views/DayCountdown.tsx)
 }
 
 // ---------- asks from the page ----------

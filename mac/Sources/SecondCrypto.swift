@@ -289,9 +289,10 @@ final class SecondIdentity {
   /// A machine command's own rules after open() (core/second.ts acceptCmd): the signer a trusted primary or phone,
   /// a known action, a life of 2 minutes at most and not over, no other keys. nil: it may run.
   /// The machine commands there are: restart, shut down, lock, cancel, postpone (V1.28), and set:<mode>:<minutes>
-  /// (V1.28, the developer: his main Mac chooses this Mac's auto reboot, mode off, watch or active, 10 minutes to 72 hours).
+  /// (V1.28, the developer: his main Mac chooses this Mac's auto reboot, mode off, watch or active, 10 minutes to 72 hours), and
+  /// sentry (PS 1.69: start Sentry mode on this Mac; from the main Mac only).
   static func cmdAction(_ a: String) -> Bool {
-    if ["restart", "shutdown", "lock", "cancel", "postpone"].contains(a) { return true }
+    if ["restart", "shutdown", "lock", "cancel", "postpone", "sentry"].contains(a) { return true }
     return autoRebootSet(a) != nil
   }
   /// "set:active:1080" as (mode, minutes), or nil for anything else (10 to 4320, no leading zero).
@@ -306,7 +307,7 @@ final class SecondIdentity {
     guard signerRole == "primary" || signerRole == "phone" else { return "Not signed by your primary" }
     guard let a = b["action"] as? String, cmdAction(a) else { return "Unknown command" }
     // Only the main Mac chooses this Mac's auto reboot; the phone may restart, shut down, lock and postpone.
-    if autoRebootSet(a) != nil && signerRole != "primary" { return "Not signed by your primary" }
+    if (autoRebootSet(a) != nil || a == "sentry") && signerRole != "primary" { return "Not signed by your primary" }
     let nowMs = now.timeIntervalSince1970 * 1000
     guard let exp = (b["exp"] as? NSNumber)?.doubleValue, let at = (b["at"] as? NSNumber)?.doubleValue, exp >= nowMs, exp - at <= 121_000 else { return "Too old" }
     guard Set(b.keys).isSubset(of: ["v", "t", "id", "from", "to", "at", "exp", "action"]) else { return "Bad arguments" }

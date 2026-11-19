@@ -19,7 +19,8 @@ const sheets = (dir: string): string[] => readdirSync(dir).flatMap((f) => {
 });
 const rules = (text: string) => text.replace(/\/\*[\s\S]*?\*\//g, "").split("}").map((b) => { const i = b.lastIndexOf("{"); return i < 0 ? null : { sel: b.slice(0, i).replace(/^[\s\S]*\{/, "").trim(), body: b.slice(i + 1) }; })
   .filter((r): r is { sel: string; body: string } => !!r && !!r.sel);
-const row = map.slice(map.indexOf('<div className="tm-tr2">'), map.indexOf('<div className="tm-side tm-right">'));
+// PS 1.70: the four are rows of the top right menu now (views/TopMenu.tsx); their real buttons sit hidden inside it.
+const row = map.slice(map.indexOf("const rest = ("), map.indexOf("return isPhoneBuild() ? rest : <Slot id=\"menu\"><TopMenu>{rest}</TopMenu></Slot>;"));
 
 ok("the cause: no stylesheet places a top bar button by hand with its own right offset", () => {
   // The exact V1.40 shape: `.tm-tr .<button> { position: absolute; ... right: Npx }`. Two of these 2px apart hid G Squad.
@@ -31,15 +32,12 @@ ok("the cause: no stylesheet places a top bar button by hand with its own right 
   assert.deepEqual(bad, []);
 });
 
-ok("the padlock, Second Computer, G Squad and the moon are all in the one row, G Squad just left of the moon", () => {
-  assert.ok(row.length > 0, "the row is in TaskMap.tsx");
-  const at = (c: string) => row.indexOf(`<${c}`);
-  const sec = at("SecurityButton"), sc = at("SecondButton"), g = at("GSquadButton"), moon = at("DndButton");
-  assert.ok(sec > 0 && sc > sec && g > sc && moon > g, `order in the row: Security ${sec}, Second ${sc}, G Squad ${g}, moon ${moon}`);
-  const between = row.slice(row.indexOf(">", g), moon).match(/<(?!Slot\b)[A-Z]\w*/g) ?? [];
-  assert.deepEqual(between, [], "nothing between G Squad and the moon (their Edit mode Slots aside)");
-  // Nothing else of the top bar is placed under it any more: the row closes after the moon.
+ok("PS 1.70: the padlock, Second Computer, G Squad and the moon are each one row of the top right menu (nothing can hide another)", () => {
+  assert.ok(row.length > 100, "the menu's block is in TaskMap.tsx");
+  for (const c of ["SecurityButton", "SecondButton", "GSquadButton", "DndButton"]) assert.equal((row.match(new RegExp(`<${c}\\b`, "g")) ?? []).length, 1, c);
   assert.equal((map.match(/<GSquadButton\b/g) ?? []).length, 1, "one G Squad button");
+  const menu = read("core/topmenu.ts");
+  for (const s of ['sel: ".sec-btn"', 'sel: ".sc-btn[aria-haspopup]"', 'sel: ".gs-btn"', 'sel: ".dnd-btn"']) assert.ok(menu.includes(s), s);
 });
 
 ok("the row is one flex box on the floating list and no box at all elsewhere (the website keeps them in the bar)", () => {

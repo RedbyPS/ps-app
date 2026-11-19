@@ -270,6 +270,15 @@ export const INTROS: IntroDef[] = [
     show: "Ok",
     mark: "spark",
     choice: true,
+  },  {
+    // PS 1.70 the day countdown (core/daycount.ts; the developer let the 1.70 chats choose the words, 19 Nov 2026). One Ok ends it for good (a
+    // `choice` with one button: nothing opens). Only while the feature is on for an owner (views/FeatureIntro.tsx DONE_PROBES).
+    id: "day-countdown-170",
+    headline: "New: a countdown to the end of your day.",
+    ask: "It sits under your headline, and each Priority 1 task shows its own timer. Change them in Settings, Countdown text.",
+    show: "Ok",
+    mark: "spark",
+    choice: true,
   },
   {
     // PS 1.68 (Jan, 18 Nov 2026: "every day you click on it and you complete it it adds a streak"): streaks on repeating tasks and

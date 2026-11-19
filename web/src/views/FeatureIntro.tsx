@@ -10,6 +10,7 @@
 //    stand up, What's new, Welcome back or any other card) and the Mac says no for Sentry mode, Sleep mode, screen sharing and full screen.
 //  - The website and the phone: the same card, plain (no island to hang from), at the top of the page, with the page's own queue.
 //    The phone's Back closes it (gos-back). Reduced motion turns the animation off.
+import { CD_FEATURE } from "../core/daycount";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { PS, onPsSettings, psPost, psSettingsNow, useOverlayShown } from "../ps";
@@ -180,6 +181,8 @@ const DONE_PROBES: Record<string, (can: boolean, s: Snapshot) => Promise<"done" 
   "settings-assistant-165": foldedUnlessTour(async (_can, s) => (feature("settings-assistant") && s.status === "unlocked" && assistPrefs(settingsData(s).assistant).on ? "open" : "unknown")),
   // PS 1.68 streaks on repeating tasks: only while the feature is on, for an owner; Ok ends it for good.
   "task-streaks-168": async (_can, s) => (feature("task-streaks") && s.status === "unlocked" && s.role === "owner" ? "open" : "unknown"),
+  // PS 1.70 the day countdown: while the feature is on for an owner; Ok ends it for good.
+  "day-countdown-170": async (_can, s) => (feature(CD_FEATURE) && s.status === "unlocked" && s.role === "owner" ? "open" : "unknown"),
   screenrec: async () => { askScreenRec(); return introAudience({ mac: PS, st: screenRecNow() }); },
   whatsapp: async (can) => {
     if (!can) return "unknown";   // no own Supabase project to link (yet): wait and look again, never retire for good on what may be a still loading vault

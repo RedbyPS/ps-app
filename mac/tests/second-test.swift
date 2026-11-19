@@ -466,6 +466,10 @@ check("cmd-primary-set-ok", cmdResult(m4.sign(cmdBody("c-set-0001", action: "set
 check("cmd-phone-set-refused", cmdResult(phone.sign(cmdBody("c-set-0002", from: phone, action: "set:active:1080"))) == "Not signed by your primary")
 check("cmd-set-format", ["set:active:9", "set:active:4321", "set:boom:600", "set:active:0600", "set:active:1:2", "set:active:", "set::600", "SET:active:600", "set:active:+600", "set:active:10000"]
   .enumerated().allSatisfy { i, a in cmdResult(m4.sign(cmdBody("c-setb-\(i)", action: a))) == "Unknown command" })
+// PS 1.69: sentry starts Sentry mode on this Mac, from the main Mac only (never the phone or another secondary), no arguments.
+check("cmd-primary-sentry-ok", cmdResult(m4.sign(cmdBody("c-sen-0001", action: "sentry"))) == "ok")
+check("cmd-phone-sentry-refused", cmdResult(phone.sign(cmdBody("c-sen-0002", from: phone, action: "sentry"))) == "Not signed by your primary")
+check("cmd-sentry-no-arguments", cmdResult(m4.sign(cmdBody("c-sen-0003", action: "sentry", extra: ["plan": "x"]))) == "Bad arguments")
 check("cmd-set-parsed", SecondIdentity.autoRebootSet("set:watch:4320").map { $0.mode == "watch" && $0.minutes == 4320 } == true && SecondIdentity.autoRebootSet("set:watch:7.5") == nil)
 func phoneOpen(_ t: String, _ extra: [String: Any]) -> String {
   var b: [String: Any] = ["v": 1, "t": t, "id": "p-\(t)-0001", "from": phone.device, "to": m1.device, "at": nowMs]

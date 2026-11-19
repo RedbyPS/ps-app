@@ -11,7 +11,7 @@
 //   - an Outline in a Notebook look (the notebook draws its own plain box instead).
 // Now the preview stages what is missing (an example Priority 1 group, the first task as working on, the background
 // at full strength) and says so in the chip, and tests/lookspreview.test.ts checks every option is on screen.
-import { bgDesign, isVideoBg } from "./prio.ts";
+import { bgDesign, isImageBg, isVideoBg } from "./prio.ts";
 import { isColourBg } from "./bgcolour.ts";
 import type { LooksPart } from "./looksoptions";
 
@@ -78,6 +78,8 @@ export function previewStage(part: LooksPart | null, id: string | null, c: Stage
 
 export type Layers = {
   scene: boolean; storm: boolean; video: boolean; colour: boolean;
+  /** PS 1.70: a still picture (Neon city), drawn like a video. */
+  image: boolean;
   /** Whether any background is drawn at all. */
   drawn: boolean;
   /** Its strength, 0 to 1 (the glass slider, or 1 while a preview forces it). */
@@ -96,12 +98,13 @@ export function bgLayers(o: { bg: string; docked: boolean; hasP1: boolean; fade:
   const storm = !o.docked && bg.startsWith("storm-");
   const video = !o.docked && isVideoBg(bg);
   const colour = !o.docked && isColourBg(bg);
+  const image = !o.docked && isImageBg(bg);
   const on = o.fade > 0 || o.sliding || o.stage.forceBg;
-  const any = scene || storm || video || colour;
+  const any = scene || storm || video || colour || image;
   return {
-    scene, storm, video, colour, p1,
+    scene, storm, video, colour, image, p1,
     drawn: any && on,
     fade: o.stage.forceBg ? 1 : o.fade,
-    calm: !o.docked && (scene || storm || video || colour || o.rain),
+    calm: !o.docked && (scene || storm || video || colour || image || o.rain),
   };
 }

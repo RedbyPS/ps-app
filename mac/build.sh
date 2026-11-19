@@ -49,6 +49,9 @@ if MC="$(cd "$MCDIR" 2>/dev/null && pwd)"; then
 else
   echo "WARNING: no middle-click folder (mac/middle-click, or next to this one): PS is built without the Force Touch middle click helper"
 fi
+# PS 1.69: "Remote Screen.app", the remote screen's own Dock app (tools/remote-screen-app; PS copies it to ~/Applications
+# only on the person's click). Signed below like the translator helper. A build without it still works (no Dock app button).
+bash "$HERE/tools/remote-screen-app/build.sh" "$APP/Contents/Resources" || { echo "WARNING: the Remote Screen Dock app did not build"; rm -rf "$APP/Contents/Resources/Remote Screen.app"; }
 cp "$HERE/Info.plist" "$APP/Contents/Info.plist"
 # V1.49 (the developer, 12 Nov 2026: the app is called "PS app" for everyone): Finder, the Dock, Launchpad, Spotlight, the
 # menu bar and notifications read the app's name from here. Info.plist keeps "PS" (it matches the folder PS.app
@@ -122,12 +125,14 @@ if [ -f "$KC" ] && [ -f "$SIGN/.keychain-pass" ]; then
   # rebootd is already signed (tools/helper-pin.sh): signing it again here would be fine for its cdhash, but it is
   # left exactly as pinned.
   [ -f "$APP/Contents/Resources/PSTranslate" ] && codesign --force --options runtime --keychain "$KC" --sign "$ID" --identifier com.cincee.ps.translate "$APP/Contents/Resources/PSTranslate"
+  [ -d "$APP/Contents/Resources/Remote Screen.app" ] && codesign --force --options runtime --keychain "$KC" --sign "$ID" --identifier com.cincee.ps.screen "$APP/Contents/Resources/Remote Screen.app"
   # Not --deep: the middle click helper inside is already signed as itself (--deep with --identifier
   # would sign it again as com.cincee.ps). The outer signature still seals it.
   codesign --force --options runtime --entitlements "$HERE/ps.entitlements" --keychain "$KC" --sign "$ID" --identifier com.cincee.ps "$APP"
 else
   echo "WARNING: signing keychain missing, signing ad hoc (Accessibility will need granting again)"
   [ -f "$APP/Contents/Resources/PSTranslate" ] && codesign --force --sign - --identifier com.cincee.ps.translate "$APP/Contents/Resources/PSTranslate"
+  [ -d "$APP/Contents/Resources/Remote Screen.app" ] && codesign --force --sign - --identifier com.cincee.ps.screen "$APP/Contents/Resources/Remote Screen.app"
   codesign --force --sign - --identifier com.cincee.ps "$APP"   # the middle click helper inside is already signed ad hoc
 fi
 

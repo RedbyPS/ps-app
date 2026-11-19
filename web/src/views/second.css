@@ -5,6 +5,7 @@
   transition: color .3s ease, background .3s ease, border-color .3s ease, transform .15s ease; }
 .sc-btn:hover, .sc-btn.open { color: var(--k-fg, #FFFFFF); border-color: color-mix(in srgb, var(--k-fg, #FFFFFF) min(100%, calc(32% * var(--k-ia, 1))), transparent); background: color-mix(in srgb, var(--k-fg, #FFFFFF) min(100%, calc(10% * var(--k-ia, 1))), transparent); }
 .sc-btn:active { transform: scale(.92); }
+.sc-pair { display: flex; gap: 6px; align-items: center; }   /* PS 1.69: Second Computer and the Remote screen switch side by side */
 .sc-dot { position: absolute; right: 3px; bottom: 3px; width: 8px; height: 8px; border-radius: 50%; background: color-mix(in srgb, var(--k-fg, #FFFFFF) 55.9%, var(--k-base, #000000)); box-shadow: 0 0 0 2px var(--k-surface, #161016); }
 .sc-on .sc-dot { background: var(--k-ok, #3BD67A); }
 .sc-busy .sc-dot { background: var(--k-acc, #EC4E86); animation: scBreath 1.6s ease-in-out infinite; }

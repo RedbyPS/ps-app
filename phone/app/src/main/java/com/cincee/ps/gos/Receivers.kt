@@ -33,6 +33,10 @@ object Receivers {
         val rem = sp.getStringSet("rem", emptySet())!!
         rem.forEach { s -> runCatching { JSONObject(s) }.getOrNull()?.takeIf { it.optString("type") == "remAct" }?.let { WebHost.post(it) } }
         if (rem.isNotEmpty()) sp.edit().remove("rem").apply()
+        // PS 1.70 the day countdown answered on a notification while the page slept (DayEnd.kt): {type:"dayAct"} as it was.
+        val day = sp.getStringSet("day", emptySet())!!
+        day.forEach { s -> runCatching { JSONObject(s) }.getOrNull()?.takeIf { it.optString("type") == "dayAct" }?.let { WebHost.post(it) } }
+        if (day.isNotEmpty()) sp.edit().remove("day").apply()
         if (ids.isEmpty() && reminds.isEmpty()) return
         ids.forEach { WebHost.post(JSONObject().put("type", "cardAction").put("id", it).put("action", "dismiss")) }
         reminds.forEach { r ->
@@ -105,7 +109,7 @@ object Receivers {
             val updated = i.action == Intent.ACTION_MY_PACKAGE_REPLACED
             val done = goAsync()
             Work.post { try { Alarms.restore(app); if (updated) Updater.cleanup(app) } finally { done.finish() } }
-            Pulse.schedule(c); Quiet.sync(c); WatchService.sync(c); LiveService.sync(c); Reminds.restore(c); Fitness.restore(c); Gym.restore(c); Sleep.restore(c); Remind.restore(c); Soundboard.restore(c)
+            Pulse.schedule(c); Quiet.sync(c); WatchService.sync(c); LiveService.sync(c); Reminds.restore(c); Fitness.restore(c); Gym.restore(c); Sleep.restore(c); Remind.restore(c); Soundboard.restore(c); DayEnd.restore(c)
             if (updated) {
                 Notifier.updated(c, BuildConfig.VERSION_NAME)
                 // Back on screen by itself where GrapheneOS allows it (it does with Display over other apps).

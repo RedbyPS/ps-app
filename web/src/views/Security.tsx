@@ -27,6 +27,7 @@ import { helperWords } from "../core/helperwords";
 import { appName } from "../core/appname";
 import "./macsettings.css";
 import "./security.css";
+import { TopIcon } from "./topicons";
 
 let open = false;
 const listeners = new Set<() => void>();
@@ -68,17 +69,7 @@ function needsLook(r: RebootSettings | undefined, v: SecondView) {
   return r?.fileVault === "off" || r?.passwordImmediately === false || r?.helper === "approve" || (v.role === "primary" && restartsSoon(v.machine));
 }
 
-function Padlock({ size = 18 }: { size?: number }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <rect x="5" y="10.5" width="14" height="10" rx="2.2" />
-      <path d="M8.2 10.5V7.6a3.8 3.8 0 0 1 7.6 0v2.9" />
-      <path d="M12 14.4v2.4" />
-    </svg>
-  );
-}
-
-/** The padlock, top right of the Tab list, just left of the Second Computer button. PS on a Mac only. */
+/** Security, a row in the top right menu (PS 1.70, views/TopMenu.tsx; a shield since then). PS on a Mac only. */
 export function SecurityButton({ s }: { s: Snapshot }) {
   const want = useOpen();
   const st = usePsSettings();
@@ -90,7 +81,7 @@ export function SecurityButton({ s }: { s: Snapshot }) {
     <button type="button" className={`sec-btn${want ? " sec-open" : ""}${warn ? " sec-warn" : ""}`} onClick={() => { sfx.click(); openSecurity(!want); }}
       aria-haspopup="dialog" aria-expanded={want} aria-label={label}
       data-tip={warn ? "Security needs a look" : "Security"} data-tip-line={warn ? "Click to see what needs you" : "Auto reboot, Are you sure and signing in"}>
-      <Padlock />
+      <TopIcon id="security" />   {/* PS 1.70: a shield (the padlock means Lock now), the menu's own */}
       {warn && <i className="sec-dot" aria-hidden="true" />}
     </button>
   );

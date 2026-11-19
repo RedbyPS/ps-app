@@ -134,7 +134,7 @@ ok("Mac only settings never show on the website or phone, phone ones only on the
 });
 ok("the side menu has the developer's groups in order, each with something in it", () => {
   const mac = groupsFor(FRIEND_MAC).map((g) => g.id);
-  assert.deepEqual(mac, ["about", "friend", "list", "controls", "assistant", "looks", "notify", "remind", "chkremind", "telegram", "api", "time", "shortcuts", "keys", "island", "mac", "power", "sync", "privacy", "fitness", "pomodoro", "standup", "posture", "sleep", "sentry", "gsquad"]);   // V1.58: the Dynamic island, Pomodoro timer and Stand-up reminders, tabs of their own
+  assert.deepEqual(mac, ["about", "friend", "list", "controls", "assistant", "looks", "notify", "remind", "chkremind", "telegram", "api", "time", "countdown", "shortcuts", "keys", "island", "mac", "power", "sync", "privacy", "fitness", "pomodoro", "standup", "posture", "sleep", "sentry", "gsquad"]);   // PS 1.70: Countdown text after Time and reset. V1.58: the Dynamic island, Pomodoro timer and Stand-up reminders, tabs of their own
   for (const ctx of [FRIEND_MAC, FRIEND_WEB, PHONE, RED_MAC]) for (const g of groupsFor(ctx)) {
     const r = rowsOf(g.id, ctx);
     assert.ok(r.main.length > 0, `${ctx.where} ${g.id}: a row before More`);

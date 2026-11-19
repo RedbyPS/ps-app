@@ -34,6 +34,11 @@ final class RemoteCommand {
       DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { let ok = RemoteCommand.screenLocked(); done(ok, ok ? nil : "The screen did not lock") }
     case "postpone":
       AutoReboot.shared.postpone(from: who) { done($0 == nil, $0) }
+    case "sentry":   // PS 1.69: Sentry mode from the main Mac (the Dock app's menu, the remote screen's menu), with the default plan
+      if IS_TEST_COPY { testDid.append("sentry"); return done(true, nil) }
+      if RemoteCommand.screenLocked() { return done(false, "This Mac is locked. Sentry mode starts only while it is unlocked.") }
+      Sentry.shared.handle("sentry:start", ["plan": [String: Any]()])
+      done(true, nil)
     case _ where SecondIdentity.autoRebootSet(action) != nil:
       let s = SecondIdentity.autoRebootSet(action)!
       AutoReboot.shared.setFromMain(mode: s.mode, minutes: s.minutes, from: who)

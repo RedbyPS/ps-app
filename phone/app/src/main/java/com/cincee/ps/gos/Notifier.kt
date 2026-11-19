@@ -62,6 +62,9 @@ object Notifier {
             // The Annoying 15 min reminder (Remind.kt): PS plays each reminder's own sound itself, so the channel is silent.
             NotificationChannel(Remind.RING_CH, "Reminder ring", NotificationManager.IMPORTANCE_HIGH).apply {
                 description = "A reminder rings like an alarm for a minute and shows a full screen card. PS plays the sound itself."; setSound(null, null); enableVibration(false); setBypassDnd(false) },
+            // PS 1.70 the day countdown while PS is closed (DayEnd.kt): End day now? and the time left reminders.
+            NotificationChannel(DayEnd.CH, "Day countdown", NotificationManager.IMPORTANCE_HIGH).apply {
+                description = "End day now? when your day reaches zero, and how much of your day is left." },
             NotificationChannel(Remind.CH, "Annoying reminders", NotificationManager.IMPORTANCE_HIGH).apply {
                 description = "Pops up from its start time until you confirm it. Remind me in, or swiping it away, brings it back later."; setSound(null, null); enableVibration(true) },
             // The Soundboard's timed plays (Soundboard.kt): PS plays the file itself on the alarm stream, so the channel is silent.

@@ -42,10 +42,18 @@ export const MAX_EXTRA = 120;
  *  keep: never removable (the gear opens Settings). red: the developer's own (other accounts never see it, so never in their tray). */
 export type SlotInfo = { id: string; label: string; keep?: boolean; red?: boolean; mail?: boolean; off?: boolean; inner?: string; ps?: boolean; wide?: boolean;
   /** PS 1.65 (G Squad pieces): off the page until the person adds one from the Add panel gallery. The original is never drawn, only copies. */
-  optIn?: boolean };
+  optIn?: boolean;
+  /** PS 1.70 (the developer, 19 Nov 2026: "simplify it, kind of like Apple does"): the original lives in the top right menu
+   *  (views/TopMenu.tsx), drawn on every page but never on the page itself. A copy from the Add panel gallery is a button
+   *  on the page, in the top right row. */
+  menu?: boolean;
+  /** PS 1.70: its copies are drawn where its original sits (TaskMap.tsx InlineCopies), not at the end of the column. */
+  inPlace?: boolean };
 export const SLOTS: readonly SlotInfo[] = [
   { id: "clocks", label: "Time zones" },
-  { id: "pomodoro", label: "Pomodoro" },   // V1.58: between Time zones and Sentry mode (views/Pomodoro.tsx)
+  // V1.58: between Time zones and Sentry mode (views/Pomodoro.tsx). PS 1.70 (the developer, 19 Nov 2026): off the main screen for
+  // everyone, the developer too; added from Edit mode's Add panel, and then drawn in that same place.
+  { id: "pomodoro", label: "Pomodoro", optIn: true, inPlace: true },
   { id: "sentry", label: "Sentry mode (AI)" },   // V1.48: between Time zones and Timelines
   { id: "timelines", label: "Timelines" },
   { id: "series", label: "Series map" },
@@ -57,21 +65,24 @@ export const SLOTS: readonly SlotInfo[] = [
   { id: "fitness", label: "Fitness" },
   { id: "soundboard", label: "Soundboard" },
   { id: "glass", label: "Transparency slider, Keep overlay and Hover mode" },
-  { id: "afk", label: "Away badge" },
+  // The top right (PS 1.70): only Screen time, the menu and the gear stay on the page. Every other button there lives in
+  // the menu (menu: true); the Add panel gallery still offers each one as a button of its own.
+  { id: "afk", label: "AFK timer", menu: true },
   { id: "screentime", label: "Screen time" },
-  { id: "brief", label: "Morning brief", red: true },
-  { id: "endday", label: "End day" },
-  { id: "net", label: "Network" },
-  { id: "activity", label: "Activity monitor", ps: true },   // PS 1.65 (views/ActivityMonitor.tsx): the chart button next to Network, Mac only
-  { id: "lowpower", label: "Low power mode" },   // PS 1.65 (views/LowPowerButton.tsx): the on/off button, next to Network
-  { id: "mixer", label: "Volume mixer" },
-  { id: "clipboard", label: "Clear clipboard" },
+  { id: "brief", label: "Morning brief", red: true, menu: true },
+  { id: "endday", label: "End day", menu: true },
+  { id: "net", label: "Network", menu: true },
+  { id: "activity", label: "Activity monitor", ps: true, menu: true },   // PS 1.65 (views/ActivityMonitor.tsx), Mac only
+  { id: "lowpower", label: "Low power mode", menu: true },   // PS 1.65 (views/LowPowerButton.tsx): the on/off button
+  { id: "mixer", label: "Volume mixer", menu: true },
+  { id: "clipboard", label: "Clear clipboard", menu: true },
+  { id: "menu", label: "Menu", keep: true },   // PS 1.70 (views/TopMenu.tsx): everything else in the top right; never removed
   { id: "gear", label: "Settings", keep: true },
-  { id: "security", label: "Security" },
-  { id: "second", label: "Second Computer" },   // PS 1.65: everyone's, once Second Computer is switched on (slotOk)
-  { id: "gsquad", label: "G Squad" },
-  { id: "dnd", label: "Do Not Disturb" },
-  { id: "pskeys", label: "Tab and Lock", keep: true },
+  { id: "security", label: "Security", menu: true },
+  { id: "second", label: "Second Computer", menu: true },   // PS 1.65: everyone's, once Second Computer is switched on (slotOk)
+  { id: "gsquad", label: "G Squad", menu: true },
+  { id: "dnd", label: "Do Not Disturb", menu: true },
+  { id: "pskeys", label: "Tab and Lock", keep: true, menu: true },
   { id: "mail", label: "Client emails", mail: true },
   { id: "screenrec", label: "Record screen", ps: true },   // PS 1.60 (views/ScreenRec.tsx): right below the email panel, only after the person switched screen recording on
   { id: "receipts", label: "Purchases" },   // PS 1.65 (views/Purchases.tsx): the receipts finance screen, below Record screen
@@ -96,6 +107,9 @@ export const SLOTS: readonly SlotInfo[] = [
 /** Panels wide enough to get a width handle in the overview (buttons only get the size handle). */
 const WIDE = new Set(["clocks", "timelines", "meetings", "campaigns", "dimx", "glass", "mail", "squadp1", "sqchat", "sqconvs", "sqboard", "sqdone", "sqnow", "meetnotes", "leftovers", "newtasks", "overdue", "series", "numerology"]);
 const KNOWN = new Map(SLOTS.map((s) => [s.id, s]));
+/** PS 1.70: the kinds that live in the top right menu and can be added as a button of their own (TaskMap.tsx draws
+ *  those copies in the top right row). */
+export const MENU_SLOT_IDS: readonly string[] = SLOTS.filter((s) => s.menu && !s.keep).map((s) => s.id);
 /** The kind of a panel: its own id, or the part before the dot for a copy ("sleep.k3f9a" is a Sleep). */
 export const kindOf = (id: string) => id.split(".")[0];
 export const isCopy = (id: string) => id.includes(".");
@@ -103,6 +117,11 @@ export const slotLabel = (id: string) => KNOWN.get(kindOf(id))?.label ?? id;
 export const slotInfo = (id: string) => KNOWN.get(kindOf(id));
 /** Off the page by default: only copies of it are ever drawn (the original is not on any page). */
 export const isOptIn = (id: string) => !isCopy(id) && !!KNOWN.get(id)?.optIn;
+/** PS 1.70: an original that lives in the top right menu (never a copy: a copy is a button on the page). */
+export const inMenu = (id: string) => !isCopy(id) && !!KNOWN.get(id)?.menu;
+/** PS 1.70: its copies are drawn where the original sits (TaskMap.tsx InlineCopies), or in the top right row for a
+ *  menu one; the rest at the end of the original's column (EditMode.tsx CopySlots). */
+export const copiesInPlace = (kind: string) => !!(KNOWN.get(kind)?.inPlace || KNOWN.get(kind)?.menu);
 /** Drawn where there is no Edit mode (the website, the phone's own page): every panel but an opt in original, which is on no page. */
 export const drawsBare = (id: string) => !isOptIn(id);
 export const isWide = (id: string) => WIDE.has(kindOf(id));
@@ -209,7 +228,7 @@ export const resetLayout = (at: string): TabLayout => ({ pos: {}, hidden: [], at
 /** A panel the person may have: the developer's own ones need the developer's account, Client emails needs its switch (core/mailswitch.ts). */
 const slotOk = (s: SlotInfo, red: boolean) => s.mail ? mailAllowed() : s.id === "second" ? secondAllowed() : red || !s.red;
 export function trayOf(l: TabLayout, red: boolean): string[] {
-  return SLOTS.filter((s) => l.hidden.includes(s.id) && slotOk(s, red) && !s.off).map((s) => s.id);
+  return SLOTS.filter((s) => l.hidden.includes(s.id) && slotOk(s, red) && !s.off && !s.menu && !s.optIn).map((s) => s.id);
 }
 
 // ---------- V1.55: pages, copies, sizes and each panel's own settings (the Edit mode overview) ----------
@@ -235,7 +254,7 @@ export const cfgOf = (l: TabLayout, id: string): InstCfg => l.cfg?.[id] ?? {};
  *  copies there (in the order they were added). red: the developer's account (his own panels are only ever his). */
 export function onPage(l: TabLayout, page: string, red: boolean, pages?: ReadonlySet<string>): string[] {
   const ok = (id: string) => { const s = slotInfo(id); return !!s && !s.off && slotOk(s, red); };
-  const orig = SLOTS.filter((s) => !s.inner && !s.optIn && !l.hidden.includes(s.id) && ok(s.id) && pageOf(l, s.id, pages) === page).map((s) => s.id);
+  const orig = SLOTS.filter((s) => !s.inner && !s.optIn && !s.menu && !l.hidden.includes(s.id) && ok(s.id) && pageOf(l, s.id, pages) === page).map((s) => s.id);
   const copies = (l.extra ?? []).filter((id) => ok(id) && pageOf(l, id, pages) === page);
   return [...orig, ...copies];
 }
@@ -279,7 +298,7 @@ export function putOnPage(l: TabLayout, id: string, page: string, at: string): T
 export function addPanel(l: TabLayout, kind: string, page: string, at: string, p?: SlotPos, rnd?: () => number): { layout: TabLayout; id: string | null } {
   const s = KNOWN.get(kind);
   if (!s || s.off || !PAGE_ID.test(page)) return { layout: l, id: null };
-  if (!s.inner && !s.optIn && l.hidden.includes(kind)) {
+  if (!s.inner && !s.optIn && !s.menu && l.hidden.includes(kind)) {
     let n = putOnPage(showSlot(l, kind, at), kind, page, at);
     if (p) n = moveSlot(n, kind, p, at);
     return { layout: n, id: kind };
@@ -339,11 +358,12 @@ export function dropPage(l: TabLayout, page: string, at: string): TabLayout {
 }
 /** The Add panel gallery: every panel and button this account can have, always (a removed one never leaves it),
  *  with how many sit on the page shown and on all pages. ps: running in PS on a Mac (some only work there). */
-export type GalleryItem = { kind: string; label: string; here: number; all: number; removed: boolean; inner?: string };
+export type GalleryItem = { kind: string; label: string; here: number; all: number; removed: boolean; inner?: string; menu?: boolean };
 export function gallery(l: TabLayout, page: string, red: boolean, ps: boolean, pages?: ReadonlySet<string>): GalleryItem[] {
   return SLOTS.filter((s) => !s.off && slotOk(s, red) && (ps || !s.ps) && !s.keep).map((s) => {
-    const ids = [...(!s.inner && !s.optIn && !l.hidden.includes(s.id) ? [s.id] : []), ...(l.extra ?? []).filter((x) => kindOf(x) === s.id)];
-    return { kind: s.id, label: s.label, here: ids.filter((id) => pageOf(l, id, pages) === page).length, all: ids.length, removed: !s.inner && !s.optIn && l.hidden.includes(s.id), ...(s.inner ? { inner: s.inner } : {}) };
+    const own = !s.inner && !s.optIn && !s.menu;
+    const ids = [...(own && !l.hidden.includes(s.id) ? [s.id] : []), ...(l.extra ?? []).filter((x) => kindOf(x) === s.id)];
+    return { kind: s.id, label: s.label, here: ids.filter((id) => pageOf(l, id, pages) === page).length, all: ids.length, removed: own && l.hidden.includes(s.id), ...(s.inner ? { inner: s.inner } : {}), ...(s.menu ? { menu: true } : {}) };
   });
 }
 
@@ -387,8 +407,11 @@ export function slotStyle(p0: SlotPos, z = 1): Record<string, string> {
 export const FOLLOWS: Readonly<Record<string, string>> = { pomodoro: "clocks" };
 export const FOLLOW_GAP = 8;
 export function followStyle(l: TabLayout, id: string): Record<string, string> | null {
-  const lead = FOLLOWS[id];
-  if (!lead || isCopy(id) || l.pos[id] || l.hidden.includes(lead)) return null;
+  const kind = kindOf(id), lead = FOLLOWS[kind];
+  if (!lead || l.pos[id] || l.hidden.includes(lead)) return null;
+  // PS 1.70: Pomodoro is only ever a copy now (added in Edit mode). The first one on Time zones' page follows it, as the
+  // original did; any more sit in the column.
+  if (isCopy(id) && (l.extra ?? []).find((x) => kindOf(x) === kind && (l.page?.[x] ?? "main") === (l.page?.[lead] ?? "main")) !== id) return null;
   const p = l.pos[lead];
   if (!p || (l.page?.[lead] ?? "main") !== (l.page?.[id] ?? "main")) return null;
   const z = sizeOf(l, lead), h = Math.round(p.h * z);

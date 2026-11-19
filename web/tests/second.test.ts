@@ -258,7 +258,7 @@ const cmd = (over: object = {}) => ({ v: 1, t: "cmd", id: "c-1", from: M4, to: M
 const acceptCmd = (env: unknown, o = {}) => S.acceptCmd(env, { trusted: trustedOnM1, me: M1, now: T0 + 30_000, ...o });
 const cmdRefused = async (env: unknown, reason: string, o = {}) => { const r = await acceptCmd(env, o); assert.equal(r.ok, false); if (!r.ok) assert.equal(r.reason, reason); };
 await ok("remote restart, shut down and lock: accepted when signed by the primary inside 2 minutes", async () => {
-  for (const action of ["restart", "shutdown", "lock", "cancel", "postpone"]) assert.equal((await acceptCmd(await S.signBody(m4.priv, M4, cmd({ action })))).ok, true, action);
+  for (const action of ["restart", "shutdown", "lock", "cancel", "postpone", "sentry"]) assert.equal((await acceptCmd(await S.signBody(m4.priv, M4, cmd({ action })))).ok, true, action);
 });
 await ok("postpone (V1.28, one more hour on the other Mac's auto reboot) takes no arguments", async () => {
   await cmdRefused(await S.signBody(m4.priv, M4, cmd({ id: "c-pp", action: "postpone", minutes: 600 })), "Bad arguments");
@@ -330,6 +330,9 @@ await ok("a trusted phone may send restart, shut down or lock, but never a job",
   assert.equal((await acceptCmd(await S.signBody(phone.priv, "phone-1", cmd({ id: "c-ph-pp", from: "phone-1", action: "postpone" })), { trusted: withPhone })).ok, true);
   const ps = await acceptCmd(await S.signBody(phone.priv, "phone-1", cmd({ id: "c-ph-set", from: "phone-1", action: "set:active:60" })), { trusted: withPhone });
   assert.equal(ps.ok, false); if (!ps.ok) assert.equal(ps.reason, "Not signed by your primary");
+  // PS 1.69: Sentry mode on the other Mac is the main Mac's alone too.
+  const pse = await acceptCmd(await S.signBody(phone.priv, "phone-1", cmd({ id: "c-ph-sentry", from: "phone-1", action: "sentry" })), { trusted: withPhone });
+  assert.equal(pse.ok, false); if (!pse.ok) assert.equal(pse.reason, "Not signed by your primary");
   await refused(await S.signBody(phone.priv, "phone-1", job({ from: "phone-1" })), "Not signed by your primary", { trusted: withPhone });
   await cmdRefused(c, "Not signed by a paired Mac");   // not trusted on this Mac: refused
 });

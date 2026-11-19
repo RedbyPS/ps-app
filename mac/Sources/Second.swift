@@ -18,6 +18,23 @@ import UniformTypeIdentifiers
 
 final class Second {
   static let shared = Second()
+  /// Posted (main thread) when the role, the switch or the key changes: the remote screen (RemoteScreen.swift) starts or
+  /// stops its listener to match.
+  static let changed = Notification.Name("PSSecondChanged")
+  /// The device key and pairing list once loaded (the remote screen's handshake signs and checks with them). Main thread.
+  var identity: SecondIdentity? { id }
+  /// The secondary's remote screen addresses for its heartbeat (RemoteScreen.hint), and what the primary last heard.
+  var screenHint: (() -> [String: Any]?)?
+  var peerScreen: [String: Any]? { peerStat?["scr"] as? [String: Any] }
+  /// A machine command through the vault (PS 1.69, the remote screen's menus when the direct link is not up): the page signs
+  /// it through this Mac exactly like its own Lock or Restart button (second/store.ts machineCmd), so the other Mac checks it
+  /// the same way. Primary only. False when Second Computer cannot send it now.
+  @discardableResult
+  func machineCmd(_ action: String) -> Bool {
+    guard isOn, role == "primary", unlocked, ["lock", "sentry", "shutdown", "restart"].contains(action) else { return false }
+    post(["type": "second:machineCmd", "action": action])
+    return true
+  }
   let work = DispatchQueue(label: "ps.second", qos: .utility)
   private let test = IS_TEST_COPY
   private(set) var places: SecondPlaces
@@ -255,6 +272,7 @@ final class Second {
     guard started, !off else { return }
     off = true
     psLog("PS second: switched off")
+    NotificationCenter.default.post(name: Second.changed, object: nil)
     runner?.stopAll("Second Computer was switched off"); orunner?.stopAll()
     awake.set(secondary: false)
     statTimer?.invalidate(); statTimer = nil
@@ -406,6 +424,7 @@ final class Second {
     startCli()
     watchShares()
     if was != r { psLog("PS second: this Mac is now \(r)"); sendStat(force: true); publish() }
+    NotificationCenter.default.post(name: Second.changed, object: nil)
   }
 
   private func post(_ d: [String: Any]) {
@@ -475,6 +494,7 @@ final class Second {
     signed(b, req: req)
     sendState()
     psLog("PS second: looking for your other Mac (Pair clicked)")
+    RSLinkPanel.shared.looking()   // PS 1.69: the link animation (RemoteScreenLink.swift)
   }
 
   /// The second Mac's half: a seek from the developer's main Mac, answered without a question.
@@ -502,6 +522,7 @@ final class Second {
             self.sendState()
             psLog("PS second: paired with the main Mac by itself (Pair was clicked there)")
             self.notice("Paired with \(pname)", "This Mac is now your second Mac. \(pname) can send it files, notes and work.")
+            RSLinkPanel.shared.linked(code: SecondIdentity.pairCode(primaryPub: ppub, secondaryPub: id.pub), with: pname, focus: false)   // PS 1.69
           }
         }
       }
@@ -527,6 +548,7 @@ final class Second {
             self.seeks[sk] = nil; self.saveSeeks()
             self.sendState()
             psLog("PS second: paired with the other Mac (one click)")
+            RSLinkPanel.shared.linked(code: SecondIdentity.pairCode(primaryPub: id.pub, secondaryPub: spub), with: sname, focus: true)   // PS 1.69
           }
         }
       }
@@ -806,6 +828,7 @@ final class Second {
     b["have"] = have
     b["app"] = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "?"
     if let m = machine?() { b["machine"] = m }
+    if role == "secondary", let h = screenHint?() { b["scr"] = h }   // the remote screen's port and local addresses (PS 1.69)
     let key = "\(b["power"]!) \(b["busy"]!) \(b["queue"]!) \(have) \(b["machine"].map { "\($0)" } ?? "")"
     guard force || key != lastStatKey else { return }
     lastStatKey = key
@@ -1060,6 +1083,14 @@ final class Second {
       try? fm.removeItem(atPath: path)
       guard let data, data.count < 1 << 20, let r = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
             let rid = r["id"] as? String, SecondJobs.isId(rid), let type = r["type"] as? String else { continue }
+      if type == "screen" {   // the remote screen (RemoteScreen.swift, PS 1.69): open, close or status; nothing goes through the page
+        let a = (r["args"] as? [String: Any])?["action"] as? String ?? "open"
+        DispatchQueue.main.async { [weak self] in
+          switch a { case "close": RemoteScreen.shared.disconnect(); case "status": break; default: RemoteScreen.shared.connect() }
+          self?.cliResult(rid, ["id": rid, "state": "done", "status": ["screen": RemoteScreen.shared.stateName, "numbers": RemoteScreen.shared.numbers]])
+        }
+        continue
+      }
       if type == "outsource" || type == "ocancel" {   // sealed here, never through the page in the clear
         let a = r["args"] as? [String: Any] ?? [:]
         DispatchQueue.main.async { [weak self] in

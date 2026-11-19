@@ -71,7 +71,7 @@ export interface MsgBody extends BodyBase { t: "msg"; text: string; files?: stri
 /** postpone (V1.28): the other Mac's auto reboot comes an hour later (at most 12 hours for one countdown).
  *  set:<mode>:<minutes> (V1.28, main Mac only): the other Mac's auto reboot settings, eg "set:active:1080" (10 to 4320). */
 export type RebootSetMode = "off" | "watch" | "active";
-export type CmdAction = "restart" | "shutdown" | "lock" | "cancel" | "postpone" | `set:${RebootSetMode}:${number}`;
+export type CmdAction = "restart" | "shutdown" | "lock" | "cancel" | "postpone" | "sentry" | `set:${RebootSetMode}:${number}`;
 export interface CmdBody extends BodyBase { t: "cmd"; exp: number; action: CmdAction }
 export interface IdxEntry { p: string; d?: boolean; s: number; m: number; k?: "image" | "pdf" | "text" | "other" }
 export interface IdxBody extends BodyBase { t: "idx"; root: string; name: string; entries: IdxEntry[] }
@@ -249,7 +249,8 @@ export async function acceptJob(env: unknown, o: { trusted: Peer[]; me: string; 
 }
 
 // ---------- remote machine commands (protocol.md section 13; the reboot session runs them) ----------
-export const CMD_ACTIONS: CmdAction[] = ["restart", "shutdown", "lock", "cancel", "postpone"];
+// PS 1.69: "sentry" starts Sentry mode on the second Mac (the remote screen's Dock app and window menus); main Mac only.
+export const CMD_ACTIONS: CmdAction[] = ["restart", "shutdown", "lock", "cancel", "postpone", "sentry"];
 /** "set:active:1080" as its mode and minutes (10 to 4320, no leading zero), or null (the same rule as ps-mac
  *  SecondIdentity.autoRebootSet). */
 export function rebootSet(a: string): { mode: RebootSetMode; minutes: number } | null {
@@ -266,7 +267,7 @@ export async function acceptCmd(env: unknown, o: { trusted: Peer[]; me: string; 
   if (!signer || (signer.role !== "primary" && signer.role !== ("phone" as Role))) return { ok: false, reason: "Not signed by your primary" };
   const b = r.body;
   if (!cmdAction(b.action)) return { ok: false, reason: "Unknown command" };
-  if (rebootSet(b.action) && signer.role !== "primary") return { ok: false, reason: "Not signed by your primary" };   // only the main Mac chooses its settings
+  if ((rebootSet(b.action) || b.action === "sentry") && signer.role !== "primary") return { ok: false, reason: "Not signed by your primary" };   // only the main Mac chooses its settings or starts Sentry mode
   if (!Number.isFinite(b.exp) || b.exp < o.now || b.exp - b.at > CMD_MAX_AGE + 1000) return { ok: false, reason: "Too old" };
   if (Object.keys(b).some((k) => !["v", "t", "id", "from", "to", "at", "exp", "action"].includes(k))) return { ok: false, reason: "Bad arguments" };
   return r;

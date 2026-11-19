@@ -24,6 +24,10 @@ check("test-folder-keeps-updates", UpdateChannel.remote("updates/PS-app-1.zip", 
 // V1.69: a person's own channel on their own web server keeps the updates/ folder publish.sh made.
 let ownBase = URL(string: "https://example.invalid/ps/own-0000/")!
 check("own-channel-keeps-updates", UpdateChannel.remote("updates/PS-app-1.zip", base: ownBase).absoluteString == "https://example.invalid/ps/own-0000/updates/PS-app-1.zip")
+// V1.69 hotfix: a web page answer (a site's page fallback for a file that is not live yet) is never an update file.
+check("web-page-is-not-a-note", UpdateChannel.isWebPage("text/html; charset=UTF-8") && UpdateChannel.isWebPage("TEXT/HTML"))
+check("json-and-zip-are-files", !UpdateChannel.isWebPage("application/json") && !UpdateChannel.isWebPage("application/zip")
+      && !UpdateChannel.isWebPage(nil) && !UpdateChannel.isWebPage("text/plain"))
 
 // 3. The signature check is the same as before: only the developer's key opens a note.
 func hex(_ d: Data) -> String { SHA256.hash(data: d).map { String(format: "%02x", $0) }.joined() }

@@ -113,6 +113,8 @@ export function secondMessage(m: { type?: string; [k: string]: unknown }): boole
     if (roleAsked) { clearTimeout(roleAsked.t); roleAsked = null; }
     note(typeof m.why === "string" && m.why ? m.why.slice(0, 300) : "Second Computer is off on this Mac.");
   }
+  // PS 1.69: the remote screen's menus (Dock app, window) when the direct link is not up: the same signed command as the buttons here.
+  else if (t === "second:machineCmd") { const a = String(m.action); if (["lock", "sentry", "shutdown", "restart"].includes(a)) void machineCmd(a as CmdAction); }
   else if (t === "second:dropProblems") note(Array.isArray(m.list) ? (m.list as unknown[]).map(String).slice(0, 3).join(" ") : null);
   return true;
 }
@@ -702,7 +704,7 @@ export async function machineCmd(action: CmdAction) {
   const env = await sign({ v: 1, t: "cmd", id: crypto.randomUUID(), from: local.me.device, to: v.peer.device, at, exp: at + CMD_MAX_AGE, action });
   await put("scmd", { env });
   void pokeSecond("cmd");
-  note(action === "lock" ? "Asked it to lock." : action === "cancel" ? "Asked it to cancel." : action === "postpone" ? "Asked it to wait an hour longer before its auto reboot."
+  note(action === "lock" ? "Asked it to lock." : action === "sentry" ? "Asked it to start Sentry mode." : action === "cancel" ? "Asked it to cancel." : action === "postpone" ? "Asked it to wait an hour longer before its auto reboot."
     : rebootSet(action) ? "Sent it its auto reboot settings." : v.online
     ? `Asked it to ${action === "restart" ? "restart" : "shut down"}. It stays offline until someone logs in at it.`
     : "Sent. It acts only if it comes online within 2 minutes.");

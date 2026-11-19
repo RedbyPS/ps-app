@@ -495,6 +495,8 @@ export interface Settings {
   postureAsk?: boolean;          // PS 1.65: the first posture pop-up's question ("Do you want to turn the posture reminder off?") was seen; asked once per person
   afkAsk?: boolean;              // PS 1.66: the AFK timer's question ("Do you want to turn the AFK timer off?") was answered; asked once per person
   standAsk?: boolean;            // V1.59: the first stand-up's question ("Do you want to turn stand-up reminders off?") was seen; asked once per person
+  countdown?: Partial<import("./daycount").CdPrefs>;   // PS 1.70 the day countdown (core/daycount.ts): Settings, Countdown text; only what differs from the defaults
+  cdAns?: import("./daycount").CdAns;                  // PS 1.70 the countdown's answers: End day now? (Yes or 15 more mins) and the last reminder acknowledged, so every device clears its card
   dnd?: Dnd;                     // PS Do Not Disturb (core/dnd.ts, the developer 30 Oct 2026): the moon top right of the Tab list; muted cards are held, never lost
   calChoices?: import("./calpick").CalChoices;   // which of the Mac's calendars are Show only or Off (core/calpick.ts, 15 Nov 2026); unlisted = Meetings
   meetHidden?: MeetHide[];       // meetings the developer took off the Meetings panel (core/meethide.ts, the developer 2 Nov 2026): PS only, his calendar is never touched

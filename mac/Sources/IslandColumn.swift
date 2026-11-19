@@ -33,7 +33,7 @@ final class IslandColumn {
   /// How urgent each kind of pop up is when several want the island at once (IslandQueueCore: one at a time).
   static func priority(_ kind: String) -> IslandPriority {
     switch kind {
-    case "reminders", "helper": return .high
+    case "reminders", "helper", "tabblocked": return .high   // PS 1.70: the Tab blocked card (TabBlocked.swift)
     case "update", "notes": return .normal
     default: return .low
     }

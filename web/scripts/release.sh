@@ -297,11 +297,13 @@ else
 fi
 
 if [ "$KIND" = app ]; then
-  step drive bash ../mac/release/publish.sh app dist-ps ../mac/build/PS.app   # Google Drive, for older builds
+  # Google Drive, for older builds. V1.69 hotfix: signed for the same channel as the release (the developer's own: "red"), so the
+  # Drive copy is never labelled for the G Squad channel. Drive only: nothing here goes to GitHub.
+  step drive env PS_UPDATE_CHANNEL="${OWN_NAME:-gsquad}" PS_FLAVOUR="$OWN_NAME" bash ../mac/release/publish.sh app dist-ps ../mac/build/PS.app
 else
   # Without --wait: an open PS on this Mac reloads itself to it within about 20 s (the developer asked for this release).
   [ -n "$WAIT" ] || step install bash ../mac/install-web.sh dist-ps
-  step drive bash ../mac/release/publish.sh web dist-ps
+  step drive env PS_UPDATE_CHANNEL="${OWN_NAME:-gsquad}" PS_FLAVOUR="$OWN_NAME" bash ../mac/release/publish.sh web dist-ps
 fi
 [ -z "$WAIT" ] || echo "PS on this Mac was left as it is: it shows Update available in the gear within 30 minutes (or on Check) and updates when the developer clicks Update now."
 if [ -n "$DRY" ]; then echo "Dry run finished: nothing was built, signed, installed, deployed or sent."; exit 0; fi

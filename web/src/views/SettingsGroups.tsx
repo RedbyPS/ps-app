@@ -82,6 +82,7 @@ import { SharingList, openGSquad } from "./GSquad";
 import { FromTheSquad } from "./FromTheSquad";
 import { AddFriendPanel } from "./AddFriend";
 import { PomoSetting } from "./Pomodoro";
+import { CdSetting } from "./CountdownSettings";
 import { AssistAiRow, AssistOnRow, AssistPopRow, AssistRequestsRow } from "./AssistSettings";
 import { PostureSetting } from "./PostureSettings";
 import { MeetBubbleSetting, StandSetting, WelcomeBackSetting, WorkoutMacSetting } from "./IslandTimersSettings";
@@ -242,6 +243,19 @@ export const CONTROLS: Controls = {
   },
   "new-badge": row(() => <NewBadgeControls />),
 
+  // Countdown text (PS 1.70, views/CountdownSettings.tsx): the day countdown, its looks, the island and the Priority 1 timers
+  "cd-on": (p) => <CdSetting {...p} k="on" />,
+  "cd-mode": (p) => <CdSetting {...p} k="mode" />,
+  "cd-tz": (p) => <CdSetting {...p} k="tz" />,
+  "cd-font": (p) => <CdSetting {...p} k="font" />,
+  "cd-color": (p) => <CdSetting {...p} k="color" />,
+  "cd-weight": (p) => <CdSetting {...p} k="weight" />,
+  "cd-size": (p) => <CdSetting {...p} k="size" />,
+  "cd-anim": (p) => <CdSetting {...p} k="anim" />,
+  "cd-lively": (p) => <CdSetting {...p} k="lively" />,
+  "cd-island": (p) => <CdSetting {...p} k="island" />,
+  "cd-remind": (p) => <CdSetting {...p} k="remind" />,
+  "cd-p1": (p) => <CdSetting {...p} k="p1" />,
   // Pomodoro (V1.58, views/Pomodoro.tsx)
   "pomo-on": row(() => <PomoSetting k="on" />),
   "pomo-work": row(() => <PomoSetting k="work" />),
@@ -393,6 +407,11 @@ export const CONTROLS: Controls = {
     const st = usePsSettings();
     const on = tabStaysShown(st, isRedAccount(useVault()));
     return <SetRow e={e} right={<OnOff label={e.name} on={on} ready={!!st} set={(v) => psPost({ type: "psSettings:tabStays", on: v })} />} />;
+  },
+  // PS 1.70: the Tab blocked card (ps-mac TabBlocked.swift), on unless switched off
+  "tab-blocked": function TabBlocked({ e }) {
+    const st = usePsSettings();
+    return <SetRow e={e} right={<OnOff label={e.name} on={st?.tabBlocked !== false} ready={!!st} set={(on) => psPost({ type: "psSettings:tabBlocked", on })} />} />;
   },
   "middle-click": function Middle({ e }) {
     const m = usePs()?.middleClick;

@@ -6,6 +6,7 @@ import { Icon, Logo, copyText, useVault } from "../ui/kit";
 import { PsRememberBox } from "./PsRemember";
 import { PS, psPost } from "../ps";
 import { PsSignInRemember, PsSignInShell } from "./PsSignIn";
+import { SignInArt } from "./SignInArt";
 import { PsCreateAccount, PsProjectLink, psCanCreate } from "./PsCreate";
 import { MOBILE_APP_NAME, appName } from "../core/appname";
 import { MWEB } from "../gos/bridge";
@@ -149,6 +150,7 @@ export function LockScreen() {
     return (
       <main className="psm-page psm-signin">
         <header className="psm-hero psm-in">
+          <SignInArt />
           <AppMark size={64} />
           <h1>{localHere ? MOBILE_APP_NAME : `Welcome to ${MOBILE_APP_NAME}`}</h1>
         </header>
@@ -160,6 +162,7 @@ export function LockScreen() {
     return (
       <main className="psm-page psm-signin">
         <header className="psm-hero psm-in">
+          <SignInArt size={mode === "recover" ? "small" : "full"} />
           <AppMark size={64} />
           <h1>{mode === "recover" ? "Use your recovery key" : `Sign in to ${MOBILE_APP_NAME}`}</h1>
           <p>{mode === "recover" ? "Choose a new passphrase with the recovery key you saved when you made your account." : `The same ${typed ? "username and passphrase" : "passphrase"} as PS on your Mac. Your passphrase never leaves this phone.`}</p>
@@ -212,7 +215,7 @@ export function LockScreen() {
     if (startHere) {
       // Local first (V1.44): the setup choice. Sync opens PS's own Supabase window (this page stays as it is).
       return (
-        <PsSignInShell title={SETUP_WORDS.title} sub={SETUP_WORDS.sub}>
+        <PsSignInShell title={SETUP_WORDS.title} sub={SETUP_WORDS.sub} art="small">
           <SetupChoice look="ps" onSignIn={() => setSignIn(true)} onSync={() => psPost({ type: "project:setup" })} />
         </PsSignInShell>
       );
@@ -222,7 +225,7 @@ export function LockScreen() {
       <button type="button" className="ps-si-eye" onClick={() => setShow(!show)} aria-label={show ? "Hide passphrase" : "Show passphrase"}><Icon name="eye" size={17} /></button>
     );
     return (
-      <PsSignInShell title={mode === "recover" ? "Use your recovery key" : `Sign in to ${appName()}`}
+      <PsSignInShell title={mode === "recover" ? "Use your recovery key" : `Sign in to ${appName()}`} art={mode === "recover" ? "small" : "full"}
         sub={mode === "recover" ? "Choose a new passphrase with the recovery key you saved at setup." : "Your passphrase never leaves this Mac."}>
         <form className="ps-si-form" onSubmit={submit} autoComplete="on" ref={formRef}>
           <LocalLockPanel look="ps" />
@@ -274,6 +277,7 @@ export function LockScreen() {
     return (
       <div className="lock">
         <div className="lock-card">
+          <SignInArt size={localHere ? "full" : "small"} />
           {localHere ? <LocalLockPanel look="gos" /> : (
             <><h2 className="lf-h">{SETUP_WORDS.title}</h2><SetupChoice look="gos" onSync={() => setSignIn(true)} /></>
           )}
@@ -284,6 +288,8 @@ export function LockScreen() {
   return (
     <div className="lock">
       <form className="lock-card" onSubmit={submit} autoComplete="on" ref={formRef}>
+        {/* PS 1.70: the developer's sign in picture on PS GOS too (never on the website's vault sign in, which clients use). */}
+        {import.meta.env.MODE === "gos" && <SignInArt size={mode === "unlock" ? "full" : "small"} />}
         {import.meta.env.MODE === "gos" && <LocalLockPanel look="gos" />}
         {import.meta.env.MODE === "gos" && mode === "unlock" && <div className="stack tight"><ScanSignIn className="btn block" /><span className="hint" style={{ textAlign: "center" }}>Or type your username and password below.</span></div>}
         <div className="row between">

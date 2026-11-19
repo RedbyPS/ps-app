@@ -9,6 +9,7 @@ import { accountKind } from "./core/account";
 import { cleanSwitches, featureAnswers, registry, setFeatureContext, whoFor, type Account } from "./core/features";
 import { profile } from "./core/profile";
 import { SECOND_FEATURE, secondSwitch } from "./core/secondswitch";
+import { SCREEN_FEATURE, screenSwitch } from "./core/screenswitch";
 
 // The person's own switches live with the other settings in the vault (saved per account, so they follow the person).
 declare module "./core/model" {
@@ -46,6 +47,8 @@ export function startFeatureSync(shellPost?: (m: object) => void): void {
     // PS 1.65: Second Computer is a core feature with its own switch (Settings, Second Computer), so the person's answer
     // wins for it like on the page (core/secondswitch.ts), also on the developer's account. The Mac starts or stops it.
     if (SECOND_FEATURE in on) on[SECOND_FEATURE] = secondSwitch(mine, account);
+    // PS 1.69: the remote screen has its own switch inside Second Computer, and needs Second Computer on (core/screenswitch.ts).
+    if (SCREEN_FEATURE in on) on[SCREEN_FEATURE] = screenSwitch(mine, account) && on[SECOND_FEATURE] === true;
     const key = JSON.stringify(on);
     if (key === last) return;
     last = key;

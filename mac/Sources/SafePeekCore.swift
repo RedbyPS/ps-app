@@ -27,13 +27,21 @@ import Foundation
 // reopening itself. The keyboard tap only counts `editing` while the list is shown (main.swift), so Tab kept working
 // over every normal app, but SafePeek counted it always and dropped the hotkey: over 1Password and Signal nothing
 // opened PS, silently. Now `editing` only counts while the list is shown, as in the tap.
+//
+// PS 1.70 (the Tab blocked alert, TabBlockedCore.swift): a third blind case, the app in FRONT holding Secure Input (a
+// password box, or one left on: DuckDuckGo on 19 Nov). Before, PS took that as normal and holding Tab did nothing,
+// silently. Now the plain Tab hotkey is armed there too, but only to SEE a hold: a quick tap goes on to the app as
+// always, and a hold of TabBlockedCore.holdFor brings the Tab blocked card (which names the app and says how to fix
+// it), never the list. Only while the card's switch is on, never over 1Password or Signal, never in PS's own window or
+// an app on the ignore list.
 enum SafePeekCore {
   /// Why the keyboard tap cannot see Tab right now. nil: it can, SafePeek stays out of the way.
-  enum Blind: String, Equatable { case protected, secureInput }
+  enum Blind: String, Equatable { case protected, secureInput, secureFront }
 
-  static func blind(protectedFront: Bool, secureStuck: Bool) -> Blind? {
+  static func blind(protectedFront: Bool, secureStuck: Bool, secureFront: Bool = false) -> Blind? {
     if protectedFront { return .protected }
     if secureStuck { return .secureInput }
+    if secureFront { return .secureFront }
     return nil
   }
 
@@ -61,23 +69,32 @@ enum SafePeekCore {
     var shown = false
     /// This account may open PS over 1Password and Signal (BuildRules: false for the developer, true for everyone else).
     var tabOverProtected = true
+    /// PS 1.70: the app in front has held Secure Input for a moment AND the Tab blocked card is switched on.
+    var secureFront = false
   }
+
+  /// The blind case for these inputs.
+  static func blind(_ i: Inputs) -> Blind? { blind(protectedFront: i.protectedFront, secureStuck: i.secureStuck, secureFront: i.secureFront) }
 
   /// Whether the plain Tab hotkey is armed.
   static func wantTab(_ i: Inputs) -> Bool {
     if i.held { return true }
-    guard let why = blind(protectedFront: i.protectedFront, secureStuck: i.secureStuck) else { return false }
+    guard let why = blind(i) else { return false }
     guard i.enabled, !i.kept, !(i.editing && i.shown), !i.passingOn else { return false }
     switch why {
     case .protected:
       // The developer's account: never over them. Everyone else: any chosen key (Right Option cannot be seen over them, so
       // plain Tab is the way in there).
       return i.tabOverProtected
-    case .secureInput:
+    case .secureInput, .secureFront:
       // PS's own Sign in window and apps on the ignore list keep their Tab.
       return !i.appActive && !i.frontIgnored
     }
   }
+
+  /// PS 1.70: what a hold does in this blind case. Secure Input held by the app in front: the Tab blocked card, after
+  /// TabBlockedCore.holdFor (a shorter press is a quick tap and goes on to the app). Every other case: the list, as before.
+  static func holdShowsCard(_ why: Blind?) -> Bool { why == .secureFront }
 
   /// Whether Esc is grabbed the same way (the tap cannot see it either): only while the list is up.
   /// The developer's account: never over 1Password or Signal (the list does not stay up there for him anyway).
@@ -120,6 +137,7 @@ enum SafePeekCore {
     switch why {
     case .protected?: return "PS safepeek: Tab hotkey on (a protected app is in front, the keyboard tap is off)"
     case .secureInput?: return "PS safepeek: Tab hotkey on (macOS Secure Input is stuck on, the keyboard tap hears nothing)"
+    case .secureFront?: return "PS safepeek: Tab hotkey on (the app in front holds macOS Secure Input, watching for a hold of Tab)"
     case nil: return "PS safepeek: Tab hotkey on (held)"
     }
   }

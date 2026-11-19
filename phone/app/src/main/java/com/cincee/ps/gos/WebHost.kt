@@ -216,7 +216,11 @@ object WebHost {
         w.onResume(); w.resumeTimers()
         return w
     }
+    /** PS 1.70: PS is on screen now (the page draws the day countdown's card itself then, DayEnd.kt). */
+    @Volatile var shownNow = false; private set
     fun visible(on: Boolean) {
+        shownNow = on
+        if (!on && ::app.isInitialized) DayEnd.pageHidden(app)
         post(JSONObject().put("type", "visible").put("on", on))
         if (on) { view?.onResume(); view?.resumeTimers(); sendPerms() } else { view?.onPause() }
     }
@@ -309,6 +313,7 @@ object WebHost {
             "cardHide" -> Notifier.cancelCard(c, m.optString("id"))
             "remindNext" -> Reminds.next(c, m.optLong("at"))
             "gymPlan" -> m.optJSONObject("plan")?.let { Gym.setPlan(c, it) }   // the gym reminder (Gym.kt, web src/gymwatch.ts)
+            "dayPlan" -> m.optJSONObject("plan")?.let { DayEnd.setPlan(c, it) }   // PS 1.70 the day countdown while PS is closed (DayEnd.kt, web src/daycount.ts)
             // Sleep mode (Sleep.kt, web src/sleepmode/engine.ts): the clock over the lock screen and its alarms.
             "sleep:start" -> m.optJSONObject("plan")?.let { Sleep.start(c, it) }
             "sleep:plan" -> m.optJSONObject("plan")?.let { Sleep.setPlan(c, it) }
