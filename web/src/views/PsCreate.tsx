@@ -45,7 +45,7 @@ export function PsCreateAccount({ busy, onSignIn }: { busy: boolean; onSignIn: (
 
   const eye = <button type="button" className="ps-si-eye" onClick={() => setShow(!show)} aria-label={show ? "Hide passphrase" : "Show passphrase"}><Icon name="eye" size={17} /></button>;
   return (
-    <PsSignInShell title="Create your PS account" sub="All you need is a passphrase. It never leaves this Mac.">
+    <PsSignInShell title="Create your PS account" sub="All you need is a passphrase. It never leaves this Mac." art="small">
       <form className="ps-si-form" onSubmit={submit} autoComplete="on">
         <LocalLockPanel look="ps" />
         <label className="ps-si-field"><span>Choose a passphrase</span>

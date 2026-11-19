@@ -1,0 +1,168 @@
+/* The day countdown (PS 1.70, views/DayCountdown.tsx). Transforms, opacity and text-shadow only: a tick never moves anything
+   around it, and each digit sits in a cell of its own fixed width (tabular figures). */
+.cd-wrap { display: flex; justify-content: center; margin: calc(2px * var(--k-dn, 1)) 0 calc(4px * var(--k-dn, 1)); pointer-events: none; }
+.cd {
+  --cd-c: var(--k-fg, #FFFFFF);
+  --cd-hot: color-mix(in oklab, var(--cd-c) 35%, #FF9F43);
+  --cd-red: color-mix(in oklab, var(--cd-c) 20%, #FF5E57);
+  position: relative; display: inline-flex; align-items: center; pointer-events: auto; cursor: default; user-select: none; -webkit-user-select: none;
+  font-size: calc(34px * var(--cd-k, 1) * var(--k-fs, 1)); font-weight: var(--cd-w, 700); line-height: 1; letter-spacing: .01em;
+  font-variant-numeric: tabular-nums; font-feature-settings: "tnum" 1; color: var(--cd-c);
+  padding: .12em .42em; border-radius: 999px; transition: color .9s ease;
+  text-shadow: 0 2px 18px color-mix(in srgb, var(--k-tsh, #000000) 35%, transparent);
+}
+.cd-f-rounded { font-family: ui-rounded, "SF Pro Rounded", "Nunito", system-ui, sans-serif; }
+.cd-f-system { font-family: -apple-system, BlinkMacSystemFont, "Inter Variable", system-ui, sans-serif; }
+.cd-f-mono { font-family: ui-monospace, "SF Mono", Menlo, monospace; letter-spacing: -.02em; }
+.cd-f-serif { font-family: ui-serif, "New York", Georgia, serif; }
+.cd-digits { position: relative; display: inline-flex; }
+.cd-cell { position: relative; display: inline-block; overflow: visible; perspective: 300px; }
+.cd-sep { padding: 0 .02em; opacity: .62; transform: translateY(-.06em); }
+.cd-ch { display: inline-block; will-change: transform, opacity; backface-visibility: hidden; }
+.cd-ch.cd-out { position: absolute; inset: 0; pointer-events: none; }
+/* Slide (default) */
+.cd-a-slide .cd-in { animation: cd-slide-in .42s cubic-bezier(.2, .9, .25, 1.12) both; }
+.cd-a-slide .cd-out { animation: cd-slide-out .36s cubic-bezier(.4, 0, .8, .4) both; }
+@keyframes cd-slide-in { from { transform: translate3d(0, -.62em, 0); opacity: 0; } to { transform: none; opacity: 1; } }
+@keyframes cd-slide-out { from { transform: none; opacity: 1; } to { transform: translate3d(0, .62em, 0); opacity: 0; } }
+/* Flip */
+.cd-a-flip .cd-in { animation: cd-flip-in .46s cubic-bezier(.2, .9, .3, 1.1) both; transform-origin: 50% 60%; }
+.cd-a-flip .cd-out { animation: cd-flip-out .3s cubic-bezier(.5, 0, .9, .5) both; transform-origin: 50% 40%; }
+@keyframes cd-flip-in { from { transform: rotateX(-92deg); opacity: 0; } 60% { opacity: 1; } to { transform: none; opacity: 1; } }
+@keyframes cd-flip-out { from { transform: none; opacity: 1; } to { transform: rotateX(92deg); opacity: 0; } }
+/* Blur */
+.cd-a-blur .cd-in { animation: cd-blur-in .5s ease-out both; }
+.cd-a-blur .cd-out { animation: cd-blur-out .4s ease-in both; }
+@keyframes cd-blur-in { from { filter: blur(7px); opacity: 0; transform: scale(1.12); } to { filter: none; opacity: 1; transform: none; } }
+@keyframes cd-blur-out { from { filter: none; opacity: 1; } to { filter: blur(7px); opacity: 0; transform: scale(.9); } }
+/* Pop */
+.cd-a-pop .cd-in { animation: cd-pop-in .44s cubic-bezier(.3, 1.6, .5, 1) both; }
+.cd-a-pop .cd-out { animation: cd-pop-out .22s ease-in both; }
+@keyframes cd-pop-in { from { transform: scale(.4); opacity: 0; } to { transform: none; opacity: 1; } }
+@keyframes cd-pop-out { from { transform: none; opacity: 1; } to { transform: scale(1.4); opacity: 0; } }
+/* None */
+.cd-a-none .cd-out { display: none; }
+
+/* Lively near zero: a glow from an hour out, warmer from 15 minutes, a small rumble in the last 3 minutes. */
+.cd-glow { position: absolute; inset: -.18em -.3em; border-radius: inherit; pointer-events: none; opacity: 0;
+  background: radial-gradient(60% 70% at 50% 55%, color-mix(in srgb, var(--cd-c) 30%, transparent), transparent 72%); transition: opacity 1.2s ease; }
+.cd-l1 .cd-glow { opacity: .55; animation: cd-breathe 3.2s ease-in-out infinite alternate; }
+.cd-l1 { text-shadow: 0 0 14px color-mix(in srgb, var(--cd-c) 45%, transparent), 0 2px 18px color-mix(in srgb, var(--k-tsh, #000000) 35%, transparent); }
+.cd-l2 { color: var(--cd-hot); text-shadow: 0 0 18px color-mix(in srgb, var(--cd-hot) 60%, transparent); }
+.cd-l2 .cd-glow { opacity: .8; background: radial-gradient(60% 70% at 50% 55%, color-mix(in srgb, var(--cd-hot) 38%, transparent), transparent 72%); animation: cd-breathe 1.6s ease-in-out infinite alternate; }
+.cd-l3 { color: var(--cd-red); text-shadow: 0 0 22px color-mix(in srgb, var(--cd-red) 70%, transparent); }
+.cd-l3 .cd-glow { opacity: 1; background: radial-gradient(60% 70% at 50% 55%, color-mix(in srgb, var(--cd-red) 45%, transparent), transparent 72%); animation: cd-breathe .9s ease-in-out infinite alternate; }
+.cd-l3 .cd-digits { animation: cd-rumble .5s linear infinite; }
+@keyframes cd-breathe { from { transform: scale(.92); opacity: .45; } to { transform: scale(1.08); opacity: 1; } }
+@keyframes cd-rumble {
+  0%, 100% { transform: translate3d(0, 0, 0) rotate(0); } 10% { transform: translate3d(-1px, .5px, 0) rotate(-.6deg); }
+  20% { transform: translate3d(1.2px, -.5px, 0) rotate(.5deg); } 30% { transform: translate3d(-.8px, -.8px, 0) rotate(-.3deg); }
+  40% { transform: translate3d(.9px, .7px, 0) rotate(.6deg); } 50% { transform: translate3d(-1.1px, .2px, 0) rotate(-.5deg); }
+  60% { transform: translate3d(.6px, -.9px, 0) rotate(.3deg); } 70% { transform: translate3d(-.7px, .8px, 0) rotate(-.6deg); }
+  80% { transform: translate3d(1px, .3px, 0) rotate(.4deg); } 90% { transform: translate3d(-.5px, -.4px, 0) rotate(-.2deg); }
+}
+/* At zero, waiting for an answer: a slow heartbeat instead of the rumble. */
+.cd-zero .cd-digits { animation: cd-beat 1.4s cubic-bezier(.3, 0, .2, 1) infinite; }
+@keyframes cd-beat { 0%, 100% { transform: scale(1); } 12% { transform: scale(1.07); } 24% { transform: scale(.99); } 36% { transform: scale(1.04); } 50% { transform: scale(1); } }
+
+/* Settings picked from the menu: a ring of light leaves the countdown as Settings grows out of it. */
+.cd::after, .cd-p1::after { content: ""; position: absolute; inset: -2px; border-radius: 999px; pointer-events: none; opacity: 0;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--k-acc, #EC4E86) 90%, transparent), 0 0 24px color-mix(in srgb, var(--k-acc, #EC4E86) 70%, transparent); }
+.cd-burst { animation: cd-press .5s cubic-bezier(.3, 1.5, .5, 1); }
+.cd-burst::after { animation: cd-ring .8s cubic-bezier(.15, .8, .3, 1) both; }
+@keyframes cd-ring { from { transform: scale(.9); opacity: 1; } to { transform: scale(1.9, 2.6); opacity: 0; } }
+@keyframes cd-press { 0% { transform: scale(1); } 30% { transform: scale(.9); } 100% { transform: scale(1); } }
+
+/* The small timer on a Priority 1 task. */
+.cd-p1 { position: relative; display: inline-flex; align-items: center; flex: none; padding: 3px 9px; border-radius: 999px; font-size: calc(12.5px * var(--z, .85) / .85); font-weight: 750;
+  font-variant-numeric: tabular-nums; letter-spacing: .01em; color: color-mix(in srgb, var(--k-fg, #FFFFFF) 78%, transparent);
+  background: color-mix(in srgb, var(--k-fg, #FFFFFF) 8%, transparent); border: 1px solid color-mix(in srgb, var(--k-fg, #FFFFFF) 14%, transparent); cursor: default; }
+.cd-p1 .cd-in { animation: cd-slide-in .36s cubic-bezier(.2, .9, .25, 1.12) both; }
+.cd-p1 .cd-out { animation: cd-slide-out .3s cubic-bezier(.4, 0, .8, .4) both; }
+.cd-p1.soon { color: #FFC37A; border-color: color-mix(in srgb, #FFC37A 40%, transparent); }
+.cd-p1.late { color: var(--k-bad-t, #FF8F8A); border-color: color-mix(in srgb, var(--k-bad-t, #FF8F8A) 45%, transparent); }
+.tm-row.done .cd-p1 { display: none; }
+
+/* The right click menu: one item, Settings. */
+.cd-menu { position: fixed; z-index: 2147483000; min-width: 150px; padding: 5px; border-radius: 12px; background: color-mix(in srgb, #1C1820 92%, transparent);
+  border: 1px solid rgba(255, 255, 255, .12); box-shadow: 0 18px 50px -12px rgba(0, 0, 0, .7), 0 0 0 .5px rgba(0, 0, 0, .4);
+  backdrop-filter: blur(24px) saturate(1.6); -webkit-backdrop-filter: blur(24px) saturate(1.6); transform-origin: 0 0; animation: cd-menu-in .2s cubic-bezier(.2, .9, .3, 1.2) both; }
+@keyframes cd-menu-in { from { opacity: 0; transform: scale(.86) translateY(-4px); filter: blur(3px); } to { opacity: 1; transform: none; filter: none; } }
+.cd-menu-item { display: flex; align-items: center; gap: 9px; width: 100%; padding: 8px 11px; border: 0; border-radius: 8px; background: transparent; color: #FFFFFF;
+  font: 600 13.5px/1.1 -apple-system, BlinkMacSystemFont, "Inter Variable", system-ui, sans-serif; text-align: left; cursor: pointer; }
+.cd-menu-item:hover, .cd-menu-item:focus-visible { background: var(--k-acc, #EC4E86); outline: none; }
+.cd-menu-item svg { opacity: .9; }
+
+/* Settings grown out of the countdown: a softer, slower settle than from the gear. */
+.cs-from-cd { filter: drop-shadow(0 0 40px color-mix(in srgb, var(--k-acc, #EC4E86) 35%, transparent)); }
+
+/* The card inside the page (website and phone): it drops out of a small island at the top, and goes back up into it. */
+.cd-drop { position: fixed; z-index: 2147482000; top: 12px; left: 50%; transform: translateX(-50%); display: grid; justify-items: center; gap: 8px; pointer-events: none; }
+.cd-drop.phone { top: calc(env(safe-area-inset-top, 0px) + 54px); }
+.cd-isl { width: 128px; height: 34px; border-radius: 999px; background: #000000; box-shadow: 0 10px 30px -10px rgba(0, 0, 0, .8); display: grid; place-items: center;
+  animation: cd-isl-in .5s cubic-bezier(.2, 1.3, .4, 1) both; }
+.cd-isl-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--k-acc, #EC4E86); box-shadow: 0 0 10px var(--k-acc, #EC4E86); animation: cd-breathe 1.4s ease-in-out infinite alternate; }
+.cd-card { pointer-events: auto; min-width: 280px; max-width: min(92vw, 380px); padding: 16px 16px 14px; border-radius: 22px; background: #0E0C10; color: #FFFFFF;
+  border: 1px solid rgba(255, 255, 255, .1); box-shadow: 0 24px 60px -16px rgba(0, 0, 0, .8); transform-origin: 50% -20px;
+  animation: cd-card-in .58s cubic-bezier(.2, 1.25, .35, 1) .16s both; font-family: -apple-system, BlinkMacSystemFont, "Inter Variable", system-ui, sans-serif; }
+.cd-drop.phone .cd-card { animation-delay: 0s; }
+.cd-card-t { font-size: 17px; font-weight: 750; letter-spacing: -.01em; text-align: center; font-variant-numeric: tabular-nums; }
+.cd-card-b { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin-top: 12px; }
+.cd-btn { border: 0; border-radius: 999px; padding: 9px 16px; font: 700 13.5px/1 inherit; color: #FFFFFF; background: rgba(255, 255, 255, .12); cursor: pointer;
+  transition: transform .15s cubic-bezier(.2, .9, .3, 1.4), background .15s ease; }
+.cd-btn.main { background: var(--k-acc, #EC4E86); }
+.cd-btn:hover { transform: scale(1.04); }
+.cd-btn:active { transform: scale(.96); }
+@keyframes cd-isl-in { from { transform: scale(.3, .5); opacity: 0; } to { transform: none; opacity: 1; } }
+@keyframes cd-card-in { from { transform: translateY(-34px) scale(.55, .2); opacity: 0; filter: blur(6px); } 55% { opacity: 1; filter: none; } to { transform: none; opacity: 1; } }
+.cd-drop.out .cd-card { animation: cd-card-out .36s cubic-bezier(.5, 0, .8, .4) both; }
+.cd-drop.out .cd-isl { animation: cd-isl-out .3s cubic-bezier(.5, 0, .8, .4) .26s both; }
+@keyframes cd-card-out { from { transform: none; opacity: 1; } to { transform: translateY(-34px) scale(.55, .2); opacity: 0; } }
+@keyframes cd-isl-out { from { transform: none; opacity: 1; } to { transform: scale(.3, .5); opacity: 0; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .cd-ch.cd-in, .cd-ch.cd-out { animation: none !important; }
+  .cd-ch.cd-out { display: none; }
+  .cd-digits, .cd-glow, .cd-isl, .cd-isl-dot, .cd-card, .cd-menu, .cd-burst, .cd-burst::after { animation: none !important; }
+  .cd-drop.out { opacity: 0; transition: opacity .12s ease; }
+}
+
+/* Settings, Countdown text (views/CountdownSettings.tsx). */
+.cds-mode { display: grid; gap: 10px; }
+.cds-line { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.cds-l { font-size: 13px; font-weight: 600; opacity: .8; }
+.cds-time { font: 600 14px/1 -apple-system, BlinkMacSystemFont, "Inter Variable", system-ui, sans-serif; font-variant-numeric: tabular-nums; padding: 7px 10px; border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, .16); background: rgba(255, 255, 255, .06); color: inherit; color-scheme: dark; }
+.cds-week { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px 14px; align-items: center; }
+.cds-day { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 13px; font-weight: 600; }
+.cds-hint { grid-column: 1 / -1; font-size: 12px; opacity: .65; }
+.cds-select { max-width: 230px; font: 600 13px/1.2 -apple-system, BlinkMacSystemFont, "Inter Variable", system-ui, sans-serif; padding: 7px 10px; border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, .16); background: rgba(255, 255, 255, .06); color: inherit; color-scheme: dark; }
+.cds-sw { display: inline-flex; flex-wrap: wrap; gap: 7px; }
+.cds-sw button { width: 24px; height: 24px; border-radius: 50%; padding: 0; cursor: pointer; background: var(--sw, #FFFFFF); border: 2px solid rgba(255, 255, 255, .18);
+  transition: transform .15s cubic-bezier(.2, .9, .3, 1.4), border-color .15s ease, box-shadow .15s ease; }
+.cds-sw button.def { background: linear-gradient(135deg, var(--k-fg, #FFFFFF) 50%, rgba(255, 255, 255, .25) 50%); }
+.cds-sw button.acc { background: var(--k-acc, #EC4E86); }
+.cds-sw button:hover { transform: scale(1.12); }
+.cds-sw button.sel { border-color: #FFFFFF; box-shadow: 0 0 0 2px rgba(255, 255, 255, .25); }
+.cds-size input { width: 160px; }
+.cds-sample { display: flex; justify-content: center; padding: 14px 0 6px; }
+.cds-sample .cd { font-size: calc(30px * var(--cd-k, 1)); }
+
+/* The phone's island inside PS: beside the task, its Priority 1 timer, then the day countdown. */
+.cd-isl-day { display: inline-flex; align-items: center; gap: 6px; flex: none; margin-left: 6px; font-variant-numeric: tabular-nums; font-weight: 750; font-size: 13px; }
+.cd-isl-p1 { padding: 1px 6px; border-radius: 999px; background: rgba(255, 255, 255, .12); color: rgba(255, 255, 255, .8); }
+.cd-isl-p1.late { color: #FF8F8A; }
+.cd-isl-cd { color: rgba(255, 255, 255, .92); transition: color .8s ease, text-shadow .8s ease; }
+.cd-isl-cd.s1 { text-shadow: 0 0 8px rgba(255, 255, 255, .5); }
+.cd-isl-cd.s2 { color: #FFA852; text-shadow: 0 0 8px rgba(255, 168, 82, .6); }
+.cd-isl-cd.s3 { color: #FF6B61; text-shadow: 0 0 10px rgba(255, 107, 97, .7); display: inline-block; animation: cd-rumble .5s linear infinite; }
+.cd-isl-cd.zero { animation: cd-beat 1.4s cubic-bezier(.3, 0, .2, 1) infinite; }
+@media (prefers-reduced-motion: reduce) { .cd-isl-cd.s3, .cd-isl-cd.zero { animation: none; } }
+
+/* Narrow screens (the phone): the Priority 1 timer goes small, so the task's name keeps its room. */
+.cd-p1.inline { display: none; }
+@media (max-width: 520px) {
+  .cd-p1:not(.inline) { display: none; }
+  .cd-p1.inline { display: inline-flex; margin-left: 2px; padding: 1px 6px; font-size: 11px; font-weight: 700; vertical-align: 1px; }
+}

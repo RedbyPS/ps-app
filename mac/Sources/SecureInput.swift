@@ -20,8 +20,17 @@ final class SecureInputWatch {
   /// Main thread (V1.44): stuck on in the background for 2 s (true), or not any more (false). SafePeek arms its plain
   /// Tab hotkey meanwhile, so holding Tab opens the list even though the keyboard tap hears nothing.
   var onStuck: ((Bool) -> Void)?
+  /// Main thread (PS 1.70, the Tab blocked alert): the app in FRONT has held Secure Input for 2 s (true), or not any more
+  /// (false). Normal while you type a password, so no card; SafePeek takes plain Tab meanwhile only to see a hold
+  /// (TabBlocked.swift). Never true for 1Password or Signal in front, nor for PS's own window.
+  var onFront: ((Bool) -> Void)?
+  /// Main thread: who holds Secure Input as last read (nil: off, or macOS names nobody). 1Password and Signal arrive
+  /// here with no name (holders() drops it at the first read).
+  private(set) var holder: SecureHolder?
   private var arm = SecureDebounce()
   private var armed = false
+  private var frontArm = SecureDebounce()
+  private var frontArmed = false
   private let q = DispatchQueue(label: "ps.secureinput", qos: .utility)
   private var timer: DispatchSourceTimer?
   // main thread only
@@ -49,9 +58,15 @@ final class SecureInputWatch {
 
   private func decide(_ on: Bool, _ hs: [SecureHolder]) {
     let me = ProcessInfo.processInfo.processIdentifier
-    let s = SecureInputCore.stuck(on: on, holders: hs, frontPid: NSWorkspace.shared.frontmostApplication?.processIdentifier)
+    let frontPid = NSWorkspace.shared.frontmostApplication?.processIdentifier
+    let s = SecureInputCore.stuck(on: on, holders: hs, frontPid: frontPid)
     let a = arm.step(stuck: s.stuck, now: Date(), after: 2)
     if a != armed { armed = a; onStuck?(a) }
+    // PS 1.70: held by the app in front (a password box, or one left on like DuckDuckGo's on 19 Nov).
+    let fh = SecureInputCore.frontHolder(on: on, holders: hs, frontPid: frontPid, me: me, protectedFront: Protected.front)
+    holder = s.stuck ? s.holder : (fh ?? hs.first)
+    let f = frontArm.step(stuck: fh != nil, now: Date(), after: TabBlockedCore.frontAfter)
+    if f != frontArmed { frontArmed = f; onFront?(f) }
     let show = debounce.step(stuck: s.stuck, now: Date(), after: 6)
     if show {
       let label = SecureInputCore.label(s.holder, me: me, appName: AppName.current)

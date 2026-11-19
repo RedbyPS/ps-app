@@ -131,6 +131,7 @@ export function cleanLooks(p: Record<string, unknown>): Partial<Settings> {
   if (typeof p.receiptCur === "string") o.receiptCur = cleanCurrency(p.receiptCur);   // the currency a new receipt starts with
   if (typeof p.replyInPanel === "boolean") o.replyInPanel = p.replyInPanel;   // Settings, Reply in the email panel (V1.59)
   if (p.chkRemind && typeof p.chkRemind === "object") o.chkRemind = cleanChk(p.chkRemind);   // Settings, Checklist Reminder (PS 1.65, core/chkremind.ts)
+  if (p.countdown && typeof p.countdown === "object") o.countdown = cdPatch(CD_DEFAULTS, cleanCd(p.countdown));   // Settings, Countdown text (PS 1.70, core/daycount.ts): only what differs from the defaults
   if (p.timeEst && typeof p.timeEst === "object") o.timeEst = cleanTe(p.timeEst);   // Settings, Your list, time estimates (PS 1.65, core/timeest.ts)
   if (p.estWarnDay === null || (typeof p.estWarnDay === "string" && /^\d{4}-\d{2}-\d{2}$/.test(p.estWarnDay))) o.estWarnDay = p.estWarnDay as string | null;   // the overload line, once a day
   if (typeof p.swipeInvert === "boolean") o.swipeInvert = p.swipeInvert;   // Settings, Controls, Invert swipe (V1.57)
@@ -147,6 +148,8 @@ import { bindLowPowerShell, lowPowerPatch, lowPowerShellMessage, lpForShell, set
 import { runPomoOp, startPomodoro } from "./pomodoro";
 import { cleanOp, pomoPrefs } from "./core/pomodoro";
 import { standPrefs } from "./core/standup";
+import { CD_DEFAULTS, cdPatch, cleanCd } from "./core/daycount";
+import { startDayCount } from "./daycount";
 import { meetBubblePrefs } from "./core/meetbubble";
 import { cleanChoices, sameChoices, tidyChoices } from "./core/calpick";
 import { cleanAppearance, workStyle } from "./core/looks";
@@ -192,6 +195,7 @@ import { cleanAddLooks } from "./core/addbutton";
 import { cleanOverdueLook } from "./core/overduelook";
 import { cleanNoteLook } from "./core/notelook";
 import { startNoteLook } from "./notelook";
+import { startScreenPrefs } from "./screenprefs";
 import { startSentryPrefs } from "./sentryprefs";
 import { cleanSeen } from "./core/whatsnew";
 import { cleanWelcomeDone } from "./core/welcome";
@@ -1049,10 +1053,12 @@ export function startPsBridge() {
   setLocalCalReader((ask) => psPost({ type: "localCal", op: "read", ask }));   // not the developer: this Mac's Calendar (src/calrefresh.ts)
   startCalRefresh();   // asks for the calendar every 2 minutes and on wake; the server reads Google every minute (src/calrefresh.ts)
   startIsland(psPost);   // the Dynamic Island under the notch (src/island.ts)
+  startDayCount(psPost, "mac");   // PS 1.70 the day countdown: End day now? and the reminders out of the island (src/daycount.ts, ps-mac DayCountdown.swift)
   startPomodoro(() => islandNow());   // Pomodoro (src/pomodoro.ts): each phase saved as it ends, the island told at once
   // Second Computer (src/second/store.ts): started and stopped by sayOwner above, by its switch.
   startRebootWarn(psPost);   // a card 10 min before the other Mac's auto reboot, with Postpone (src/rebootwarn.ts)
   startNoteLook(psPost);   // notification card colours and the Other alerts sound to the Mac (src/notelook.ts, core/notelook.ts)
+  startScreenPrefs(psPost);   // the remote screen's Picture and Delay numbers to the Mac (src/screenprefs.ts, core/screenswitch.ts)
   startSentryPrefs(psPost);   // Sentry mode's restart if not unlocked to the Mac, for the restart helper pop up (src/sentryprefs.ts, V1.49)
   startDnd(psPost, "mac");   // Do Not Disturb: what the native side mutes (src/dnd.ts, core/dnd.ts)
   startExamples(true);   // a brand new account starts with example tasks (src/examples.ts, core/examples.ts)
@@ -1165,6 +1171,8 @@ export interface PsSettings {
   launchScene?: boolean;
   /** Security, "Remind me to set up the restart helper" (ps-mac HelperAlert.swift, UserDefaults helperAlert.remind): on unless switched off. */
   helperRemind?: boolean;
+  /** PS 1.70 Keyboard and Tab, "Tell me when Tab is blocked" (ps-mac TabBlocked.swift, UserDefaults tabBlocked.on): on unless switched off. */
+  tabBlocked?: boolean;
   /** This Mac's own computer name (PS 1.65, for the device list in Settings, Looks). */
   hostName?: string;
   /** V1.47 Tab overlay shortcuts (core/openkeys.ts, ps-mac OpenKeysCore.swift): the list in use (custom false: the old

@@ -80,7 +80,7 @@ export const P1_DEFAULT = "red-glisten";
 export const p1Design = (v?: string | null) => (P1_DESIGNS.some((d) => d.id === v) ? v! : P1_DEFAULT);
 
 /** The BACKGROUND looks (screen wide, behind everything; Settings, gear). Independent of the outline. */
-export const BG_DESIGNS: { id: string; label: string; storm?: boolean }[] = [
+export const BG_DESIGNS: { id: string; label: string; storm?: boolean; image?: boolean }[] = [
   { id: "none", label: "None" },
   { id: "spotlight", label: "Spotlight" },
   { id: "converge", label: "All roads lead here" },
@@ -91,7 +91,11 @@ export const BG_DESIGNS: { id: string; label: string; storm?: boolean }[] = [
   { id: "storm-edges", label: "Storm on the edges", storm: true },
   { id: "storm-aimed", label: "Bolts at P1", storm: true },
   { id: "storm-rumble", label: "Distant rumbles", storm: true },
+  // PS 1.70: the developer's neon night city picture, also the sign in picture (views/neoncity.ts). A still picture, every build.
+  { id: "neon-city", label: "Neon city", image: true },
 ];
+/** A picture background (PS 1.70): drawn like a video, still, faded by the glass slider. */
+export const isImageBg = (v?: string | null) => typeof v === "string" && BG_DESIGNS.some((d) => d.image && d.id === v);
 /** A background: one of BG_DESIGNS, or one of the developer's own videos ("video:<id>", PS only: the files
  *  stay on his Mac, see ps-mac Sources/Backgrounds.swift). */
 export const isVideoBg = (v?: string | null) => typeof v === "string" && /^video:[a-z0-9-]{1,48}$/.test(v);

@@ -22,7 +22,7 @@ ok("a first copy, page or size on an account that never moved anything is saved"
   assert.match(src("core/actions.ts"), /if \(!keep && isDefault\(data\)\) return;/);
 });
 ok("the gear and Tab and Lock show on every page and never move to another", () => {
-  assert.match(em, /if \(s\?\.keep\) return true;/);
+  assert.match(em, /if \(s\?\.keep \|\| inMenu\(id\)\) return true;/);   // PS 1.70: and what lives in the top right menu
   assert.match(em, /slotInfo\(g\.id\)\?\.keep \? null : dropTargetAt/);
 });
 ok("hidden wins over moved: a moved panel on another page (or removed) is never drawn", () => {

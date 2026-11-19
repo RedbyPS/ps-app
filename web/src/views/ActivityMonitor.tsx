@@ -26,6 +26,7 @@ import {
 } from "../core/activitymon";
 import "./cstats.css";
 import "./activitymonitor.css";
+import { TopIcon } from "./topicons";
 
 // ---------- what PS sends, kept outside React so the graphs keep their history across tabs ----------
 type Series = { cpu: number[]; mem: number[]; dr: number[]; dw: number[]; gpu: number[]; bat: number[]; cores: number[][]; net: Record<string, { rx: number[]; tx: number[] }> };
@@ -176,8 +177,8 @@ export function ActivityButton({ speed, cols, save }: { speed?: number; cols?: s
     <>
       <button ref={btn} type="button" className={`tm-pill-btn icon am-btn${phase !== "closed" ? " on" : ""}`} onClick={(e) => { if (e.button === 0) click(); }}
         aria-expanded={phase === "open"} aria-label={AM_WORDS.button} title={AM_WORDS.buttonTitle}>
-        {/* a small line chart */}
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M3 20h18" /><path d="M4 15l4.5-5 3.5 3 4-6 4 4" /></svg>
+        {/* A pulse line in a window (PS 1.70), the menu's own (views/topicons.tsx) */}
+        <TopIcon id="activity" size={16} stroke={2} />
       </button>
       {phase !== "closed" && host && createPortal(
         <div className="dx-layer cs-layer am-layer" onMouseDown={(e) => e.stopPropagation()}>

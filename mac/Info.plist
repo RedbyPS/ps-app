@@ -20,6 +20,8 @@
   <key>NSCalendarsUsageDescription</key><string>Shows your meetings from the Calendar app in the Meetings panel and meeting alerts. It only reads: it never adds, changes or deletes an event. Your meetings are kept encrypted in your own vault, so your other devices see them too.</string>
   <key>NSMicrophoneUsageDescription</key><string>Two uses, each only when you press its button. Speak your tasks: PS listens only while you hold the microphone button or until Stop, turns your words into text on this Mac and never saves the sound. Screen recording: PS records your voice from the microphone you pick, into a file on your Mac, when you press Record. Nothing is recorded or sent until then.</string>
   <key>NSSpeechRecognitionUsageDescription</key><string>Speak your tasks: your words are turned into text on this Mac only, never sent to Apple's servers, and only while you hold the microphone button or until Stop.</string>
+  <key>NSLocalNetworkUsageDescription</key><string>Second Computer: lets your main Mac find your second Mac on this network and connect to it directly, to see and control its screen. Only your own paired Macs can connect, and everything between them is encrypted.</string>
+  <key>NSBonjourServices</key><array><string>_psscreen._tcp</string></array>
   <key>NSAudioCaptureUsageDescription</key><string>Lets the volume mixer turn each app up, down or off on its own. The sound goes straight to your speakers or headphones: nothing is recorded, saved or sent anywhere.</string>
   <key>NSHumanReadableCopyright</key><string>Cincee. Your to-do list, end-to-end encrypted.</string>
 </dict>

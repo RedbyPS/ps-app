@@ -62,6 +62,9 @@ function save(ids: readonly WalkStepId[]) {
 /** Is this Settings group in this build? ("Show me" only shows where it really opens something.) */
 const hasGroup = (g: string | undefined): g is GroupId => !!g && GROUPS.some((x) => x.id === g);
 
+/** A Pomodoro button on the screen (PS 1.70: added in Edit mode; a removed or opt in one is mounted but not drawn). */
+const pomoShowing = () => typeof document !== "undefined" && [...document.querySelectorAll(".pm-tab-btn")].some((b) => b.getClientRects().length > 0);
+
 /** The facts that do not change from tick to tick within a step: who, where, what is switched off, what was seen. */
 function personFacts(): Pick<WalkFacts, "mac" | "red" | "overProtected" | "off" | "seen"> | null {
   const snap = vaultStore.get();
@@ -76,8 +79,9 @@ function personFacts(): Pick<WalkFacts, "mac" | "red" | "overProtected" | "off" 
     mac: PS,
     red: isRedAccount(snap),
     overProtected: typeof over === "boolean" ? over : null,
-    // The Pomodoro button switched off in Settings: they found it, and there is nothing to point at.
-    off: { "158-pomodoro": (st as { pomodoro?: { on?: unknown } }).pomodoro?.on === false },
+    // The Pomodoro button switched off in Settings: they found it, and there is nothing to point at. PS 1.70: it is only on
+    // the screen once added in Edit mode, so with none showing there is nothing to point at either.
+    off: { "158-pomodoro": (st as { pomodoro?: { on?: unknown } }).pomodoro?.on === false || !pomoShowing() },
   };
 }
 

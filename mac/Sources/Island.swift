@@ -205,6 +205,8 @@ struct IslandState: Equatable {
   /// PS 1.65 Low power mode (web src/island.ts, LowPowerCore.swift): nil while off; on, the plain names of what is asleep.
   /// The island itself stays fully active: only the leaf and its card are new.
   var lp: [String]?
+  /// PS 1.70 the day countdown in the task area and the shown task's Priority 1 timer (DayCountdownCore.swift DayIn).
+  var day: DayIn?
 
   /// A hide time from the page: whole seconds from 5 s to 1 hour, anything else the 1 minute default.
   static func hideTime(_ v: Any?) -> Double {
@@ -243,6 +245,7 @@ struct IslandState: Equatable {
     s.tickLeft = (d["tickSide"] as? String) != "right"
     s.meets = IslandAwayCore.meets(d["meets"])
     s.timers = TimersCore.from(d)   // V1.58 island timers
+    s.day = Features.on(DayCore.feature) ? DayIn.from(d["day"]) : nil   // PS 1.70 (web src/daycount.ts dayIsland)
     if Features.on("low-power"), let l = d["lp"] as? [String: Any] {
       s.lp = ((l["names"] as? [Any]) ?? []).prefix(40).compactMap { $0 as? String }.map { String($0.replacingOccurrences(of: "\n", with: " ").prefix(40)) }
     }
@@ -832,6 +835,7 @@ struct IslandView: View {
       HStack(spacing: 6) {
         Text(t.title).font(.system(size: size, weight: .semibold)).foregroundColor(t.dim ? dimC : fg).lineLimit(1).truncationMode(.tail)
         WorkClock(m: m, color: dimC)   // V1.58: Pomodoro time left, only with its setting on
+        DayClocks(m: m, color: dimC, size: max(10, size - 1))   // PS 1.70: the task's Priority 1 timer, then the day countdown (DayCountdown.swift)
       }
     }
   }
@@ -1473,6 +1477,7 @@ final class Island {
   }
   private func shapeChanged() {
     IslandTimers.shared.syncBubble()   // V1.59: the bubble and the stand-up question follow the island
+    DayCardWindow.shared.follow()      // PS 1.70: and the day countdown's card
     BigIslandWindow.shared.follow()    // PS 1.60: so does an open Welcome back or workout panel
     SquadIsland.shared.follow()        // PS 1.63: and a G Squad message card
     ScreenRecIsland.shared.syncPart()  // PS 1.60 (12b): the recording part follows the island

@@ -11,6 +11,7 @@
 //   node scripts/second.ts outsource [--model opus|sonnet] [--minutes 5..30] [--json tasks.json] "<task 1>" "<task 2>" ...
 //   node scripts/second.ts wait <job> [<job> ...]     (exits when every one has finished; run it in the background)
 //   node scripts/second.ts result <job>               (the report)
+//   node scripts/second.ts screen [open|close|status] (PS 1.69: the second Mac's screen in a PS window, seen and controlled)
 // Common: --timeout <minutes> (default 45, wait 75), --no-wait (send and exit 0), --no-fallback.
 // outsource: each task is its own research job, sealed to the M1 (post-quantum X-Wing where both Macs can) and run
 // there up to 3 at once with web search and its own folder only. Reports land in ~/Downloads/From your other Mac.
@@ -285,6 +286,28 @@ async function main() {
   if (!cmd || cmd === "help" || flag("help")) {
     say(readFileSync(new URL(import.meta.url), "utf8").split("\n").filter((l) => l.startsWith("//")).slice(0, 24).map((l) => l.slice(3)).join("\n"));
     process.exit(cmd ? 0 : 2);
+  }
+  if (cmd === "screen") {
+    // The remote screen (ps-mac RemoteScreen.swift): PS opens its window and connects straight to the second Mac on this
+    // network. Nothing goes through the vault; this only asks the running PS.
+    const action = pos[0] ?? "open";
+    if (!["open", "close", "status"].includes(action)) fail("node scripts/second.ts screen [open|close|status]");
+    if (!st) { say("PS has not written its Second Computer state on this Mac (PS not running, or not the main Mac)."); process.exit(3); }
+    const id = randomBytes(9).toString("hex");
+    writeReq({ id, type: "screen", args: { action } }, id);
+    const file = join(DIR, `res-${id}.json`), start = Date.now();
+    for (;;) {
+      let r: { status?: { screen?: string; numbers?: string } } | null = null;
+      try { r = JSON.parse(readFileSync(file, "utf8")); } catch { /* not yet */ }
+      if (r) {
+        rmSync(file, { force: true });
+        say(`[second] screen: ${r.status?.screen ?? "unknown"}`);
+        if (r.status?.numbers) say(`[second] ${r.status.numbers}`);
+        process.exit(0);
+      }
+      if (Date.now() - start > 30_000) { rmSync(join(DIR, `req-${id}.json`), { force: true }); say("[second] PS did not pick it up within 30 s (needs PS 1.69)."); process.exit(3); }
+      await new Promise((res) => setTimeout(res, 300));
+    }
   }
   if (cmd === "status") {
     const why = unavailable(st);

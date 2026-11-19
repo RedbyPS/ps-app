@@ -19,7 +19,7 @@ export { norm, stem };
 
 /** Where PS is running: on a Mac (the Tab list), the website, or the phone (PS GOS and the iPhone web app). */
 export type Where = "mac" | "web" | "phone";
-export type GroupId = "friend" | "list" | "controls" | "looks" | "notify" | "remind" | "chkremind" | "telegram" | "api" | "time" | "shortcuts" | "keys" | "island" | "mac" | "screenrec" | "sync" | "privacy" | "fitness" | "pomodoro" | "standup" | "posture" | "sleep" | "sentry" | "gsquad" | "phone" | "about" | "assistant" | "power";
+export type GroupId = "friend" | "list" | "controls" | "looks" | "notify" | "remind" | "chkremind" | "telegram" | "api" | "time" | "shortcuts" | "keys" | "island" | "mac" | "screenrec" | "sync" | "privacy" | "fitness" | "pomodoro" | "standup" | "posture" | "sleep" | "sentry" | "gsquad" | "phone" | "about" | "assistant" | "power" | "countdown";
 /** What a setting opens instead of a row in Settings: a screen of its own. */
 export type Go = "fitness" | "security" | "dnd" | "gsquad" | "sleepSettings" | "phone" | "vault" | "macApp";
 
@@ -94,6 +94,8 @@ export const GROUPS: SetGroup[] = [
   // Task API (the developer, 12 Nov 2026: "make the API have a dedicated tab in settings and set up the scope with everything changeable via API").
   { id: "api", label: "AI task API", line: "Let Claude Code, Codex and other AI tools manage your tasks", on: ["mac"], icon: "M8 9l-4 3 4 3M16 9l4 3-4 3M13.5 6l-3 12" },
   { id: "time", label: "Time and reset", line: "Time zone, daily reset, screen time", icon: "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 7v5l3 2" },
+  // PS 1.70 (the developer, 19 Nov 2026): the day countdown under the headline, its looks, the island and the Priority 1 timers (core/daycount.ts).
+  { id: "countdown", label: "Countdown text", line: "The countdown to the end of your day", icon: "M6 3h12M6 21h12M7 3c0 5 5 6 5 9s-5 4-5 9M17 3c0 5-5 6-5 9s5 4 5 9" },
   // V1.47 (the developer, 10 Nov 2026: "In the Settings menu, a tab called Tab overlay shortcuts").
   { id: "shortcuts", label: "Tab overlay shortcuts", line: "The keys that open your list: hold, combos, chords", on: ["mac"], icon: "M9 9V6a3 3 0 1 0-3 3h12a3 3 0 1 0-3-3v12a3 3 0 1 0 3-3H6a3 3 0 1 0 3 3V9" },
   { id: "keys", label: "Keyboard and Tab", line: "Keep the list open, middle click, apps", on: ["mac"], icon: "M3 7h18v10H3zM7 11h.01M11 11h.01M15 11h.01M8 14h8" },
@@ -168,7 +170,7 @@ export const SETTINGS: SetEntry[] = [
   { id: "transparency", group: "looks", name: "List transparency", line: "How much of your screen shows through the list.", on: MAC, words: ["transparent", "transparency", "glass", "see through", "opacity", "opaque", "blur", "backdrop", "clear"] },
   { id: "overdue-tab", group: "looks", name: "Overdue card", line: "The Overdue card at the bottom right: its colour, its text colour and an effect like lightning.", words: ["overdue", "late", "missed", "due", "past due", "bottom right", "tab", "card", "colour", "color", "text colour", "text color", "red", "effect", "lightning", "glow", "pulse", "shimmer", "fire", "embers", "alarm", "flash"] },
   { id: "outline", group: "looks", name: "Outline", line: "The frame drawn round the Priority 1 group.", words: ["p1", "priority", "border", "frame", "box"] },
-  { id: "background", group: "looks", name: "Background", line: "What fills the screen behind the list: a scene, lightning or a video.", words: ["wallpaper", "video", "scene", "lightning", "storm", "image", "picture", "backdrop"] },
+  { id: "background", group: "looks", name: "Background", line: "What fills the screen behind the list: a scene, lightning, a picture or a video.", words: ["wallpaper", "video", "scene", "lightning", "storm", "image", "picture", "backdrop", "neon", "city", "neon city", "night"] },
   { id: "bg-colour", group: "looks", name: "Colour background", line: "A plain colour behind the list.", words: ["colour", "color", "solid", "plain"] },
   { id: "rain", group: "looks", name: "Rain", line: "Rain falling over the screen. Off by default.", words: ["weather", "drops", "drizzle", "storm", "falling"] },
   { id: "phone-videos", group: "looks", name: "Your own videos", line: "Add a video from this phone as the background. It is encrypted before it leaves.", ...GOS_ONLY, red: true, words: ["video", "videos", "background", "wallpaper", "add video", "upload", "own video"] },
@@ -272,6 +274,9 @@ export const SETTINGS: SetEntry[] = [
 
   // ---------- Keyboard and Tab ----------
   { id: "tab-stays", group: "keys", name: "Tab keeps the list open", line: "Hold Tab and let go: the list stays until you hold Tab again.", on: MAC, words: ["keep open", "pin", "sticky", "stay", "tab"] },
+  // PS 1.70: the Tab blocked card (ps-mac TabBlocked.swift, UserDefaults tabBlocked.on). This Mac, on unless switched off.
+  { id: "tab-blocked", group: "keys", name: "Tell me when Tab is blocked", line: "When an app hides your keys from PS app, holding Tab names it and shows how to fix it.", on: MAC,
+    words: ["tab", "blocked", "not working", "dead", "secure input", "password", "password box", "keys", "permission", "alert", "warning", "fix", "island", "off", "turn off", "disable"] },
   { id: "middle-click", group: "keys", name: "Force Touch middle click", line: "A firm press on the trackpad acts as a middle click.", on: MAC, words: ["trackpad", "mouse", "middle click", "press", "force touch", "click"] },
   { id: "ignored-apps", group: "keys", name: "Leave the key alone in these apps", line: "Games that use hold Tab for their scoreboard keep it.", on: MAC, more: true, words: ["games", "ignore", "exclude", "scoreboard", "apps", "except"] },
 
@@ -311,6 +316,7 @@ export const SETTINGS: SetEntry[] = [
   // project link needed. views/LinkIphone.tsx, core/phonepair.ts. The passphrase sign in there is unchanged.
   { id: "mac-phone-signin", group: "sync", name: "Sign in your phone", line: "Show a code on this Mac. Scan it in PS on your phone and it signs in, no typing.", on: MAC, red: true, words: ["phone", "pixel", "android", "iphone", "sign in", "log in", "scan", "qr", "qr code", "camera", "pair", "link"] },
   { id: "second", group: "sync", name: "Second Computer", line: "Pair your other Mac: lock it, restart it, send files.", on: MAC, words: ["second", "other mac", "m1", "m4", "pair", "pairing", "computer"] },
+  { id: "remote-screen", group: "sync", parent: "second", name: "Remote screen", line: "See and control your other Mac from this one, on the same network.", on: MAC, second: true, words: ["remote", "screen", "control", "teamviewer", "screen sharing", "vnc", "other mac", "m1", "see", "latency", "delay", "picture"] },
   { id: "invite", group: "sync", name: "Invite people", line: "Invite someone to PS app from the website, Settings, Invite owners.", on: MAC, red: true, more: true, words: ["invite", "friend", "share", "owner", "collaborators"] },
   { id: "vault", group: "sync", name: "Your vault", line: "Auto lock, your name, import, export and this device.", on: WEB, go: "vault", anchor: "pref-h", words: ["account", "vault", "profile"] },
   { id: "auto-lock", group: "sync", name: "Auto lock after", line: "Locks the vault after this long with nothing done.", on: WEB, go: "vault", anchor: "pref-h", parent: "vault", words: ["lock", "timeout", "idle", "auto lock"] },
@@ -344,8 +350,21 @@ export const SETTINGS: SetEntry[] = [
   { id: "signin-log", group: "privacy", name: "Sign-in log", line: "Every device that signed in, and when.", on: WEB, go: "vault", anchor: "log-h", parent: "vault-safety", words: ["login", "log in", "sign in", "devices", "history"] },
   { id: "claude-access", group: "privacy", name: "Claude access", line: "Claude's own account in client workspaces.", on: WEB, red: true, go: "vault", anchor: "ai-h", parent: "vault-safety", words: ["claude", "ai", "agent", "access"] },
 
+  // ---------- Countdown text (PS 1.70, core/daycount.ts; the controls are views/DayCountdown.tsx CdSetting) ----------
+  { id: "cd-on", group: "countdown", name: "Countdown", line: "A countdown under your headline to the end of your day.", words: ["countdown", "count down", "timer", "end of day", "day ends", "time left", "deadline", "headline", "off", "turn off", "disable"] },
+  { id: "cd-mode", group: "countdown", name: "Day ends", line: "The same time every day, or a time for each day. At zero a new day starts counting down.", words: ["end of day", "day ends", "noon", "12", "midday", "time", "each day", "weekday", "weekend", "schedule"] },
+  { id: "cd-tz", group: "countdown", name: "Countdown zone", line: "The time zone your day ends in.", words: ["countdown zone", "day ends", "gst", "dubai"] },
+  { id: "cd-font", group: "countdown", name: "Font", line: "How the numbers look.", words: ["font", "typeface", "rounded", "mono", "serif", "text", "look"] },
+  { id: "cd-color", group: "countdown", name: "Colour", line: "The colour of the numbers.", words: ["colour", "color", "accent", "white", "text", "look"] },
+  { id: "cd-weight", group: "countdown", name: "Weight", line: "How bold the numbers are.", words: ["weight", "bold", "light", "heavy", "thin", "text"] },
+  { id: "cd-size", group: "countdown", name: "Text size", line: "How big the countdown is.", words: ["size", "text size", "bigger", "smaller", "font size", "scale"] },
+  { id: "cd-anim", group: "countdown", name: "Animation", line: "How each number changes as it counts down.", words: ["animation", "animate", "slide", "flip", "blur", "pop", "motion", "effect"] },
+  { id: "cd-lively", group: "countdown", name: "Lively near zero", line: "The numbers glow, warm up and rumble as the day runs out.", words: ["lively", "rumble", "shake", "glow", "zero", "alive", "warning", "end"] },
+  { id: "cd-island", group: "countdown", name: "Countdown on the island", line: "The time left beside your task on the island. A Priority 1 task shows its own timer too.", on: ["mac", "phone"], words: ["island", "dynamic island", "notch", "countdown", "time left", "task"] },
+  { id: "cd-remind", group: "countdown", name: "Island reminders", line: "The island tells you how much of your day is left.", words: ["reminder", "remind", "island", "every", "hours", "time left", "acknowledged", "nudge"] },
+  { id: "cd-p1", group: "countdown", name: "Priority 1 timers", line: "A small timer on each Priority 1 task: 24 hours from when it became Priority 1.", words: ["priority 1", "p1", "timer", "24 hours", "clock", "deadline", "task"] },
   // ---------- Pomodoro (V1.58, core/pomodoro.ts; the controls are views/SettingsGroups.tsx) ----------
-  { id: "pomo-on", group: "pomodoro", name: "Pomodoro", line: "The Pomodoro button in your Tab list. Off hides it and stops a running timer.", on: NOT_PHONE, words: ["pomodoro", "tomato", "timer", "focus", "work timer", "break timer", "button"] },
+  { id: "pomo-on", group: "pomodoro", name: "Pomodoro", line: "Add its button to your Tab list with Edit, then Add panel. Off hides it and stops a running timer.", on: NOT_PHONE, words: ["pomodoro", "tomato", "timer", "focus", "work timer", "break timer", "button", "add", "edit mode", "add panel", "where is"] },
   { id: "pomo-work", group: "pomodoro", name: "Work session", line: "How long you work for in each session.", on: NOT_PHONE, words: ["pomodoro", "work", "session", "length", "minutes", "focus", "timer"] },
   { id: "pomo-short", group: "pomodoro", name: "Short break", line: "The break after each work session.", on: NOT_PHONE, words: ["pomodoro", "break", "short break", "rest", "minutes"] },
   { id: "pomo-long", group: "pomodoro", name: "Long break", line: "The longer break after a few work sessions.", on: NOT_PHONE, words: ["pomodoro", "break", "long break", "rest", "minutes"] },

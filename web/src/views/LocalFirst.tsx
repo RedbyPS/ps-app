@@ -214,7 +214,7 @@ export function MoveScreen({ look }: { look: "ps" | "mweb" | "gos" | "web" }) {
     </>;
   }
   // PS: inside its own Sign in window, which takes this screen's height (PsSignInShell).
-  if (look === "ps") return <PsSignInShell title="Turn on sync"><div className="lf-card lf-ps">{body}</div></PsSignInShell>;
+  if (look === "ps") return <PsSignInShell title="Turn on sync" art="small"><div className="lf-card lf-ps">{body}</div></PsSignInShell>;
   return <div className={`lf-screen lf-${look}`}><div className="lf-card">{body}</div></div>;
 }
 

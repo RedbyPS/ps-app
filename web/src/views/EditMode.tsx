@@ -30,7 +30,7 @@ import { createPortal } from "react-dom";
 import { PS, psPost } from "../ps";
 import { saveTabLayout } from "../core/actions";
 import {
-  addPanel, canHide, cfgOf, drawsBare, isOptIn, dropPage, gallery, hideSlot, isCopy, isWide, keepClear, kindOf, moveSlot, onPage, outOf, pageOf, pullOut, pushIn, putOnPage, resetLayout,
+  addPanel, canHide, cfgOf, copiesInPlace, drawsBare, inMenu, isOptIn, dropPage, gallery, hideSlot, isCopy, isWide, keepClear, kindOf, moveSlot, onPage, outOf, pageOf, pullOut, pushIn, putOnPage, resetLayout,
   sameLayout, setCfg, setSize, sizeOf, slotInfo, slotLabel, slotStyle, followStyle, snapRect, toPos, fromPos, MAIN_PAGE, SIZE_MAX, SIZE_MIN, EDGE,
   type InstCfg, type Rect, type TabLayout,
 } from "../core/tablayout";
@@ -168,7 +168,7 @@ export function useShownHere(): boolean {
 /** Is a Slot of this panel on the page showing? (A panel that runs something only while seen can ask.) */
 const shownHere = (c: Ctx, id: string) => {
   const s = slotInfo(id);
-  if (s?.keep) return true;   // the gear and Tab and Lock are on every page
+  if (s?.keep || inMenu(id)) return true;   // the gear, the menu and what lives in the menu are on every page
   if (isOptIn(id)) return false;   // PS 1.65 G Squad pieces: off the page until a copy is added
   if (!isCopy(id) && c.layout.hidden.includes(id)) return false;
   return pageOf(c.layout, id, c.pages) === c.page;
@@ -179,6 +179,9 @@ export function Slot({ id, children }: { id: string; children: ReactNode }) {
   const f = useFresh();
   if (!isCopy(id)) made.set(id, children);   // V1.56: on the phone too (no Edit mode there), for its pages of panels
   if (!c) return drawsBare(id) ? <>{children}</> : null;   // PS 1.65: a G Squad piece original is on no page, here either (the website To-do page drew all five)
+  // PS 1.70: an original that lives in the top right menu (views/TopMenu.tsx): drawn there on every page, never placed,
+  // sized or outlined in Edit mode (a copy from the gallery is the button on the page).
+  if (inMenu(id)) return <InstCtx.Provider value={id}><div data-slot={id} className="ed-slot ed-menu">{children}</div></InstCtx.Provider>;
   const here = shownHere(c, id);
   const p = c.layout.pos[id];
   // V1.58 smooth page swipe (views/pagelayer.ts): which page it belongs to (none for the gear and Tab and Lock, on
@@ -216,7 +219,19 @@ export function Inner({ kind, children }: { kind: string; children: ReactNode })
 export function CopySlots() {
   const c = useContext(SlotCtx);
   if (!c) return null;
-  return <>{(c.layout.extra ?? []).map((id) => <CopyAt key={id} id={id} />)}</>;
+  return <>{(c.layout.extra ?? []).filter((id) => !copiesInPlace(kindOf(id))).map((id) => <CopyAt key={id} id={id} />)}</>;
+}
+/** PS 1.70: the copies of these kinds, drawn right here (Pomodoro just after its original between Time zones and Sentry
+ *  mode; a button from the top right menu in the top right row). Put it AFTER the original's Slot, so the element is
+ *  known on the first draw (core/tablayout.ts copiesInPlace). */
+export function InlineCopies({ kinds }: { kinds: readonly string[] }) {
+  const c = useContext(SlotCtx);
+  if (!c) return null;
+  const want = new Set(kinds);
+  return <>{(c.layout.extra ?? []).filter((id) => want.has(kindOf(id))).map((id) => {
+    const el = made.get(kindOf(id));
+    return el === undefined ? null : <Slot key={id} id={id}>{el}</Slot>;
+  })}</>;
 }
 function CopyAt({ id }: { id: string }) {
   const [host, setHost] = useState<Element | null>(null);
@@ -986,7 +1001,7 @@ function Gallery({ layout, red, page, pages, pageName }: { layout: TabLayout; re
             title={g.removed ? "Removed: add brings it back" : g.here ? `${g.here} on this page` : "Add it to this page"}>
             <span className="ov-tile-ic" aria-hidden="true">{glyph(g.kind)}</span>
             <span className="ov-tile-n">{g.label}</span>
-            <span className="ov-tile-s">{g.removed ? "Removed" : g.inner ? "A button from Meetings" : g.here ? `${g.here} here` : g.all ? `${g.all} on other pages` : "Not on any page"}</span>
+            <span className="ov-tile-s">{g.removed ? "Removed" : g.inner ? "A button from Meetings" : g.here ? `${g.here} here` : g.all ? `${g.all} on other pages` : g.menu ? "In the menu" : "Not on any page"}</span>
             <span className="ov-tile-plus" aria-hidden="true">+</span>
           </button>
         ))}
@@ -1066,6 +1081,7 @@ function measure(): Box[] {
   const out: Box[] = [];
   for (const el of ov.querySelectorAll<HTMLElement>("[data-slot]")) {
     if (el.classList.contains("ed-hidden") || el.closest(".ed-hidden")) continue;
+    if (el.classList.contains("ed-menu")) continue;   // PS 1.70: lives in the top right menu, not on the page
     const r = slotRect(el);
     if (!r) continue;
     const id = el.dataset.slot!;

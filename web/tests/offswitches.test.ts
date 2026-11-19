@@ -82,6 +82,19 @@ ok("Restart helper reminder: a switch in Security next to Auto reboot, for every
   assert.match(s, /st\.helperRemind !== false/);
 });
 
+ok("Tab blocked card (PS 1.70): a switch in Keyboard and Tab, on unless switched off, for every account", () => {
+  const e = I.SETTINGS.find((x: { id: string }) => x.id === "tab-blocked");
+  assert.ok(e, "tab-blocked is in the settings index");
+  assert.equal(e.group, "keys");
+  assert.equal(e.name, "Tell me when Tab is blocked");
+  assert.ok(!/[\u2013\u2014]/.test(e.name + e.line), "no em or en dashes");
+  assert.ok(!/1password|signal/i.test(e.name + e.line + e.words.join(" ")), "never names 1Password or Signal");
+  const g = rd("../src/views/SettingsGroups.tsx");
+  assert.match(g, /"tab-blocked": function TabBlocked/);
+  assert.match(g, /on=\{st\?\.tabBlocked !== false\}/);
+  assert.match(g, /psPost\(\{ type: "psSettings:tabBlocked", on \}\)/);
+});
+
 ok("the synced switches survive the save path (ps.ts cleanLooks keeps them)", () => {
   const ps = rd("../src/ps.ts");
   for (const k of ["squadAutoJoin", "psPresence", "tipsShow"]) assert.ok(new RegExp(`if \\(typeof p\\.${k} === "boolean"\\) o\\.${k} = p\\.${k};`).test(ps), k);

@@ -186,6 +186,8 @@ export function fakeDocs(): Doc[] {
       snooze: 5, later: "Later", yes: "I'm up", word: "", click: true, bg: "#2a1a08", accent: "#f59e0b", sound: "alarm", vol: 0.8, edited: 1, alarm: true }] });
   push("todo", null, { title: "Water the studio plants", type: "daily", done: false, order: 4, due: t, repeat: { every: 2, unit: "day", from: d(-6) }, createdAt: d(-9), source: "manual", streak: 3 } satisfies Todo);
   push("todo", null, { title: "Back up the laptop", type: "daily", done: false, order: 5, due: d(4), repeat: { every: 1, unit: "week", from: d(-10) }, createdAt: d(-12), source: "manual", streak: 2 } satisfies Todo);
+  // PS 1.70: a Priority 1 task with its 24 hour clock running (the timer on its row, views/DayCountdown.tsx P1Timer).
+  push("todo", null, { title: "Send Northwind the launch checklist", type: "once", done: false, order: 0.5, p1: true, p1At: new Date(Date.now() - 20.5 * 3600_000).toISOString(), due: null, createdAt: d(-1), source: "manual" } satisfies Todo);
   push("todo", null, { title: "Write the AI agents proposal for Lumi Botanics", type: "once", done: false, order: 8, due: t, createdAt: d(-1), clientId: clientIds[e], source: "manual", claudeDoneAt: new Date().toISOString(), claudeNote: "Proposal drafted as a Google Doc, waiting for your read through" } satisfies Todo);
 
   // ---- meetings ----

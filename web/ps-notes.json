@@ -340,5 +340,15 @@
    "Middle click recovers by itself after macOS pauses it, also right after an update.",
    "PS only takes updates signed the same way as the copy you have, so your permissions stay put."
   ]
+ },
+ "1.70": {
+  "en": [
+   "A countdown under your headline shows how much of your day is left. Change it in Settings, Countdown text.",
+   "At zero it asks 'End day now?', and the island can remind you how much time is left.",
+   "Each Priority 1 task shows how long is left of its 24 hours.",
+   "The buttons at the top right now live in one menu, and Pomodoro moved into Edit.",
+   "A new sign in picture, also in Backgrounds as 'Neon city'.",
+   "If holding Tab does nothing, the island tells you which app has the keyboard and how to fix it."
+  ]
  }
 }

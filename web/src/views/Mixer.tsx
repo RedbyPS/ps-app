@@ -17,6 +17,7 @@ import { isRedAccount } from "../core/account";
 import { vaultStore } from "../core/vault";
 import "./mixer.css";
 import { appName, macListHint } from "../core/appname";
+import { TopIcon } from "./topicons";
 
 type Row = { key: string; name: string; icon?: string; instance?: string; playing: boolean; gain: number; muted: boolean; hide: boolean; cant: boolean; adjusted: boolean; meter: number };
 type State = { rows: Row[]; permission: "ok" | "denied" | "unknown"; asked: boolean; hints: string[]; master?: { volume: number; muted: boolean; device: string } };
@@ -101,7 +102,7 @@ export function MixerButton() {
     <div className={`tm-pop-wrap mix-wrap${open ? " open" : ""}`} ref={ref}>
       <button type="button" className={`tm-pill-btn icon mix-btn${open ? " on" : ""}`} aria-expanded={open} aria-label="Volume mixer" title="Volume mixer"
         onClick={(e) => { if (e.button !== 0) return; sfx.click(); setOpen((x) => !x); }}>
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true"><path d="M6 4v16M12 4v16M18 4v16" /><circle cx="6" cy="14" r="2.2" fill="currentColor" /><circle cx="12" cy="8" r="2.2" fill="currentColor" /><circle cx="18" cy="16" r="2.2" fill="currentColor" /></svg>
+        <TopIcon id="mixer" size={16} stroke={2} />   {/* a speaker with sound waves (PS 1.70), the menu's own */}
       </button>
       {open && (
         <div className="tm-pop mix-pop" role="dialog" aria-label="Volume mixer">

@@ -20,7 +20,7 @@ let seed = 1;
 const rnd = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
 const P2 = "pg2abc", P3 = "pg3xyz";
 const pages = new Set([MAIN_PAGE, P2, P3]);
-const allOriginals = SLOTS.filter((s) => !s.inner && !s.off && !s.optIn).map((s) => s.id);
+const allOriginals = SLOTS.filter((s) => !s.inner && !s.off && !s.optIn && !s.menu).map((s) => s.id);   // PS 1.70: menu ones live in the top right menu
 
 // ---------- migration: a layout from before V1.55 ----------
 ok("a V1.54 layout reads exactly as before: every panel on the main page, moved ones where they were, removed ones removed", () => {
@@ -34,7 +34,9 @@ ok("a V1.54 layout reads exactly as before: every panel on the main page, moved 
   }
   assert.deepEqual(onPage(l, P2, true, pages), [], "a new page starts empty");
   const g = gallery(l, MAIN_PAGE, true, true, pages);
-  assert.ok(g.find((x) => x.kind === "overdue")!.removed && g.find((x) => x.kind === "brief")!.removed, "removed ones wait in the gallery");
+  assert.ok(g.find((x) => x.kind === "overdue")!.removed, "removed ones wait in the gallery");
+  // PS 1.70: the Morning brief lives in the top right menu now, so an old removal of it no longer counts.
+  assert.ok(!g.find((x) => x.kind === "brief")!.removed && g.find((x) => x.kind === "brief")!.menu, "the brief is in the menu");
   assert.equal(pageOf(l, "meetings"), MAIN_PAGE);
   assert.equal(sizeOf(l, "meetings"), 1);
   assert.ok(sameLayout(l, cleanLayout(JSON.parse(JSON.stringify(l)))));

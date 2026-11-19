@@ -44,10 +44,13 @@ type Want = { group: GroupId; jump: string | null; owner: SettingsOwner; home: b
 let want: Want | null = null;
 const subs = new Set<() => void>();
 const emit = () => subs.forEach((f) => f());
+/** PS 1.70: where the next opening grows from (the countdown or a Priority 1 timer, views/DayCountdown.tsx), instead of the gear. Used once. */
+let origin: HTMLElement | null = null;
 /** Opens Settings on a group (or an old tab name), or switches group while open; null closes it. `jump` lands on one
  *  setting and lights it up. `home` (narrow screens): start on the list of sections. */
-export function openSettings(to: SettingsTab | GroupId | null, o: { jump?: string; owner?: SettingsOwner; home?: boolean } = {}) {
-  if (to === null) { if (want) { want = null; emit(); } return; }
+export function openSettings(to: SettingsTab | GroupId | null, o: { jump?: string; owner?: SettingsOwner; home?: boolean; from?: HTMLElement | null } = {}) {
+  if (to === null) { origin = null; if (want) { want = null; emit(); } return; }
+  origin = !want && o.from ? o.from : null;   // only an opening grows from it; already open, it just moves to the group
   const group = (to in OLD ? OLD[to as SettingsTab] : isGroup(to) ? to : "list") as GroupId;
   const owner = o.owner ?? want?.owner ?? (document.querySelector(".tm-overlay:not(.tm-docked)") ? "tab" : "docked");
   const next: Want = { group, jump: o.jump ?? null, owner, home: o.home ?? false };
@@ -248,7 +251,11 @@ export function SettingsScreen({ owner, ctx, controls, onGo, phone = false }: {
   useLayoutEffect(() => {
     if (phase === "open") {
       if (owner === "tab") { psPost({ type: "dimx", open: true }); psPost({ type: "psSettings:get" }); }   // PS pins the list and gives it the keyboard (Esc comes back here)
-      void morph(win.current, gearOf(owner), dim.current, "in", MORPH);
+      // PS 1.70: opened from the countdown's right click menu, it grows out of the countdown itself.
+      const from = origin && origin.isConnected ? origin : null;
+      origin = null;
+      if (from) win.current?.classList.add("cs-from-cd");
+      void morph(win.current, from ?? gearOf(owner), dim.current, "in", MORPH).then(() => win.current?.classList.remove("cs-from-cd"));
       // A keyboard: straight into the search (never on the phone, where it would throw up the keyboard).
       if (!narrow) window.setTimeout(() => search.current?.focus({ preventScroll: true }), 60);
     } else if (phase === "closing") {

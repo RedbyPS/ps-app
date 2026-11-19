@@ -8,6 +8,7 @@
 // - When the GrapheneOS shell's own island (ps-gos Island.kt, over every app) is on and allowed, that one shows and this does not.
 // - Its own switch: Settings, This phone, Island inside PS (gos/phoneprefs.ts). On by default.
 // - Light: it looks again only when something can change (each second only while a countdown shows), never polls the page.
+import { IslandDayClocks, type DayPart } from "../views/DayCountdown";
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { useVault } from "../ui/kit";
@@ -42,6 +43,7 @@ export function nativeIslandOn(g: ReturnType<typeof useGos>): boolean {
   return GOS && g.prefs?.island !== false && !!p?.overlay && !(p.islandUsage && !p.usage);
 }
 
+const dayOf = (st: unknown): DayPart | null => ((st as { day?: DayPart | null } | null)?.day ?? null);
 export function PhoneIsland({ hidden, onOpen }: { hidden: boolean; onOpen: (o: MomentOpen) => void }) {
   const on = usePhonePref("island");
   const g = useGos();
@@ -82,6 +84,8 @@ export function PhoneIsland({ hidden, onOpen }: { hidden: boolean; onOpen: (o: M
           {view.big && view.sub && <em>{view.sub}</em>}
         </span>
         {view.to !== undefined && <span className="gos-isl-c">{countdown(view.to, now)}</span>}
+        {/* PS 1.70: the day countdown beside the task (Settings, Countdown text), its Priority 1 timer first (views/DayCountdown.tsx). */}
+        {view.kind === "task" && dayOf(st) && <IslandDayClocks d={dayOf(st)!} />}
       </button>
     </div>,
     document.body,

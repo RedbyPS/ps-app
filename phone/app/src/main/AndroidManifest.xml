@@ -165,6 +165,8 @@
         <receiver android:name=".SleepAlarm" android:exported="false" />
         <receiver android:name=".SleepAction" android:exported="false" />
         <receiver android:name=".GymAction" android:exported="false" />
+        <receiver android:name=".DayAlarm" android:exported="false" />
+        <receiver android:name=".DayAction" android:exported="false" />
         <receiver android:name=".RestAction" android:exported="false" />
 
         <!-- The Annoying 15 min reminder (Remind.kt): its one alarm, its buttons, and the clock or zone changing. -->

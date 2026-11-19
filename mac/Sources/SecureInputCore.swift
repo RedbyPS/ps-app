@@ -41,6 +41,13 @@ enum SecureInputCore {
     return (false, nil)
   }
 
+  /// PS 1.70 (the Tab blocked alert): the holder that is the app in FRONT, or nil. Never PS itself (its own passphrase
+  /// box), never 1Password or Signal in front (golden rule: PS reads nothing there).
+  static func frontHolder(on: Bool, holders: [SecureHolder], frontPid: Int32?, me: Int32, protectedFront: Bool) -> SecureHolder? {
+    guard on, !protectedFront, let f = frontPid, f != me else { return nil }
+    return holders.first { $0.pid == f && !Protected.matches($0.bundleId) && !Protected.matches($0.name) }
+  }
+
   /// The card's words.
   static func notice(label: String, appName: String) -> String {
     let lead = "macOS has paused keys to \(appName) and apps like it (Secure Input"

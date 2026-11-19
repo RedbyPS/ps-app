@@ -4,6 +4,7 @@
 // or click tasks to mark what you are working on (each glows white; several at once; click again to unmark). Drag tasks up and down to
 // set their priority (the top one is P1). Size slider top left; hover and click sounds (volume in
 // Settings). Tab still works normally inside text boxes, menus and the notes window.
+import { CdMenuHost, DayCardHost, DayCountdown, P1Timer } from "./DayCountdown";
 import { createPortal } from "react-dom";
 import { islandPrefs } from "../core/island";
 import { IslandSettingsWindow } from "./IslandSettings";
@@ -65,9 +66,13 @@ import { waOnSnap } from "../core/wasnap";
 import { WaMail } from "./WaMail";
 import { PhoneTilesHost } from "../gos/PhonePages";
 import { usePhoneBg } from "../gos/phonepage";
-import { CopySlots, EditButton, EditLayer, EditScope, Inner, Slot, editingNow, setMacAccounts, setOverviewPages, useEditing, useInst, useTabLayout } from "./EditMode";
+import { CopySlots, EditButton, EditLayer, EditScope, Inner, InlineCopies, Slot, editingNow, setMacAccounts, setOverviewPages, useEditing, useInst, useTabLayout } from "./EditMode";
+import { TopMenu } from "./TopMenu";
+import { NEON_CITY, NEON_CITY_SMALL } from "./neoncity";
 import { calendarFor, feedOfAccount, panelCal } from "../core/calfeeds";
-import { cleanLayout, emptyLayout, layoutReady, onPage, pageOf } from "../core/tablayout";
+import { cleanLayout, emptyLayout, layoutReady, onPage, pageOf, MENU_SLOT_IDS } from "../core/tablayout";
+/** PS 1.70: Pomodoro's copies (it is only ever added in Edit mode now) are drawn where it always sat. */
+const POMODORO_SLOT = ["pomodoro"] as const;
 import { mailPanelId, newestOf, onMailOpen, peekMailOpen, takeMailOpen } from "../core/mailopen";
 import { PS, cleanLooks, useBgVideos as usePsBgVideos, useOverlayShown, firstSentences, askMic, askPresence, askTimeline, chooseMic, psIsOpen, psPost, useAppIcons, usePresence, usePsMic, usePsSettings, useTimeline } from "../ps";
 import { primeSfx, setEditSoundCtx, setSfxVolume, setTickSound, sfx } from "../ui/sfx";
@@ -108,7 +113,7 @@ import { LocalLine } from "./LocalFirst";
 import { clearDuePatch, isOverdue, nextOverdueAt, overdueZone, splitOverdue } from "../core/overdue";
 import { overdueLookOf, type OverdueLook } from "../core/overduelook";
 import { OverdueFxLayer, useOverdueCard, useOverdueLook } from "./OverdueLook";
-import { BG_DESIGNS, P1_COLORS, P1_DESIGNS, bgDesign, colorHue, hueColor, isVideoBg, isP1, movedId, p1AfterMove, p1Color, p1Design, p1Tones, prioNumbers, sortPrio } from "../core/prio";
+import { BG_DESIGNS, P1_COLORS, P1_DESIGNS, bgDesign, colorHue, hueColor, isImageBg, isVideoBg, isP1, movedId, p1AfterMove, p1Color, p1Design, p1Tones, prioNumbers, sortPrio } from "../core/prio";
 import { Storm, type StormKind } from "./Storm";
 import { rainLayers } from "../core/looksample";
 import { DimensionX, dimxIsOpen, morph } from "./DimensionX";
@@ -148,6 +153,7 @@ import { ReceiptButton } from "./Purchases";
 import { AfkBadge, setAfkOn } from "./AfkBadge";
 import { DndButton } from "./Dnd";
 import { SecondButton } from "./Second";
+import { ScreenSwitch } from "./ScreenSwitch";
 import { secondOnSnap } from "../core/secondsnap";
 import { SecurityButton, SecurityWindow } from "./Security";
 import { MinecraftWindow } from "./Minecraft";
@@ -419,7 +425,7 @@ function sendRects() {
     if (json !== lastRects) { lastRects = json; psPost({ type: "hitRects", rects }); }
     return;
   }
-  const sel = ".tm-glass-wrap, .tm-keep:not(.isl-hide), .tm-tr, .tm-tr2, .dnd-btn, .dnd-cog, .sc-btn, .sec-btn, .gs-btn, .tm-side > *, .tm-side > .ed-slot > *, .ed-moved, .ed-corner, .tm-head, .tm-sec, .tm-empty, [role='dialog'], .tm-pop, .stl-tip, "
+  const sel = ".tm-glass-wrap, .tm-keep:not(.isl-hide), .tm-tr, .tm-menu-pop, .tm-tr2, .dnd-btn, .dnd-cog, .sc-btn, .sec-btn, .gs-btn, .tm-side > *, .tm-side > .ed-slot > *, .ed-moved, .ed-corner, .tm-head, .tm-sec, .tm-empty, [role='dialog'], .tm-pop, .stl-tip, "
     + ".tm-tl-panel, .tm-clocks, .tm-cmp, .tm-cmp-sub, .tm-st-pop, .tm-hist, .tm-undo, .tm-aware, .tm-meet, .tm-mn, .nt-pop, .nt-slot.show, .dx-layer";
   // V1.44 #9: the list is clipped under the top bar (--tm-top-band), so what is scrolled up there is not the list's.
   const band = parseFloat((root as HTMLElement).style.getPropertyValue("--tm-top-band")) || 0;
@@ -1292,7 +1298,8 @@ export function Overlay({ onClose, controls, docked, web, footer }: { onClose: (
   const layers = bgLayers({ bg: bgLook, docked: !floating, hasP1, fade, sliding, rain: rainNow !== "off", stage });
   const sceneOn = layers.scene, stormOn = layers.storm && !lpBg, colourCss = layers.colour ? colourBgCss(bgLook) : null;
   const videoBg = layers.video ? bgVideos.find((v) => `video:${v.id}` === bgLook) ?? null : null;
-  const calm = floating && (sceneOn || stormOn || !!videoBg || !!colourCss || rainNow !== "off");
+  const imageBg = layers.image ? bgLook : null;   // PS 1.70: Neon city, a still picture drawn like a video
+  const calm = floating && (sceneOn || stormOn || !!videoBg || !!imageBg || !!colourCss || rainNow !== "off");
   const bgOn = fade > 0 || sliding || stage.forceBg;
   // Let go: it stays drawn until the saved value comes back (PS saves through its main window), never blinking.
   useEffect(() => { if (!sliding) return; const t = window.setTimeout(() => setSliding(false), 4000); return () => window.clearTimeout(t); }, [sliding]);
@@ -1355,6 +1362,7 @@ export function Overlay({ onClose, controls, docked, web, footer }: { onClose: (
       {sceneOn && bgOn && <div className={`tm-p1-scene p1s-${bgLook}`} aria-hidden="true"><i /><i className="band" /></div>}
       {videoBg && bgOn && <BgVideoLayer id={videoBg.id} file={videoBg.file} shown={shown} crop={bgCrop} />}
       {videoBg && bgOn && <BgDim saved={st.tmBgVideoBright} />}
+      {imageBg && bgOn && <img className="tm-bgvideo tm-bgimage" src={NEON_CITY} alt="" aria-hidden="true" draggable={false} decoding="async" />}
       {stormOn && bgOn && <Storm kind={bgLook as StormKind} intensity={st.tmBgIntensity ?? 60} frequency={st.tmBgFrequency ?? 40}
         sound={st.tmBgSound === true} volume={st.tmBgVolume ?? 40} soon={!!bgPrev} />}
       {rainNow !== "off" && <Rain kind={rainNow} amount={rainAmt} />}
@@ -1365,6 +1373,9 @@ export function Overlay({ onClose, controls, docked, web, footer }: { onClose: (
         {/* Pomodoro (V1.58, views/Pomodoro.tsx): between Time zones and Sentry mode by default (the developer, 13 Nov 2026); on a
             list where Time zones was moved it follows it (core/tablayout.ts followStyle). */}
         <Slot id="pomodoro"><PomodoroButton docked={docked} /></Slot>
+        {/* PS 1.70 (the developer, 19 Nov 2026): off the main screen for everyone; added from Edit mode's Add panel, it is drawn right
+            here, between Time zones and Sentry mode, as before (core/tablayout.ts pomodoro: optIn, inPlace). */}
+        <InlineCopies kinds={POMODORO_SLOT} />
         {/* Sentry mode (V1.48, views/Sentry.tsx): the big AI button between Time zones and Timelines, PS on a Mac only. */}
         {PS && !docked && <Slot id="sentry"><SentryButton docked={docked} /></Slot>}
         <div className="nu-tlrow">
@@ -1401,44 +1412,50 @@ export function Overlay({ onClose, controls, docked, web, footer }: { onClose: (
       {!docked && (<Slot id="glass">
         <GlassBar saved={savedBackdrop} kept={kept} hover={hover} onHover={setHover} onKeep={(on) => setKept(on)} />
       </Slot>)}
+      {/* The top right (PS 1.70, the developer 19 Nov 2026: "simplify it, kind of like Apple does"): Screen time, the menu and the
+          gear. Every other button that sat here is a row in the menu (views/TopMenu.tsx, core/topmenu.ts); its real
+          button still renders, hidden inside the menu, so each screen opens as before. Edit mode's Add panel still offers
+          each one as a button of its own, drawn in this row (InlineCopies). The phone keeps its own menu (gos/menu.ts),
+          which presses these same buttons, so there they render as before. */}
       <div className="tm-tr" onMouseDown={(e) => e.stopPropagation()}>
-        {shows("afk") && <Slot id="afk"><AfkBadge /></Slot>}
         {shows("screentime") && <Slot id="screentime"><ScreenTimePop /></Slot>}
-        {red && <Slot id="brief"><BriefButton docked={docked} /></Slot>}
-        <Slot id="endday"><EndDay dayEnds={st.dayEndsHour ?? DAY_ENDS_DEFAULT} docked={docked} /></Slot>
-        {PS && st.netMonitor !== false && <Slot id="net"><NetButton /></Slot>}
-        {activityOn && !docked && <Slot id="activity"><ActivityButton speed={st.activitySpeed} cols={st.activityCols} save={(p) => void taskMapActions.looks(p)} /></Slot>}
-        <Slot id="lowpower"><LowPowerButton /></Slot>
-        {shows("mixer") && <Slot id="mixer"><MixerButton /></Slot>}
-        <Slot id="clipboard"><ClearClipboard /></Slot>
+        {(() => {
+          const rest = (
+            <>
+              {shows("afk") && <Slot id="afk"><AfkBadge /></Slot>}
+              {red && <Slot id="brief"><BriefButton docked={docked} /></Slot>}
+              <Slot id="endday"><EndDay dayEnds={st.dayEndsHour ?? DAY_ENDS_DEFAULT} docked={docked} /></Slot>
+              {PS && st.netMonitor !== false && <Slot id="net"><NetButton /></Slot>}
+              {activityOn && !docked && <Slot id="activity"><ActivityButton speed={st.activitySpeed} cols={st.activityCols} save={(p) => void taskMapActions.looks(p)} /></Slot>}
+              {shows("mixer") && <Slot id="mixer"><MixerButton /></Slot>}
+              <Slot id="lowpower"><LowPowerButton /></Slot>
+              <Slot id="clipboard"><ClearClipboard /></Slot>
+              {/* Do Not Disturb (views/Dnd.tsx). The phone has it in its thumb row (gos/GosLayer.tsx). */}
+              {import.meta.env.MODE !== "gos" && <Slot id="dnd"><DndButton st={st} s={s} act={(o: DndOp) => taskMapActions.dnd(o)} homeTz={st.tmHomeTz || undefined} /></Slot>}
+              {/* G Squad (V1.40, views/GSquad.tsx): PS on a Mac, every account, and the website's To-do page. */}
+              {((PS && !docked) || web) && <Slot id="gsquad"><GSquadButton /></Slot>}
+              {/* G Squad chat on the website (views/GSquadChat.tsx): only for someone in a squad; PS has it in the G Squad pop-up. */}
+              {!PS && !web && !isPhoneBuild() && <GSquadChatWeb />}
+              {/* Second Computer (views/Second.tsx): PS on a Mac, once it is switched on (PS 1.65, core/secondswitch.ts), with the
+                  Remote screen switch beside it (PS 1.69, views/ScreenSwitch.tsx). */}
+              {secondOnSnap(s) && <Slot id="second"><span className="sc-pair"><SecondButton s={s} /><ScreenSwitch /></span></Slot>}
+              {/* PS's Tab switch and Lock (views/PsApp.tsx OverlayControls). */}
+              {controls && <Slot id="pskeys">{controls}</Slot>}
+              {/* Security (views/Security.tsx, the developer 1 Nov 2026): PS on a Mac only. */}
+              {!docked && PS && <Slot id="security"><SecurityButton s={s} /></Slot>}
+              {/* Minecraft mode has no button here (the developer, 4 Nov 2026: "I don't want the pickaxe to be anywhere on my main
+                  screen"). It is switched off for now (core/mcmode.ts); switched on it opens from the gear, Settings, General. */}
+            </>
+          );
+          return isPhoneBuild() ? rest : <Slot id="menu"><TopMenu>{rest}</TopMenu></Slot>;
+        })()}
+        <InlineCopies kinds={MENU_SLOT_IDS} />
         {/* The gear: on the floating list a click opens the full screen Settings (V1.32); the phone keeps its sheet
             and the website's To-do page its small menu. */}
         <Slot id="gear"><SettingsGear owner={docked ? "docked" : "tab"} /></Slot>
-        {controls && <Slot id="pskeys">{controls}</Slot>}
-        {/* Do Not Disturb, the far top right (views/Dnd.tsx). The phone has it in its thumb row (gos/GosLayer.tsx). */}
-        {/* Minecraft mode has no button here any more (the developer, 4 Nov 2026: "I don't want the pickaxe to be anywhere on my
-            main screen"). It is switched off for now (core/mcmode.ts); switched on it opens from the gear, Settings,
-            General (views/Minecraft.tsx MinecraftEntry). */}
-        {/* G Squad chat on the website (views/GSquadChat.tsx): only for someone in a squad; PS has it in the G Squad pop-up. */}
-        {!PS && !web && !isPhoneBuild() && <GSquadChatWeb />}
         {/* V1.47: the phone (GOS, the iPhone web app) has no G Squad button: its hamburger menu calls openGSquad() and
             this host draws the same G Squad screen, laid out for the phone (views/GSquad.tsx GSquadHost). */}
         {isPhoneBuild() && <GSquadHost />}
-        {/* The row under the top bar (V1.42): on the floating list these sit in one flex row just under the bar's right
-            end, right to left the moon, G Squad, Second Computer, the padlock. Before V1.42 each was placed by hand with
-            its own right offset, and G Squad (right 44px) landed on Second Computer (right 42px): on the developer's Mac, where
-            Second Computer shows, the two drew as one icon and G Squad could not be seen. A flex row never overlaps,
-            and a removed one (Edit mode) closes the gap. Everywhere else (the website, a narrow window) the row is
-            display: contents, so the buttons stay in the bar as before. */}
-        <div className="tm-tr2">
-          {/* Security, the padlock just left of Second Computer (views/Security.tsx, the developer 1 Nov 2026): PS on a Mac only. */}
-          {!docked && PS && <Slot id="security"><SecurityButton s={s} /></Slot>}
-          {/* Second Computer (views/Second.tsx): it shows only in PS on a Mac, where PS holds the device keys, once it is switched on (PS 1.65, core/secondswitch.ts). */}
-          {secondOnSnap(s) && <Slot id="second"><SecondButton s={s} /></Slot>}
-          {/* G Squad (V1.40, views/GSquad.tsx): just left of the moon, in PS on a Mac, every account. */}
-          {((PS && !docked) || web) && <Slot id="gsquad"><GSquadButton /></Slot>}
-          {import.meta.env.MODE !== "gos" && <Slot id="dnd"><DndButton st={st} s={s} act={(o: DndOp) => taskMapActions.dnd(o)} homeTz={st.tmHomeTz || undefined} /></Slot>}
-        </div>
       </div>
       <div className="tm-side tm-right">
         {(mailOnSnap(s) || waOnSnap(s)) && <Slot id="mail">{mailOnSnap(s) && <ClientMail s={s} mail />}{waOnSnap(s) && <WaMail s={s} />}</Slot>}   {/* WhatsApp rides in the same place as client emails (PS 1.60) */}
@@ -1465,6 +1482,9 @@ export function Overlay({ onClose, controls, docked, web, footer }: { onClose: (
       {isPhoneBuild() && <PhoneTilesHost />}
       {/* The right click menu on any task (V1.34, views/TaskMenu.tsx): Edit, Mark done, Priority 1, New date, Copy, Delete. */}
       <TaskMenuHost lists={lists} clients={clients} onEdit={setEditingId} />
+      {/* PS 1.70: the countdown's and the Priority 1 timers' right click menu, and the End day card on the website and the phone. */}
+      <CdMenuHost />
+      <DayCardHost />
       {/* V1.55 lists (views/ListPager.tsx): the page dots at the bottom middle, and the list and section menus. */}
       <ListDots ids={pageIds} index={curPage.index} names={pg.names} />
       <ListMenuHost names={pg.names} dir={pg.dir} />
@@ -1478,6 +1498,8 @@ export function Overlay({ onClose, controls, docked, web, footer }: { onClose: (
           <Headline text={st.tmHeadline || "Mission agenda"} />
           <AddTask prio={prio} clients={clients} docked={docked} />
         </header>
+        {/* PS 1.70 the day countdown (views/DayCountdown.tsx): between the headline and the list's name. Right click: Settings. */}
+        <DayCountdown />
         {/* Local first (V1.44, views/LocalFirst.tsx): one line while the data is only on this device, the week old card. */}
         <LocalLine s={s} st={st} />
         {/* PS 1.65 time estimates (views/TimeEstimate.tsx): "You've planned 9 h with 5 h free", with Rethink. Once a day at most. */}
@@ -2391,7 +2413,8 @@ export function LookBackground({ st, preview }: LookProps) {
             onPreview={() => bgPeek(d.id, d.label)}>
             {d.id.startsWith("video:") && <video className="tm-bgvideo-sample" src={`/client/bg/${d.id.slice(6)}.mp4`} muted loop playsInline autoPlay aria-hidden="true" />}
             {d.id.startsWith("video:") && bg === d.id && <BgDim saved={st.tmBgVideoBright} sample />}
-            {d.id !== "none" && !STORM_SAMPLE(d.id) && !d.id.startsWith("video:") && <span className={`tm-p1-scene p1s-${d.id}`}><i /></span>}
+            {isImageBg(d.id) && <img className="tm-bgvideo-sample tm-bgimage" src={NEON_CITY_SMALL} alt="" aria-hidden="true" draggable={false} />}
+            {d.id !== "none" && !STORM_SAMPLE(d.id) && !d.id.startsWith("video:") && !isImageBg(d.id) && <span className={`tm-p1-scene p1s-${d.id}`}><i /></span>}
             {STORM_SAMPLE(d.id) && <span className={`tm-storm-sample ${d.id}`}><i /></span>}
             {/* V1.43: your own outline (and Priority 1 colour), not always red, so the tile shows your list with that background. */}
             <span className={`tm-p1-frame mini p1d-${p1}`}>{p1 !== "none" && <P1Art design={p1} />}<i className="tm-p1-bar" /><i className="tm-p1-bar" /></span>
@@ -2611,7 +2634,7 @@ function ClearClipboard() {
     <button type="button" className={`tm-pill-btn icon${done === "ok" ? " ok" : done === "fail" ? " off" : ""}`} title={done === "ok" ? "Clipboard cleared" : done === "fail" ? "Could not clear the clipboard" : "Clear the clipboard (copies nothing)"} aria-label="Clear the clipboard"
       onClick={() => { sfx.click(); taskMapActions.clearClipboard().then(() => setDone("ok"), () => setDone("fail")); }}>
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-        {done === "ok" ? <path d="M5 12l5 5L20 7" /> : <><rect x="8" y="3" width="8" height="4" rx="1.2" /><path d="M8 5H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2" /></>}
+        {done === "ok" ? <path d="M5 12l5 5L20 7" /> : <path d="M9 3.5h6a1 1 0 0 1 1 1v1.5a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1V4.5a1 1 0 0 1 1-1zM8 5.2H6.5A1.5 1.5 0 0 0 5 6.7v12.8A1.5 1.5 0 0 0 6.5 21h11a1.5 1.5 0 0 0 1.5-1.5V6.7a1.5 1.5 0 0 0-1.5-1.5H16M9.8 11.3l4.4 4.4M14.2 11.3l-4.4 4.4" />}
       </svg>
     </button>
   );
@@ -3554,11 +3577,13 @@ function Row({ d, n, working, today, drag, onEdit, fresh, sel, ticked }: { d: Do
         {t.ai && <span className="tm-ai" title="Added by an AI (AI task API)">AI</span>}
         {rep && <span className="tm-due tm-rep">{rep}</span>}
         {when && <span className={`tm-due num${late ? " late" : ""}`}>{when}</span>}
+        {t.p1 && !isDone && <P1Timer t={t} inline />}
         <EstBadge d={d} />
         <EstHint d={d} />
       </button>
       <TaskBell task={d.id} done={isDone} />
       <MiniToggle d={d} open={mini.open} onToggle={mini.toggle} />
+      {t.p1 && !isDone && <P1Timer t={t} />}   {/* PS 1.70: its 24 hour clock (views/DayCountdown.tsx); its right click wins over the task's */}
       {n != null && <span className="tm-prio num" data-p={Math.min(n, 4)} title={`Priority ${n}`}>P{n}</span>}
       <StreakBadge n={t.type === "daily" ? t.streak : 0} className="tm-streak" rule={t.repeat} best={t.bestStreak} />
       <button type="button" className="tm-edit no-drag" onClick={onEdit} aria-label={`Edit: ${t.title}`} title="Edit">

@@ -71,6 +71,8 @@
 /* V1.53: the storm rain and its flash rest too while a full screen (Settings, Fitness, the Soundboard) covers the list (core/screenrest.ts). */
 .tm-overlay.scr-open .tm-rain { visibility: hidden; }
 .tm-bgvideo-sample { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+/* PS 1.70: Neon city, the developer's picture as a background (TaskMap.tsx): drawn like a video, on the globe in its middle. */
+.tm-bgimage { object-position: 50% 32%; user-select: none; }
 /* V1.33 video brightness (views/BgBright.tsx): a black layer over the video, as strong as the video shows */
 .tm-bgvideo-dim { position: absolute; inset: 0; z-index: 0; background: #000; /* k-keep */ pointer-events: none; opacity: calc(var(--bgv-dim, 0) * (.3 + .7 * var(--tm-tint, .58)) * var(--tm-bgfade, 1)); }
 .tm-bgvideo-dim.sample { opacity: var(--bgv-dim, 0); }

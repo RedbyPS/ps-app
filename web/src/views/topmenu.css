@@ -1,0 +1,137 @@
+/* The top right menu of the Tab list (PS 1.70, views/TopMenu.tsx). Only transform and opacity animate. */
+.tm-menu { position: relative; display: inline-flex; }
+
+/* ---------- the button: three lines that turn into a cross ---------- */
+.tm-menu-btn { position: relative; z-index: 2; }
+.tm-menu-ic { position: relative; display: block; width: 16px; height: 16px; }
+.tm-menu-ic i {
+  position: absolute; left: 1.5px; right: 1.5px; height: 2px; border-radius: 2px; background: currentColor;
+  transition: transform .34s cubic-bezier(.2, .9, .25, 1.15), opacity .2s ease;
+}
+.tm-menu-ic i:nth-child(1) { top: 3.5px; }
+.tm-menu-ic i:nth-child(2) { top: 7px; }
+.tm-menu-ic i:nth-child(3) { top: 10.5px; }
+.tm-menu-btn[aria-expanded="true"] .tm-menu-ic i:nth-child(1) { transform: translate3d(0, 3.5px, 0) rotate(45deg); }
+.tm-menu-btn[aria-expanded="true"] .tm-menu-ic i:nth-child(2) { transform: scaleX(.2); opacity: 0; }
+.tm-menu-btn[aria-expanded="true"] .tm-menu-ic i:nth-child(3) { transform: translate3d(0, -3.5px, 0) rotate(-45deg); }
+.tm-menu-btn:focus-visible { outline: 2px solid var(--k-acc, #EC4E86); outline-offset: 2px; }
+
+/* The mark: pink when something needs a look, soft blue while a mode runs. */
+.tm-menu-mark {
+  position: absolute; top: 3px; right: 3px; width: 8px; height: 8px; border-radius: 50%; pointer-events: none;
+  box-shadow: 0 0 0 2px var(--k-surface, #17121A); animation: tm-menu-mark-in .5s cubic-bezier(.2, 1.4, .4, 1) both;
+}
+.tm-menu-mark.warn { background: var(--k-acc, #EC4E86); }
+.tm-menu-mark.on { background: #8E9BFF; }
+@keyframes tm-menu-mark-in { from { transform: scale(0); } }
+
+/* ---------- the dock: the real buttons, hidden, laid out where the menu button is ----------
+   Each sits in the same grid cell, flush right, so a pop-up placed from its button opens just under the menu button
+   and a screen that grows out of its button grows out of the menu button. The dock never takes a click; the pop-ups
+   inside it do (End day's question, the Volume mixer). */
+.tm-menu-dock {
+  position: absolute; top: 0; right: 0; z-index: 1; display: grid; justify-items: end; align-items: start; pointer-events: none;
+}
+.tm-menu-dock > *, .tm-menu-dock > .ed-slot > * { grid-area: 1 / 1; }
+.tm-menu-dock > button, .tm-menu-dock > * > button, .tm-menu-dock > .ed-slot > * > button { visibility: hidden; }
+.tm-menu-dock :is(.tm-pop, [role="dialog"], [role="alertdialog"], [role="menu"], [class*="-layer"]) { pointer-events: auto; }
+
+/* ---------- the menu ---------- */
+.tm-menu-pop {
+  position: absolute; top: calc(100% + 10px); right: -4px; z-index: 6; min-width: 236px; max-width: 300px;
+  max-height: calc(100vh - 96px); overflow-y: auto; overscroll-behavior: contain; scrollbar-width: none;
+  padding: calc(6px * var(--k-dn, 1)); border-radius: calc(16px * var(--k-rd, 1)); outline: none;
+  color: var(--k-fg, #FFFFFF);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--k-fg, #FFFFFF) 5%, transparent), transparent 42px),
+    color-mix(in srgb, var(--k-surface, #1C141A) 97%, transparent);
+  border: 1px solid color-mix(in srgb, var(--k-fg, #FFFFFF) min(100%, calc(14% * var(--k-ia, 1))), transparent);
+  box-shadow: 0 1px 0 color-mix(in srgb, var(--k-fg, #FFFFFF) 8%, transparent) inset, 0 28px 64px -20px rgba(0, 0, 0, .72), 0 6px 18px -8px rgba(0, 0, 0, .5);
+  transform-origin: calc(100% - 22px) -8px;
+  animation: tm-menu-in .36s cubic-bezier(.18, 1.12, .32, 1) both;
+}
+.tm-menu-pop::-webkit-scrollbar { display: none; }
+/* Moved low or far left in Edit mode: it opens upward, or from the button's left edge. */
+.tm-menu-pop.up { top: auto; bottom: calc(100% + 10px); transform-origin: calc(100% - 22px) calc(100% + 8px); }
+.tm-menu-pop.left { right: auto; left: -4px; transform-origin: 22px -8px; }
+.tm-menu-pop.up.left { transform-origin: 22px calc(100% + 8px); }
+.tm-menu-pop.up { animation-name: tm-menu-in-up; }
+.tm-menu-pop.up.out { animation-name: tm-menu-out-up; }
+@keyframes tm-menu-in-up { from { opacity: 0; transform: translate3d(0, 8px, 0) scale(.86); } 55% { opacity: 1; } }
+@keyframes tm-menu-out-up { to { opacity: 0; transform: translate3d(0, 4px, 0) scale(.94); } }
+.tm-menu-pop.out { animation: tm-menu-out .17s cubic-bezier(.4, 0, 1, 1) both; pointer-events: none; }
+@keyframes tm-menu-in { from { opacity: 0; transform: translate3d(0, -8px, 0) scale(.86); } 55% { opacity: 1; } }
+@keyframes tm-menu-out { to { opacity: 0; transform: translate3d(0, -4px, 0) scale(.94); } }
+
+/* The highlight: one soft pill that glides from row to row. */
+.tm-menu-hi {
+  position: absolute; left: calc(6px * var(--k-dn, 1)); right: calc(6px * var(--k-dn, 1)); top: 0; z-index: 0; border-radius: calc(10px * var(--k-rd, 1));
+  background: color-mix(in srgb, var(--k-fg, #FFFFFF) min(100%, calc(10% * var(--k-ia, 1))), transparent);
+  opacity: 0; pointer-events: none; transition: opacity .14s ease;
+}
+.tm-menu-hi.show { opacity: 1; }
+.tm-menu-hi.glide { transition: opacity .14s ease, transform .2s cubic-bezier(.2, .9, .3, 1); }
+
+.tm-menu-group { display: grid; }
+.tm-menu-group + .tm-menu-group { margin-top: calc(5px * var(--k-dn, 1)); padding-top: calc(5px * var(--k-dn, 1)); border-top: 1px solid color-mix(in srgb, var(--k-fg, #FFFFFF) min(100%, calc(10% * var(--k-ia, 1))), transparent); }
+
+.tm-menu-item { position: relative; z-index: 1; display: flex; align-items: center; animation: tm-menu-row-in .34s cubic-bezier(.2, .9, .3, 1) both; animation-delay: calc(var(--i, 0) * 16ms + 40ms); }
+@keyframes tm-menu-row-in { from { opacity: 0; transform: translate3d(0, -5px, 0); } }
+.tm-menu-pop.out .tm-menu-item { animation: none; }
+
+.tm-menu-row {
+  flex: 1; min-width: 0; display: flex; align-items: center; gap: calc(11px * var(--k-dn, 1));
+  min-height: calc(34px * var(--k-dn, 1)); padding: 0 calc(10px * var(--k-dn, 1)); border: 0; border-radius: calc(10px * var(--k-rd, 1));
+  background: none; color: inherit; font: inherit; font-size: calc(13.5px * var(--k-fs, 1)); font-weight: 600; text-align: left; cursor: pointer; outline: none;
+}
+.tm-menu-row:active:not(:disabled) .tm-menu-ico { transform: scale(.88); }
+.tm-menu-row:disabled { cursor: default; opacity: .42; }
+.tm-menu-row:focus-visible { box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--k-acc, #EC4E86) 70%, transparent); }
+.tm-menu-ico {
+  flex: none; display: grid; place-items: center; width: 22px; height: 22px;
+  color: color-mix(in srgb, var(--k-fg, #FFFFFF) min(100%, calc(82% * var(--k-ia, 1))), transparent); transition: transform .12s ease, color .2s ease;
+}
+.tm-menu-row.is-on .tm-menu-ico { color: var(--k-acc, #EC4E86); }
+.tm-menu-row.is-done .tm-menu-ico { color: #4CD787; animation: tm-menu-done .42s cubic-bezier(.2, 1.5, .4, 1) both; }
+@keyframes tm-menu-done { from { transform: scale(.4) rotate(-12deg); opacity: 0; } }
+.tm-menu-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tm-menu-val {
+  flex: none; font-size: calc(12px * var(--k-fs, 1)); font-weight: 650;
+  color: color-mix(in srgb, var(--k-fg, #FFFFFF) min(100%, calc(55% * var(--k-ia, 1))), transparent);
+}
+.tm-menu-row.is-on .tm-menu-val { color: var(--k-acc, #EC4E86); }
+.tm-menu-row.is-done .tm-menu-val { color: #4CD787; }
+.tm-menu-badge {
+  flex: none; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; display: grid; place-items: center;
+  font-size: 11px; font-weight: 800; color: #fff; background: var(--k-acc, #EC4E86);
+}
+.tm-menu-dot { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--k-acc, #EC4E86); box-shadow: 0 0 0 3px color-mix(in srgb, var(--k-acc, #EC4E86) 22%, transparent); }
+
+/* A switch, as in Control Center. */
+.tm-menu-sw {
+  flex: none; position: relative; width: 30px; height: 18px; border-radius: 9px;
+  background: color-mix(in srgb, var(--k-fg, #FFFFFF) min(100%, calc(20% * var(--k-ia, 1))), transparent); transition: background .22s ease;
+}
+.tm-menu-sw i {
+  position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, .35); transition: transform .26s cubic-bezier(.2, .9, .3, 1.2);
+}
+.tm-menu-sw.on { background: #34C759; }
+.tm-menu-sw.on i { transform: translate3d(12px, 0, 0); }
+
+/* Do Not Disturb's settings: a small button at the end of its row. */
+.tm-menu-more {
+  flex: none; display: grid; place-items: center; width: calc(28px * var(--k-dn, 1)); height: calc(28px * var(--k-dn, 1)); margin-left: 2px; margin-right: 2px;
+  border: 0; border-radius: calc(8px * var(--k-rd, 1)); background: none; cursor: pointer; outline: none;
+  color: color-mix(in srgb, var(--k-fg, #FFFFFF) min(100%, calc(60% * var(--k-ia, 1))), transparent); transition: background .15s ease, color .15s ease;
+}
+.tm-menu-more:hover, .tm-menu-more:focus-visible { color: var(--k-fg, #FFFFFF); background: color-mix(in srgb, var(--k-fg, #FFFFFF) min(100%, calc(12% * var(--k-ia, 1))), transparent); }
+
+@media (prefers-reduced-motion: reduce) {
+  .tm-menu-pop, .tm-menu-pop.out, .tm-menu-item, .tm-menu-mark, .tm-menu-row.is-done .tm-menu-ico { animation: none; }
+  .tm-menu-ic i, .tm-menu-hi.glide, .tm-menu-sw i { transition: none; }
+}
+
+/* The top right row's order: Screen time, any button added in Edit mode (a copy of a menu row), the menu, the gear. */
+.tm-tr > [data-slot="screentime"] > * { order: -2; }
+.tm-tr > .ed-slot.ed-copy:not(.ed-moved) > * { order: -1; }

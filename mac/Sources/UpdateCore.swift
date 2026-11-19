@@ -276,6 +276,14 @@ enum UpdateChannel {
   static func size(of u: URL) -> Int64 { ((try? FileManager.default.attributesOfItem(atPath: u.path)[.size]) as? NSNumber)?.int64Value ?? -1 }
   /// The note, only when it changed: nil data for "304 Not Modified" (a file:// test folder is always read).
   /// `noCache`: also asks every cache on the way for the origin's copy, with a short wait.
+  /// V1.69 hotfix: a web server that answers a missing file with its web page (status 200, text/html; the website's
+  /// page fallback did this for the first look right after the developer's 1.69, before the deploy was live) has no update file
+  /// there yet. Said plainly, and never taken as a file: a zip that is really a web page would otherwise fail its
+  /// hash and be refused until PS restarts.
+  static func isWebPage(_ contentType: String?) -> Bool {
+    (contentType ?? "").lowercased().trimmingCharacters(in: .whitespaces).hasPrefix("text/html")
+  }
+  static let notThereYet = "has no update note there yet (it sent a web page)"
   static func getNote(_ u: URL, etag: String?, noCache: Bool = false) throws -> (Data?, String?) {
     if u.isFileURL { return (try get(u, max: 64 << 10), nil) }
     var req = URLRequest(url: u)
@@ -293,6 +301,7 @@ enum UpdateChannel {
       guard let h = r as? HTTPURLResponse else { out = .failure(UpdateError("\(who) said nothing")); return }
       if h.statusCode == 304 { out = .success((nil, etag)); return }
       guard h.statusCode == 200, let d else { out = .failure(UpdateError("\(who) said \(h.statusCode)")); return }
+      if isWebPage(h.value(forHTTPHeaderField: "Content-Type")) { out = .failure(UpdateError("\(who) \(notThereYet)")); return }
       out = d.count <= 64 << 10 ? .success((d, h.value(forHTTPHeaderField: "ETag"))) : .failure(UpdateError("the update note is too big"))
     }.resume()
     done.wait()
@@ -308,6 +317,7 @@ enum UpdateChannel {
       defer { done.signal() }
       if let e { out = .failure(UpdateError("could not reach \(who) (\(e.localizedDescription))")); return }
       guard let h = r as? HTTPURLResponse, h.statusCode == 200, let d else { out = .failure(UpdateError("\(who) said \((r as? HTTPURLResponse)?.statusCode ?? 0)")); return }
+      if isWebPage(h.value(forHTTPHeaderField: "Content-Type")) { out = .failure(UpdateError("\(who) \(notThereYet)")); return }
       out = d.count <= max ? .success(d) : .failure(UpdateError("the update note is too big"))
     }.resume()
     done.wait()
@@ -323,6 +333,7 @@ enum UpdateChannel {
       defer { done.signal() }
       if let e { err = UpdateError("the download stopped (\(e.localizedDescription))"); return }
       guard let h = r as? HTTPURLResponse, h.statusCode == 200, let tmp else { err = UpdateError("\(who) said \((r as? HTTPURLResponse)?.statusCode ?? 0)"); return }
+      if isWebPage(h.value(forHTTPHeaderField: "Content-Type")) { err = UpdateError("\(who) has no such update file yet (it sent a web page)"); return }
       do { try FileManager.default.moveItem(at: tmp, to: to) } catch { err = error }
     }.resume()
     done.wait()

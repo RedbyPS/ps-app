@@ -131,6 +131,25 @@ await ok("bad usage exits 2", async () => {
   assert.equal((await cli(["claude", "demo"])).code, 2);
   assert.equal((await cli(["selftest", "--only", "dnd;rm"])).code, 2);
 });
+await ok("screen: asks PS to open, close or report the remote screen, and prints its answer", async () => {
+  state(m1(true));
+  const seen: { id: string; type: string; args: { action: string } }[] = [];
+  const t = setInterval(() => {
+    for (const f of readdirSync(DIR)) {
+      if (!/^req-.*\.json$/.test(f)) continue;
+      const req = JSON.parse(readFileSync(join(DIR, f), "utf8")); rmSync(join(DIR, f)); seen.push(req);
+      writeFileSync(join(DIR, `res-${req.id}.json`), JSON.stringify({ id: req.id, state: "done", status: { screen: "live over Wi-Fi", numbers: "capture to display p50 20.0" } }));
+    }
+  }, 50);
+  const r = await cli(["screen"]);
+  const s = await cli(["screen", "status"]);
+  clearInterval(t);
+  assert.equal(r.code, 0); assert.match(r.out, /screen: live over Wi-Fi/); assert.match(r.out, /p50 20\.0/);
+  assert.equal(s.code, 0);
+  assert.deepEqual(seen.map((x) => [x.type, x.args.action]), [["screen", "open"], ["screen", "status"]]);
+  assert.ok(seen.every((x) => !existsSync(join(DIR, `res-${x.id}.json`))), "answers are cleaned up");
+  assert.equal((await cli(["screen", "frob"])).code, 2);
+});
 
 rmSync(root, { recursive: true, force: true });
 console.log(`\n${n} passed`);

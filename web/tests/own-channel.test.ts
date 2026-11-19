@@ -78,6 +78,22 @@ ok("the own channel's folder is never exported and never on GitHub", () => {
   const gh = readFileSync(join(here, "scripts/github-channel.mjs"), "utf8");
   assert.ok(!/ps-own-release/.test(gh), "the GitHub channel never reads the own channel's folder");
 });
+ok("V1.69 hotfix: a missing file under /client/ps/ is a real 404, never the page fallback (checked before it)", () => {
+  const pb = readFileSync(join(here, "scripts/postbuild.mjs"), "utf8");
+  const rules = (/writeFileSync\("dist\/_redirects", `([\s\S]*?)`\)/.exec(pb) || [])[1] || "";
+  const lines = rules.split("\n").map((l) => l.trim().split(/\s+/)).filter((l) => l.length === 3);
+  const ps = lines.findIndex((l) => l[0] === "/client/ps/*"), spa = lines.findIndex((l) => l[0] === "/client/*");
+  assert.ok(ps >= 0 && spa >= 0 && ps < spa, rules);
+  assert.deepEqual(lines[ps], ["/client/ps/*", "/client/ps/404.html", "404"]);
+  assert.ok(!lines[ps][2].endsWith("!"), "never forced: real channel files are served as they are");
+  assert.match(pb, /writeFileSync\("dist\/client\/ps\/404\.html"/);
+});
+ok("V1.69 hotfix: the Google Drive copy is signed for the release's own channel, not labelled G Squad", () => {
+  const rel = readFileSync(join(here, "scripts/release.sh"), "utf8");
+  const drive = rel.split("\n").filter((l) => /step drive /.test(l));
+  assert.equal(drive.length, 2);
+  for (const l of drive) assert.match(l, /PS_UPDATE_CHANNEL="\$\{OWN_NAME:-gsquad\}" PS_FLAVOUR="\$OWN_NAME" bash \.\.\/ps-mac\/release\/publish\.sh/);
+});
 ok("no long dashes in the new files", () => {
   for (const f of ["scripts/own-channel.mjs", "tests/own-channel.test.ts"]) assert.ok(!/[\u2013\u2014]/.test(readFileSync(join(here, f), "utf8")), f);
 });

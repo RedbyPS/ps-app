@@ -36,6 +36,7 @@ import { privatePatch } from "./core/privateends";
 import type { FitWorkout } from "./core/fitness";
 import { workoutPatch } from "./fitness/store";
 import { asleepNames, lowPower } from "./core/lowpower.ts";
+import { dayIsland, dayIslandAction } from "./daycount";
 
 type Post = (m: object) => void;
 let post: Post = () => {};
@@ -119,7 +120,9 @@ function sync(force = false) {
   const lp = lps.on ? { names: asleepNames(lps, lowPower.feeds()), why: lps.why } : null;
   // PS 1.66: the AFK timer's one question (core/afkask.ts): its words while it is still due, for the Mac's AFK card (Afk.swift).
   const afkAsk = afkAskIsland(st);
-  send({ ...shown, meets, pomo, stand, meet, welcome, workout, fit: fitIslandPart(now), lp, afkAsk }, force);
+  // PS 1.70 the day countdown in the task area (src/daycount.ts): its end, at zero, and the shown task's own Priority 1 timer.
+  const day = shown.task && !st.privateMode ? dayIsland(s, shown.task.id, now) : dayIsland(s, null, now);
+  send({ ...shown, meets, pomo, stand, meet, welcome, workout, fit: fitIslandPart(now), lp, afkAsk, day }, force);
 }
 function fitWorkouts(s: Snapshot): { id: string; data: FitWorkout }[] {
   const out: { id: string; data: FitWorkout }[] = [];
@@ -173,6 +176,8 @@ export function islandMessage(m: { type?: string; action?: string; id?: string }
     if (d && (d.kind as string) === "fwork" && !(d.data as unknown as FitWorkout).macShown) void workoutPatch(d.id, { macShown: new Date().toISOString() }).then(() => sync(true));
     return true;
   }
+  // PS 1.70 the day countdown's card out of the island (ps-mac DayCountdown.swift): End day now? and the reminders.
+  if (m.action === "dayEnd" || m.action === "dayRem") { dayIslandAction(m.action, m.id); return true; }
   // PS 1.65 Low power mode: the leaf card's Wake everything.
   if (m.action === "lowPowerWake") { lowPower.wakeAll(); return true; }
   if (m.action === "privateOff") {

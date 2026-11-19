@@ -336,12 +336,13 @@ final class App: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMess
     DND.shared.onChange.append { Toast.shared.dndChanged(); Reminders.shared.dndChanged(); Updater.shared.conditionsChanged() }   // Do Not Disturb: held cards come up when it ends
     // V1.58: who is signed in decides the 1Password and Signal rules (BuildRules.swift), so a change re-applies them.
     Owner.onChange = { [weak self] in TabWatch.shared.protectedChanged(); SafePeek.shared.refresh(); Island.shared.rulesChanged(); self?.sendSettings() }
-    Protected.onChange = { [weak self] in Posture.shared.place(); self?.replyWin.protectedChanged(); TabWatch.shared.protectedChanged(); SafePeek.shared.refresh(); Reminders.shared.check(); Toast.shared.protectedChanged(); Island.shared.protectedChanged(); Popup.shared.protectedChanged(); Updater.shared.conditionsChanged(); Soundboard.shared.protectedChanged(); HelperAlert.shared.protectedChanged(); Hatch.shared.protectedChanged() }
+    Protected.onChange = { [weak self] in Posture.shared.place(); self?.replyWin.protectedChanged(); TabWatch.shared.protectedChanged(); SafePeek.shared.refresh(); Reminders.shared.check(); Toast.shared.protectedChanged(); Island.shared.protectedChanged(); Popup.shared.protectedChanged(); Updater.shared.conditionsChanged(); Soundboard.shared.protectedChanged(); HelperAlert.shared.protectedChanged(); Hatch.shared.protectedChanged(); TabBlocked.shared.protectedChanged() }
     TabWatch.shared.start()
     KeyLayout.watch()
     KeyLayout.onChange = { [weak self] in self?.sendSettings(); self?.sendTabState(force: true) }   // V1.47: key labels follow the layout
     TabWatch.shared.loadShortcuts()   // V1.47 Tab overlay shortcuts: the saved list, or the old settings as the list
     SafePeek.shared.start()   // hold Tab over Signal, through one macOS hotkey (never the tap)
+    TabBlocked.shared.start(app: self)   // PS 1.70: the Tab blocked card (TabBlocked.swift)
     // Re-check the Accessibility permission and the keyboard tap every 3 seconds: installs the tap
     // as soon as the developer switches PS on (no relaunch) and re-enables it if macOS turned it off.
     // Tolerances (27 Oct 2026, macOS 27.2 energy check): macOS may bundle these wake ups with others.
@@ -393,6 +394,7 @@ final class App: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMess
     SleepScreen.shared.guardian = SleepSentry.shared
     // Sentry mode (Sources/Sentry.swift, V1.48): its state goes to both pages; the Tab list goes away while it engages.
     Sentry.shared.deliver = { [weak self] js in for w in [self?.overlay, self?.main] { w?.evaluateJavaScript(js, completionHandler: nil) } }
+    RemoteScreen.shared.deliver = { [weak self] js in for w in [self?.overlay, self?.main] { w?.evaluateJavaScript(js, completionHandler: nil) } }   // PS 1.69: the Tab list's Remote screen switch
     Sentry.shared.onOpen = { [weak self] in self?.hideOverlay(force: true, giveBack: false); Reminders.shared.check() }   // V1.55: reminder cards step aside at once
     SleepScreen.shared.onWoke = { [weak self] in
       guard let self, !self.selfTest else { return }
@@ -486,6 +488,7 @@ final class App: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMess
     // machine block of the stat body (locked, timer, helper) comes from AutoReboot and is resent when it changes.
     Second.shared.cmdRunner = { a, id, from, at, done in RemoteCommand.shared.run(action: a, id: id, from: from, at: at, done: done) }
     Second.shared.machine = { AutoReboot.shared.machine() }
+    RemoteScreen.shared.start()   // PS 1.69: the second Mac's screen, seen and controlled from the main Mac (RemoteScreen.swift)
     AutoReboot.shared.observe { Second.shared.machineChanged() }
     NetMonitor.shared.deliver = { [weak self] j in self?.overlay?.callAsyncJavaScript("window.__psNet && window.__psNet(JSON.parse(m))", arguments: ["m": j], in: nil, in: .page, completionHandler: nil) }
     // Minecraft mode (Sources/Minecraft.swift): the offline translator; answers go to the Tab list page only.
@@ -638,6 +641,7 @@ final class App: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMess
     SecureInputWatch.shared.onChange = { note in Popup.shared.update { $0.secureNote = note } }   // the card comes up by itself
     SecureInputWatch.shared.onEnded = { TabWatch.shared.afterSecureInput() }
     SecureInputWatch.shared.onStuck = { SafePeek.shared.secureStuck = $0 }   // V1.44: hold Tab works while it is stuck
+    SecureInputWatch.shared.onFront = { SafePeek.shared.secureFront = $0 }   // PS 1.70: a hold there brings the Tab blocked card
     TabWatch.shared.onDeaf = { deaf in Popup.shared.update { $0.deaf = deaf } }   // the tap hears nothing (V1.41)
     SecureInputWatch.shared.start()
     // At launch (also the relaunch after an update) it stays quiet while Do Not Disturb holds system notices.
@@ -889,6 +893,7 @@ final class App: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMess
     d["screenTime"] = ScreenTime.shared.enabled
     d["launchScene"] = Hatch.shared.launchOn   // PS 1.67: Settings, the start animation (Hatch.swift)
     d["helperRemind"] = HelperAlert.shared.remind   // Security > Remind me to set up the restart helper (HelperAlert.swift)
+    d["tabBlocked"] = TabBlocked.shared.on   // PS 1.70: Keyboard and Tab > Tell me when Tab is blocked (TabBlocked.swift)
     d["afk"] = Afk.shared.settingsJSON()
     d["mediaGuard"] = MediaGuard.shared.settingsJSON()
     d["ays"] = AreYouSure.shared.settingsJSON()
@@ -1095,6 +1100,7 @@ final class App: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMess
     pushIsland(opening: true)   // V1.53: the buttons already clear of the island as the list appears, no slide
     sendToMain(#"{"type":"sync"}"#)
     Popup.shared.hide(giveBack: false)   // the list is up: the "PS app is active" card has done its job
+    TabBlocked.shared.listShown()        // PS 1.70: so has the Tab blocked card
     Toast.shared.reveal(true)            // holding Tab shows the meeting cards hidden during a meeting
     shown = true
     if vaultUnlocked { SetupIsland.shared.listShown() }   // V1.58 setup island: "Hold Tab to see your list" done
@@ -1203,8 +1209,10 @@ final class App: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMess
     if Sentry.shared.isUp { Sentry.shared.escape(); return }   // V1.48: Esc locks the Mac at once (Sentry.swift)
     if SleepScreen.shared.isUp { SleepScreen.shared.escape(); return }
     if HelperAlert.shared.escape() { return }   // V1.49: the restart helper pop up closes (until the next check)
+    if TabBlocked.shared.escape() { return }   // PS 1.70: the Tab blocked card closes
     if Soundboard.shared.escape() { return }   // V1.47: a timed Soundboard play ringing stops first
     if Toast.shared.escapeStack() { return }   // PS 1.65: a notification list a click is keeping open closes
+    if RSLinkPanel.upNow { RSLinkPanel.shared.close(); return }   // PS 1.69: the pairing link screen closes (RemoteScreenLink.swift)
     guard shown else { escapeOut(); return }
     let now = CACurrentMediaTime()
     escTimes = escTimes.filter { now - $0 < EscRules.burst } + [now]
@@ -1239,6 +1247,7 @@ final class App: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMess
     if Sentry.shared.isUp { Sentry.shared.escape(); return true }   // V1.48 Sentry mode: Esc locks the Mac at once
     if SleepScreen.shared.isUp { SleepScreen.shared.escape(); return true }
     if HelperAlert.shared.escape() { return true }   // V1.49: the restart helper pop up
+    if TabBlocked.shared.escape() { return true }   // PS 1.70: the Tab blocked card
     if Soundboard.shared.escape() { return true }   // V1.47: a timed Soundboard play ringing
     if Toast.shared.escapeStack() { return true }   // PS 1.65: a notification list a click is keeping open closes
     guard let w = e.window ?? NSApp.keyWindow else { return false }
@@ -1496,6 +1505,8 @@ final class App: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMess
       if let keys = msg["keys"] as? [String] { AiDone.shared.taken(Array(keys.prefix(100))) }
     case "psSettings:helperRemind" where fromMain || fromOverlay:   // Security > Remind me to set up the restart helper (HelperAlert.swift)
       if let on = msg["on"] as? Bool { HelperAlert.shared.setRemind(on); sendSettings() }
+    case "psSettings:tabBlocked" where fromMain || fromOverlay:   // PS 1.70: Keyboard and Tab > Tell me when Tab is blocked (TabBlocked.swift)
+      if let on = msg["on"] as? Bool { TabBlocked.shared.setOn(on); sendSettings() }
     case "psSettings:launchScene" where fromMain || fromOverlay:   // PS 1.67: Settings, Play the start animation (Hatch.swift)
       if let on = msg["on"] as? Bool { Hatch.shared.launchOn = on; sendSettings() }
     case "psSettings:replayHatch" where fromMain || fromOverlay:   // PS 1.69: Settings > About and updates > Replay the update animation (Hatch.swift)
@@ -1686,6 +1697,8 @@ final class App: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMess
       if let c = msg["card"] as? [String: Any] { Toast.shared.showCard(c) }
     case "sqresult" where fromMain:             // PS 1.63: the page's answer to a G Squad reply sent from the island (src/squad/chatengine.ts noteAction)
       if let id = msg["id"] as? String { SquadIsland.shared.result(id: String(id.prefix(40)), ok: (msg["ok"] as? Bool) == true, why: (msg["why"] as? String).map { String($0.prefix(60)) }) }
+    case "dayCard" where fromMain:              // PS 1.70 the day countdown: End day now? or a time left reminder out of the island (DayCountdown.swift)
+      DayCardWindow.shared.fromPage(msg["card"])
     case "cardHide" where fromMain:
       if let id = msg["id"] as? String { Toast.shared.hideCard(id) }
     case "dnd" where fromMain:                  // Do Not Disturb: what is muted right now (src/dnd.ts, DND.swift)
@@ -1712,6 +1725,13 @@ final class App: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMess
       if let c = msg["card"] as? [String: Any] { Toast.shared.showMeet(c) }
     case "sentryPrefs" where fromMain:          // Sentry mode's restart if not unlocked, for the restart helper pop up (src/sentryprefs.ts, V1.49)
       if let h = (msg["restartH"] as? NSNumber)?.intValue { HelperAlert.shared.setSentryRestart(h) }
+    case "screenPrefs" where fromMain:          // the remote screen's Picture, Delay numbers and Hold key (src/screenprefs.ts, PS 1.69)
+      RemoteScreen.shared.setPrefs(msg)
+    case "screen:toggle" where fromMain || fromOverlay:   // the Tab list's Remote screen switch (views/ScreenSwitch.tsx, PS 1.69)
+      hideOverlay(force: true, giveBack: false)
+      RemoteScreen.shared.toggle()
+    case "screen:get" where fromMain || fromOverlay:
+      RemoteScreen.shared.sendState()
     case "noteLook" where fromMain:             // the cards' colours per kind and the Other alerts sound (src/notelook.ts, V1.36)
       if let l = msg["look"] as? [String: Any] { Toast.shared.setLook(l) }
     case "meetPrivacy" where fromMain:          // a calendar meeting started or ended: hide or show card details
@@ -1770,7 +1790,7 @@ final class App: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMess
     return .terminateLater
   }
 
-  func applicationWillTerminate(_ n: Notification) { AutoApprove.shared.stop(); Sentry.shared.quitting(); ScreenTime.shared.save(); Second.shared.quit(); MCEngine.shared.stop() }
+  func applicationWillTerminate(_ n: Notification) { AutoApprove.shared.stop(); Sentry.shared.quitting(); ScreenTime.shared.save(); RemoteScreen.shared.quit(); Second.shared.quit(); MCEngine.shared.stop() }
 
   func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
 
@@ -2241,6 +2261,7 @@ final class TabWatch {
   /// The watchdog: main has not answered for over a second. A Tab that was waiting goes out at once
   /// with this key, nothing is swallowed, and the list's state is reset.
   func mainStuck(_ e: CGEvent) -> Unmanaged<CGEvent>? {
+    RSHoldTap.shared.reset()   // PS 1.69: a held remote screen key goes out too
     mu.lock()
     lastTapKey = CACurrentMediaTime()
     holdWork?.cancel()
@@ -2271,10 +2292,13 @@ final class TabWatch {
     // whatever mode it is in (pinned, Keep overlay, Hover mode, typing in it). V1.47: a timed Soundboard play ringing
     // takes the Esc too, whatever app is in front (that one Esc stops it; Soundboard.swift). V1.49: so does the restart
     // helper pop up while it is on screen (HelperAlert.swift; never over 1Password or Signal, the tap is off there).
-    if state == .idle && type == .keyDown && e.getIntegerValueField(.keyboardEventKeycode) == 53 && (app?.shown == true || app?.sleepUp == true || Soundboard.ringingNow || HelperAlert.upNow || Toast.stackOpenNow) {   // 1.65: an open notification list takes the Esc too
+    if state == .idle && type == .keyDown && e.getIntegerValueField(.keyboardEventKeycode) == 53 && (app?.shown == true || app?.sleepUp == true || Soundboard.ringingNow || HelperAlert.upNow || TabBlocked.upNow || Toast.stackOpenNow || RSLinkPanel.upNow) {   // 1.65: an open notification list takes the Esc too
       DispatchQueue.main.async { self.app?.escKey() }
       return nil
     }
+    // PS 1.69: the remote screen's hold key (default §, RemoteScreenHold.swift), before the Tab list's own rules: it works with
+    // the list kept up or switched off too, and only while the Tab hold is idle.
+    switch RSHoldTap.shared.tap(type, e, tabIdle: state == .idle) { case .pass: return Unmanaged.passUnretained(e); case .swallow: return nil; case .notMine: break }
     // Kept up over another app: every other key is the app's (Tab included).
     if app?.kept == true && state == .idle { return Unmanaged.passUnretained(e) }
     if e.getIntegerValueField(.eventSourceUserData) == MAGIC { return Unmanaged.passUnretained(e) }
