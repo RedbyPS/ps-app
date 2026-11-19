@@ -45,8 +45,9 @@ enum Owner {
 extension BuildRules {
   /// Self test only: pretend to be the developer's account (true) or anyone else's (false). nil: who is really signed in.
   static var testAccount: Bool?
-  /// The rules for whoever is signed in on this Mac now.
-  /// The bundled profile (Profile.swift, V1.58 profiles-158) can only narrow it; self tests (testAccount set) skip it.
+  /// The rules for this build and whoever is signed in on this Mac now.
+  /// PS 1.71: what the build says decides (the bundled profile, else the layer's rules, Profile.swift); the account only
+  /// where the build says nothing. Self tests (testAccount set) skip the build and pretend to be that account.
   static var now: Rules {
     let a = rules(red: testAccount ?? Owner.red)
     return testAccount != nil ? a : fromProfile(a)

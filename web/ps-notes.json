@@ -322,16 +322,6 @@
    "Receipts read more accurately."
   ]
  },
- "1.68": {
-  "en": [
-   "Your pages, panels and settings stay where you put them after an update. The Edit button stays visible while you arrange.",
-   "Squad Priority 1 shows one row per person: time left, hit rate and streak. Hover any number to see what it means.",
-   "One G Squad for everyone, no more Leave or Join. Your sleep now reaches the squad even if you skip Save.",
-   "Streaks on every mini task of a repeating task. Add a reminder and an estimate while adding a task.",
-   "Dimension X: drag tasks between lists, move anything to Ideas, and moves never leave a copy behind.",
-   "Private mode turns itself off when the meeting ends. The island's email count matches your email panel."
-  ]
- },
  "1.69": {
   "en": [
    "The update animation now flies your island to wherever you keep it.",
@@ -349,6 +339,24 @@
    "The buttons at the top right now live in one menu, and Pomodoro moved into Edit.",
    "A new sign in picture, also in Backgrounds as 'Neon city'.",
    "If holding Tab does nothing, the island tells you which app has the keyboard and how to fix it."
+  ]
+ },
+ "1.68": {
+  "en": [
+   "Your pages, panels and settings stay where you put them after an update. The Edit button stays visible while you arrange.",
+   "Squad Priority 1 shows one row per person: time left, hit rate and streak. Hover any number to see what it means.",
+   "One G Squad for everyone, no more Leave or Join. Your sleep now reaches the squad even if you skip Save.",
+   "Streaks on every mini task of a repeating task. Add a reminder and an estimate while adding a task.",
+   "Dimension X: drag tasks between lists, move anything to Ideas, and moves never leave a copy behind.",
+   "Private mode turns itself off when the meeting ends. The island's email count matches your email panel."
+  ]
+ },
+ "1.71": {
+  "en": [
+   "On iPhone, PS app now stays signed in after you sign in once. Lock in PS ends it, and Settings has a switch.",
+   "Lists, pages and panels you make are kept when an older PS saves, and pages of panels that went missing come back.",
+   "Developers' own builds now stay their own: another person's release never replaces them.",
+   "Holding Tab and the island over 1Password and Signal follow your build's setting again, whoever is signed in."
   ]
  }
 }

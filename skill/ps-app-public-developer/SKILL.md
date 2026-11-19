@@ -153,6 +153,12 @@ Every change is one of two kinds. Ask the person which, before you start, if the
 - Profiles (`profiles/gsquad.json`, each layer's `profile.json`), the feature registry (`features.json`) and
   "From the squad" in Settings are in the code.
 
+**Your own build stays your own (V1.71).** Every own build names a channel of its own in its profile (`local`,
+its own `url`, or a `folder` on the person's Mac); `tools/build.mjs` stops one that does not, because it would
+follow the G Squad channel and the next G Squad release would replace it. To get their own copy of every new
+version (the owner's, the G Squad's, their own) with no work: `tools/follow.mjs`, in
+`references/layers-and-versions.md`, "Your own copy of every new version".
+
 **Releasing to everyone (V1.62).** Friends can finish a release themselves, without the owner. This works once
 the owner has switched G Squad builds on (`gh variable get GSQUAD_RELEASES --repo RedbyPS/ps-app` prints `on`) and
 said that this person may release (Write access is enough, no Maintain role needed). Then their update's pull
@@ -252,7 +258,7 @@ These apply to every AI working on PS through this skill. If a request breaks on
 16. **Never touch anyone else's channel or keys.** The G Squad build is signed only on GitHub, with keys kept in
     GitHub secrets; the owner's build only with his own keys on his own Mac. Your own build is signed with your own
     keys (or ad hoc) on your own machine and follows your own channel (`"channel": {"kind": "local"}` in your
-    profile: no automatic updates, you install your own builds). Changes to the checks and the release
+    profile: no automatic updates, you install your own builds; or a `folder` with `tools/follow.mjs`). Changes to the checks and the release
     (`.github/`, `.gitleaks.toml`, `mac/release/audit.py`, `mac/release/publish.sh`, `mac/release/dmg/`,
     `mac/tools/pstool.swift`, `mac/ps.entitlements`, `layers/plugpoints.json`) are refused unless they come from the
     owner's `red/` branches: if a change needs one, say so and suggest it to the owner instead.

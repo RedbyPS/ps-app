@@ -25,6 +25,7 @@ import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, typ
 import { createPortal, flushSync } from "react-dom";
 import type { Doc, Settings, TaskGroup, Todo } from "../core/model";
 import { cleanGroups, groupKey, groupOf, newGroupId, type TabLists } from "../core/groups";
+import { lostPanelPages } from "../core/keepunknown";
 import { isEveryDay } from "../core/repeat";
 import { BG_DESIGNS, bgDesign } from "../core/prio";
 import { offeredLooks } from "../core/looks";
@@ -147,9 +148,26 @@ export function newPanelsPage(at: number): string | null {
   if (c.pages.length >= PAGES_MAX) return null;
   const id = newPageId();
   const n = c.pages.filter((p) => p.kind === "panels").length + 2;
-  save({ tmPages: [...c.pages, { id, name: `Page ${n}`, secs: [], kind: "panels" }], tmPageOrder: placeAt(c.order, id, at) });
+  save({ tmPages: [...c.pages, { id, name: panelPageName(n), secs: [], kind: "panels" }], tmPageOrder: placeAt(c.order, id, at) });
   goWhenReady = { id, until: Date.now() + 8000 };
   return id;
+}
+/** The name a new page of panels gets: the n-th is "Page n" (the main page is the first). */
+const panelPageName = (n: number) => `Page ${n}`;
+/** PS 1.71 (R4, the developer 20 Nov 2026): pages of panels that got lost come back, named as a page made with + is
+ *  (panelPageName; the manager's yes, 20 Nov 2026). No other words: no note, toast or tooltip says it came back. */
+export const RESTORE_LOST_PAGES = true;
+let restoreTried = false;
+/** Once a session, when the account's own layout and pages are in (views/TaskMap.tsx): every page the Tab layout still
+ *  puts panels on but that is gone from the pages comes back as a page of panels, with those panels on it
+ *  (core/keepunknown.ts lostPanelPages). Never a page the person deleted, never twice. */
+export function restoreLostPages(layoutPages: Record<string, string> | undefined) {
+  if (!RESTORE_LOST_PAGES || restoreTried || ctx.ready !== true) return;
+  restoreTried = true;
+  const c = ctx;
+  const lost = lostPanelPages(layoutPages, c.st, panelPageName);
+  if (!lost.length) return;
+  save({ tmPages: [...c.pages, ...lost], tmPageOrder: [...c.order, ...lost.map((p) => p.id)] });
 }
 /** The overview: the pages in a new order (one write). */
 export function setPageOrder(ids: string[]) { save({ tmPageOrder: ids }); }

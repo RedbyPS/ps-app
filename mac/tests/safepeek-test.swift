@@ -107,6 +107,90 @@ check("island-public-shown-normal-app", IslandRules.show(protectedFront: false, 
 check("island-never-looks-over-protected", !IslandRules.lookAtWindows(protectedFront: true))
 check("island-looks-normal-app", IslandRules.lookAtWindows(protectedFront: false))
 
+// ---------- PS 1.71: per BUILD (Profile.allows, BuildRules.now), the 2x2 ----------
+// The developer (13 Nov, again 19 Nov: "it's just turned off again"): Tab and the island over 1Password and Signal are ON in the
+// G Squad build and OFF in his own build, two rules per build, whoever is signed in. The SafePeek rules above did not
+// change; what changed is who decides tabOverProtected and islandOverProtected (BuildRules.now = fromProfile).
+// Real files when tests/safepeek-test.sh finds them (core's gsquad.json, the developer's ps-layer/profile.json), else stand ins.
+func j(_ s: String) -> Any { try! JSONSerialization.jsonObject(with: s.data(using: .utf8)!) }
+let args = CommandLine.arguments
+let gsquadP = (args.count > 1 ? Profile.load(URL(fileURLWithPath: args[1])) : nil)
+  ?? Profile.from(j(#"{"schema":1,"name":"gsquad","channel":{"kind":"gsquad"},"othersShared":"on","rules":{"tabOverProtectedApps":true,"islandOverProtectedApps":true}}"#))
+// What build.sh writes as Resources/build-rules.json for the developer's private tree: the layer profile's rules alone.
+let redLayerRules = (args.count > 2 ? (try? Data(contentsOf: URL(fileURLWithPath: args[2]))).flatMap { try? JSONSerialization.jsonObject(with: $0) }
+                                       .flatMap { Profile.rulesFrom(($0 as? [String: Any])?["rules"]) } : nil)
+  ?? Profile.rulesFrom(j(#"{"tabOverProtectedApps":false,"islandOverProtectedApps":false}"#))
+check("files-gsquad-says-on", gsquadP?.rule("tabOverProtectedApps") == true && gsquadP?.rule("islandOverProtectedApps") == true)
+check("files-red-layer-says-off", redLayerRules == ["tabOverProtectedApps": false, "islandOverProtectedApps": false])
+
+// What SafePeek.refresh() arms for these inputs (the same three lines).
+func armedKeys(_ i: C.Inputs, _ list: [OpenKeysCore.Shortcut], legacy: Bool) -> [Int] {
+  var holds = OpenKeysCore.blindHolds(list, legacy: legacy)
+  if C.blind(i) == .secureFront { holds = holds.filter { $0 == OpenKeysCore.TAB } }
+  return C.wantTab(i) ? holds : []
+}
+// What SafePeek.held() and combo() do after the hold (the guard before onHold).
+func holdOpens(_ protectedFront: Bool, _ r: BuildRules.Rules) -> Bool { !(protectedFront && !r.tabOverProtected) }
+let f5 = 96, tabK = OpenKeysCore.TAB
+let otherKeys = [OpenKeysCore.Shortcut(kind: .hold, key: f5), OpenKeysCore.Shortcut(kind: .hold, key: tabK),
+                 OpenKeysCore.Shortcut(kind: .combo, key: 49, mods: ["ctrl", "opt"])]
+let builds2: [(String, Profile?, [String: Bool]?, Bool)] = [("gsquad-build", gsquadP, nil, true), ("red-build", nil, redLayerRules, false)]
+let accounts2: [(String, Bool)] = [("red-account", true), ("friend-account", false)]
+let apps = [("1password", "com.1password.1password"), ("1password7", "com.agilebits.onepassword7"), ("signal", "org.whispersystems.signal-desktop")]
+for (b, prof, layer, on) in builds2 {
+  for (a, isRed) in accounts2 {
+    let r = BuildRules.fromProfile(BuildRules.rules(red: isRed), profile: prof, layer: layer)
+    let tag = "\(b)-\(a)"
+    check("1.71-\(tag)-rules-\(on ? "on" : "off")", r == BuildRules.Rules(tabOverProtected: on, islandOverProtected: on))
+    for (appName, bundleId) in apps {
+      let pf = Protected.matches(bundleId)
+      let t = "\(tag)-\(appName)"
+      check("1.71-\(t)-is-protected", pf)
+      func inp(_ f: (inout C.Inputs) -> Void = { _ in }) -> C.Inputs {
+        var i = C.Inputs(); i.protectedFront = pf; i.tabOverProtected = r.tabOverProtected; f(&i); return i
+      }
+      // Plain Tab (nobody changed the list) and other hold keys (a changed list: F5 and Tab hold, a combo).
+      check("1.71-\(t)-plain-tab-\(on ? "armed" : "never")", armedKeys(inp(), [], legacy: true) == (on ? [tabK] : []))
+      check("1.71-\(t)-other-hold-keys-\(on ? "armed" : "never")", armedKeys(inp(), otherKeys, legacy: false) == (on ? [f5, tabK] : []))
+      check("1.71-\(t)-right-option-chosen", C.wantTab(inp { $0.triggerKey = "rightOption" }) == on)
+      // Secure Input: held by the app in front (macOS's record lags a moment: stuck), and the PS 1.70 case, the app in
+      // front was seen holding it (secureFront still set from the app before, up to the next look). 1Password or Signal
+      // in front always wins, so the build's rule decides and a hold brings the list, never the Tab blocked card.
+      for (cn, f) in [("secure-stuck", { (i: inout C.Inputs) in i.secureStuck = true }),
+                      ("secure-front-1.70", { (i: inout C.Inputs) in i.secureFront = true }),
+                      ("secure-both", { (i: inout C.Inputs) in i.secureStuck = true; i.secureFront = true })] {
+        let i = inp(f)
+        check("1.71-\(t)-\(cn)-protected-wins", C.blind(i) == .protected)
+        check("1.71-\(t)-\(cn)-\(on ? "armed" : "never")", armedKeys(i, [], legacy: true) == (on ? [tabK] : []))
+        check("1.71-\(t)-\(cn)-other-keys", armedKeys(i, otherKeys, legacy: false) == (on ? [f5, tabK] : []))
+        check("1.71-\(t)-\(cn)-list-not-card", !C.holdShowsCard(C.blind(i)))
+        check("1.71-\(t)-\(cn)-esc", C.wantEsc(protectedFront: pf, secureStuck: i.secureStuck, shown: true, tabOverProtected: r.tabOverProtected) == on)
+      }
+      // Locked or signed out never changes arming (the Inputs have no lock at all); the hold asks or shows the card.
+      check("1.71-\(t)-hold-opens-\(on ? "list" : "nothing")", holdOpens(pf, r) == on
+        && C.onHold(unlocked: true, locked: false, askingTouchID: false, sleepUp: false) == .showList)
+      check("1.71-\(t)-esc-closes-list", C.wantEsc(protectedFront: pf, secureStuck: false, shown: true, tabOverProtected: r.tabOverProtected) == on)
+      check("1.71-\(t)-combos-\(on ? "work" : "dropped")", C.wantCombos(enabled: true, recording: false, protectedFront: pf, tabOverProtected: r.tabOverProtected) == on)
+      check("1.71-\(t)-list-\(on ? "stays-up" : "goes")", C.hideListOnProtected(protectedFront: pf, shown: true, tabOverProtected: r.tabOverProtected) == !on)
+      check("1.71-\(t)-quick-tap-never-typed-into-it", !C.passOnTap(protectedFront: pf))
+      check("1.71-\(t)-held-never-dropped", C.wantTab(inp { $0.held = true }))
+      // The island (Island.place) and a G Squad message on it (SquadIslandCore.decide).
+      check("1.71-\(t)-island-\(on ? "shows" : "hidden")", IslandRules.show(protectedFront: pf, rules: r) == on)
+      var g = SquadGate(); g.protectedFront = pf; g.islandOverProtected = r.islandOverProtected
+      check("1.71-\(t)-squad-island-\(on ? "island" : "corner-card")", SquadIslandCore.decide(g) == (on ? .island : .old))
+      check("1.71-\(t)-island-never-looks-at-windows", !IslandRules.lookAtWindows(protectedFront: pf))
+    }
+    // A normal app with the tap working: SafePeek stays out of the way, the island shows, on both builds.
+    check("1.71-\(tag)-normal-app-tap-has-tab", armedKeys({ var i = C.Inputs(); i.tabOverProtected = r.tabOverProtected; return i }(), [], legacy: true).isEmpty)
+    check("1.71-\(tag)-normal-app-island-shows", IslandRules.show(protectedFront: Protected.matches("com.apple.Safari"), rules: r))
+  }
+}
+// Nobody signed in yet (fresh install, or after Sign out of this Mac) counts as "public" per account: before 1.71 the developer's
+// own build armed over them then. Now the build says off.
+let nobody = BuildRules.fromProfile(BuildRules.rules(red: false), profile: nil, layer: redLayerRules)
+check("1.71-red-build-nobody-signed-in-off", !nobody.tabOverProtected && !nobody.islandOverProtected)
+check("1.71-gsquad-build-nobody-signed-in-on", BuildRules.fromProfile(BuildRules.rules(red: false), profile: gsquadP, layer: nil) == BuildRules.Rules(tabOverProtected: true, islandOverProtected: true))
+
 // The log never names an app, and never writes a line for a protected app at all (SafePeek only logs Secure Input).
 for l in [C.logLine(armed: true, why: .protected), C.logLine(armed: true, why: .secureInput), C.logLine(armed: false, why: nil)] {
   let low = l.lowercased()

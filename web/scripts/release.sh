@@ -22,6 +22,8 @@
 # only the developer's key and certificate. Its releases go ONLY there (ps-own-release/, signed for that channel): never to the
 # G Squad channel on GitHub and never to the public download folder, so friends never get his build and his Macs never
 # get theirs. The G Squad's builds come from the G Squad release workflow. No layer profile: everything as before.
+# V1.71: the same for his phone. Its APK carries the layer profile and asks the same unlisted folder (gos-version.json
+# beside the Mac's ps-update.json); /client/gos/ is still filled for PS GOS V1.56 and older.
 # The developer's PRIVATE notes for the version (ps-notes-private.json) are never in any build, the channel or the APK:
 # the audit below refuses any of their words, and they are sealed to his own vault instead (scripts/ps-private.ts),
 # where only his PS shows them, as "For you" under the public ones.
@@ -94,6 +96,9 @@ if [ -f ps-layer/profile.json ]; then
       echo "STOP: V$VER_NOW is already live on your own channel. Every release needs a new number: node scripts/ps-version.mjs bump, commit ps-version.json, get the developer's yes on the What's new words, then release. Nothing was built."
       exit 1
     fi
+    # V1.70: the newest release on the developer's channel is his copy of Jan's version: this tree must carry it first. V1.71: and
+    # every version someone else claimed on core main (Jan's 1.68 never reached this tree, so the website and the developer's
+    # builds ran older shared code than the G Squad build and wiped pages on everyone's account).
   fi
 fi
 
@@ -132,7 +137,9 @@ if [ -x ../phone/scripts/release.sh ] || [ -f ../phone/scripts/release.sh ]; the
 fi
 [ -z "$DRY" ] || [ -z "${PS_DRY_GOS:-}" ] || NEED_GOS="$PS_DRY_GOS"
 # The phone's "What's new" is public too (everyone gets the same APK): the developer's approved notes or nothing.
-gos_build() { bash ../phone/scripts/release.sh "${PS_NOTES:-$(node scripts/ps-public.mjs notes-text)}"; }
+# V1.71: with an own channel the phone build carries the layer profile and its note is made for that channel (ps-gos
+# release.sh reads the committed profile and stops when it is not this channel's); without one, the G Squad channel.
+gos_build() { PS_UPDATE_CHANNEL="${OWN_NAME:-gsquad}" bash ../phone/scripts/release.sh "${PS_NOTES:-$(node scripts/ps-public.mjs notes-text)}"; }
 # The version the developer sees in PS on the Mac and the phone (ps-version.json, bumped by the manager
 # before a release with `node scripts/ps-version.mjs bump`): this script only reads it.
 write_psv() { echo "$PSV" > dist-ps/ps-version.json; }
@@ -244,6 +251,12 @@ else
       exit 1
     fi
   fi
+fi
+
+# V1.71: the developer's phone asks his own channel folder too (its APK carries his layer profile). The staged phone build must be
+# this version and made for that channel, or postbuild.mjs would not put it there and his phone would never see it.
+if [ -n "$OWN_URL" ] && { [ -n "$NEED_GOS" ] || [ -f ../phone/scripts/release.sh ]; }; then
+  run node scripts/own-channel.mjs phone gos-release "$GOSV" || { echo "STOP: the phone build in gos-release/ cannot go to your own channel (above), so your phone would not see this release. Build it again: bash ../phone/scripts/release.sh with PS_UPDATE_CHANNEL=$OWN_NAME. Nothing was published."; exit 1; }
 fi
 
 # The channel, staged in a copy first: it replaces its folder only when the audit is clean. The public channel

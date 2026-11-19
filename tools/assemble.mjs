@@ -52,6 +52,31 @@ function expand(root, pattern) {
   return filesOf(join(root, base)).map((f) => (base ? base + "/" : "") + f).filter((f) => re.test(f)).sort();
 }
 
+/**
+ * PS 1.71 (three releases never blended): what is wrong with a person's own build's update channel (null: nothing).
+ * A layer build must follow a channel of its own, named in its profile: "local" (it never updates by itself; they
+ * install each build), "url" (their own https folder) or "folder" (a folder in their own ~/Library/Application Support/,
+ * where tools/follow.mjs stages each new version). With none, or "gsquad", the Mac app follows the G Squad channel and
+ * the next G Squad release replaces it (their private features gone, macOS dropping its permissions).
+ */
+export function channelProblem(profile) {
+  const ch = profile && typeof profile === "object" ? profile.channel : null;
+  const kind = ch && typeof ch === "object" ? ch.kind : undefined;
+  if (kind === "local") return null;
+  if (kind === "url") {
+    let u = null; try { u = new URL(ch.url); } catch { /* not an address */ }
+    return u && u.protocol === "https:" && u.host && String(ch.url).endsWith("/") ? null : 'its channel "url" must be an https address ending in /';
+  }
+  if (kind === "folder") {
+    const p = typeof ch.path === "string" ? ch.path : "";
+    const inside = /^~\/Library\/Application Support\/[^/]/.test(p) || /^\/Users\/[^/]+\/Library\/Application Support\/[^/]/.test(p);
+    return inside && p.endsWith("/") && !p.split("/").some((x) => x === "." || x === "..") ? null
+      : 'its channel "folder" must be a folder in your own ~/Library/Application Support/, ending in /';
+  }
+  if (kind === "gsquad") return 'its channel is "gsquad"';
+  return "it names no update channel";
+}
+
 export function readLayer(layerPath, rootOverrides = {}) {
   const file = resolve(layerPath);
   const L = JSON.parse(readFileSync(file, "utf8"));

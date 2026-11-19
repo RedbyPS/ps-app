@@ -2,7 +2,8 @@
 # PS GOS release. Builds a signed APK from the same web code as the website and PS on the Mac,
 # checks it, and leaves it where the next website deploy picks it up. It deploys NOTHING itself:
 # the manager runs `npm run release` in ~/Projects/ps/web, which publishes
-# cincee.com/client/gos/ (unlisted, noindex) together with the website.
+# cincee.com/client/gos/ (unlisted, noindex) together with the website, and (V1.71) for a tree with
+# a layer profile also the maker's own channel folder, the one this APK then asks for updates.
 #
 #   scripts/release.sh "What changed, in plain words"
 #
@@ -29,6 +30,26 @@ ln -s "$(cd ../web && pwd)/node_modules" "$CLEAN/node_modules"
 cp ../web/.env "$CLEAN/.env"
 echo "web from web $(git -C ../web rev-parse --short HEAD) (committed code only)"
 
+# 1b. V1.71: the maker's own update channel, for the phone too (the developer, 19 Nov 2026: his phone never got the own channel
+#     his Macs follow since V1.69, kept asking the G Squad channel on GitHub and refused every APK there, which is
+#     signed with the G Squad key). A web tree with a layer profile (the developer's: ps-layer/profile.json, committed) gives
+#     this build that profile as assets/profile.json (-PpsProfile), so the phone asks that channel only, and the note
+#     is made for it. A profile whose channel cannot be used stops here, before anything changes, and so does an APK
+#     that comes out without it (step 4): never a quiet fall back to the G Squad channel.
+PROFILE="$CLEAN/ps-layer/profile.json"
+OWN_URL=""; OWN_NAME=""
+if [ -f "$PROFILE" ]; then
+  OWN_URL="$(node "$CLEAN/scripts/own-channel.mjs" url "$PROFILE")" && [ -n "$OWN_URL" ] || { echo "STOP: ps-layer/profile.json has no usable own update channel, so this phone build would ask the G Squad channel. Nothing was built."; exit 1; }
+  OWN_NAME="$(node "$CLEAN/scripts/own-channel.mjs" name "$PROFILE")"
+  if [ -n "${PS_UPDATE_CHANNEL:-}" ] && [ "$PS_UPDATE_CHANNEL" != "$OWN_NAME" ]; then
+    echo "STOP: this release was asked for the $PS_UPDATE_CHANNEL channel, but the committed layer profile is $OWN_NAME's. Nothing was built."; exit 1
+  fi
+  PS_UPDATE_CHANNEL="$OWN_NAME"
+  echo "own update channel: $OWN_NAME (the phone asks only there)"
+elif [ -n "${PS_UPDATE_CHANNEL:-}" ] && [ "$PS_UPDATE_CHANNEL" != gsquad ]; then
+  echo "STOP: a release for the $PS_UPDATE_CHANNEL channel needs that person's layer profile in the committed web tree (ps-layer/profile.json). Nothing was built."; exit 1
+fi
+
 # 2. Version. ONE PS version for the Mac and the phone (the developer, 27 Oct 2026): the name and its keyword
 #    come from web's ps-version.json (the manager bumps it; this only reads it), e.g.
 #    "V1.07" and "Wisdom". versionCode is the phone's own counter and always goes up, so a re-spin of
@@ -50,7 +71,7 @@ if [ -e app/src/main/assets/client/FICTIONAL-TEST-DATA ] || ls app/src/main/asse
 fi
 
 # 3. Signed release build.
-./gradlew -q clean assembleRelease
+./gradlew -q clean assembleRelease ${OWN_URL:+"-PpsProfile=$PROFILE"}
 APK=app/build/outputs/apk/release/app-release.apk
 [ -f "$APK" ] || { echo "No release APK was built. Stop."; exit 1; }
 
@@ -58,6 +79,8 @@ APK=app/build/outputs/apk/release/app-release.apk
 CERT=$("$BT/apksigner" verify --print-certs "$APK" | grep 'certificate SHA-256 digest' | head -1 | awk '{print $NF}')
 [ "$CERT" = "$PIN" ] || { echo "Signed with the wrong key ($CERT). Stop."; exit 1; }
 if "$BT/aapt2" dump xmltree "$APK" --file AndroidManifest.xml | grep -q DebugHooks; then echo "Debug hook in a release build. Stop."; exit 1; fi
+# V1.71: with an own channel, the APK must carry exactly the layer profile (else the phone would ask the G Squad channel).
+if [ -n "$OWN_URL" ]; then ./scripts/apk-profile.sh "$APK" "$PROFILE" || { echo "The APK does not carry the layer profile. Stop."; exit 1; }; fi
 
 # 5. The file and its manifest.
 OUT=release/$FILE
@@ -93,4 +116,8 @@ if [ -d "$(dirname "$(dirname "$DRIVE")")" ]; then mkdir -p "$DRIVE" && rm -f "$
 else echo "Google Drive folder not found: copy $OUT by hand."; fi
 
 git add version.properties && git commit -q -m "PS GOS $NAME" -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>" -- version.properties || true
-echo "Ready: PS GOS $NAME · $KEYWORD, code $CODE, $FILE ($SIZE bytes, sha256 $SHA). Not deployed: the manager's next release publishes it on GitHub (gos-version.json, what V1.57 and newer read) and at cincee.com/client/gos/ (V1.56 and older)."
+if [ -n "$OWN_URL" ]; then
+  echo "Ready: PS GOS $NAME · $KEYWORD, code $CODE, $FILE ($SIZE bytes, sha256 $SHA), for $OWN_NAME's own channel. Not deployed: the manager's next release publishes it in that channel's folder (gos-version.json, what this build asks for) and at cincee.com/client/gos/ (V1.56 and older)."
+else
+  echo "Ready: PS GOS $NAME · $KEYWORD, code $CODE, $FILE ($SIZE bytes, sha256 $SHA). Not deployed: the manager's next release publishes it on GitHub (gos-version.json, what V1.57 and newer read) and at cincee.com/client/gos/ (V1.56 and older)."
+fi

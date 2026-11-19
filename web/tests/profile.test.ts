@@ -1,7 +1,8 @@
 // Run: node --experimental-strip-types tests/profile.test.ts
 // V1.58 multiple developers (profiles-158): one small settings file per build (core-root/profiles/gsquad.json for the
-// G Squad build, ps-layer/profile.json for the developer's). Checks the reader (src/core/profile.ts), the G Squad file, the rule
-// join with protected-158's per account answer (fails closed) and that a build without a file keeps V1.57's answers.
+// G Squad build, ps-layer/profile.json for the developer's). Checks the reader (src/core/profile.ts), the G Squad file, the rules
+// per BUILD (PS 1.71: the profile decides when it says, G Squad on and the developer's own build off for every account) and that
+// a build without a file keeps V1.57's per account answers.
 import assert from "node:assert/strict";
 import { readFileSync, existsSync } from "node:fs";
 let n = 0;
@@ -27,7 +28,7 @@ ok("The developer's profile (when the flip's ps-layer/profile.json is here): bot
   const r = JSON.parse(file("ps-layer/profile.json"));
   assert.equal(r.name, "red");
   assert.equal(r.othersShared, "on");
-  assert.deepEqual(r.features, { "client-emails": true, whatsapp: false, receipts: true, "second-computer": true, "auto-approve-defaults": false, "audio-priority": false }, "V1.62: WhatsApp now defaults on in core; his build keeps it off as 1.61 left it. PS 1.65: Receipts named on, as the developer asked; Second Computer on for the developer");
+  assert.deepEqual(r.features, { "client-emails": true, whatsapp: false, receipts: true, "second-computer": true, "remote-screen": true, "auto-approve-defaults": false, "audio-priority": false }, "V1.62: WhatsApp now defaults on in core; his build keeps it off as 1.61 left it. PS 1.65: Receipts named on, as the developer asked; Second Computer on for the developer. PS 1.70: Remote screen on for the developer");
   assert.equal(r.rules.tabOverProtectedApps, false);
   assert.equal(r.rules.islandOverProtectedApps, false);
 });
@@ -67,14 +68,35 @@ ok("profile() reads the build file's profile", () => {
   assert.equal(P.profileName(), "red");
   P.setBuildForTests(undefined);
 });
-ok("rule join fails closed: on only when the profile AND the per account answer allow it", () => {
+ok("PS 1.71: the rules are per BUILD, the 2x2 (G Squad on for every account, the developer's own build off for every account)", () => {
+  // The developer, 13 Nov 2026, again 19 Nov ("it's just turned off again"): two rules per build, never one shared switch. The per
+  // account answer is false on the developer's account and true on a friend's (and on nobody signed in yet).
   const g = P.cleanProfile(gsquadRaw), r = P.cleanProfile(red);
+  const own = has("ps-layer/profile.json") ? P.cleanProfile(JSON.parse(file("ps-layer/profile.json"))) : r;
   for (const rule of P.RULES) {
-    assert.equal(P.joinRule(rule, true, g), true, "G Squad build, a friend's account");
-    assert.equal(P.joinRule(rule, false, g), false, "G Squad build on the developer's account stays off");
-    assert.equal(P.joinRule(rule, true, r), false, "The developer's build stays off whoever is signed in");
-    assert.equal(P.joinRule(rule, false, r), false);
+    assert.equal(P.joinRule(rule, true, g), true, "G Squad build, a friend's account: on");
+    assert.equal(P.joinRule(rule, false, g), true, "G Squad build, the developer's account: on (the 19 Nov bug: it was off)");
+    assert.equal(P.joinRule(rule, true, r), false, "The developer's build, a friend's account: off");
+    assert.equal(P.joinRule(rule, false, r), false, "The developer's build, the developer's account: off");
+    assert.equal(P.joinRule(rule, true, own), false, "The developer's real layer profile, any account: off");
+    assert.equal(P.joinRule(rule, false, own), false);
   }
+});
+ok("PS 1.71: a profile that does not say keeps the per account answer", () => {
+  const quiet = P.cleanProfile({ ...red, rules: {} });
+  for (const rule of P.RULES) for (const a of [true, false]) assert.equal(P.joinRule(rule, a, quiet), a);
+  const half = P.cleanProfile({ ...red, rules: { tabOverProtectedApps: true } });
+  assert.equal(P.joinRule("tabOverProtectedApps", false, half), true);
+  assert.equal(P.joinRule("islandOverProtectedApps", false, half), false, "island not said: the developer's account answer");
+  assert.equal(P.joinRule("islandOverProtectedApps", true, half), true);
+});
+ok("PS 1.71: the Mac does the same (Profile.allows lets the build decide) when its source is next to this tree", () => {
+  const mac = process.env.PS_MAC_PROFILE_SWIFT ?? `${process.env.HOME}/Projects/ps-mac/Sources/Profile.swift`;
+  if (!existsSync(mac)) return;
+  const src = readFileSync(mac, "utf8");
+  if (!src.includes("layerRules")) return;   // a Mac tree from before 1.71
+  assert.ok(!src.includes("v && account"), "the old AND join is gone on the Mac");
+  assert.ok(src.includes("if let v = profile?.rule(rule) { return v }"), "the profile decides on the Mac");
 });
 ok("the rule names match the Mac (Profile.swift) and the phone (Profile.kt)", () => {
   const mac = `${process.env.HOME}/Projects/.worktrees/profiles-158/Sources/Profile.swift`;

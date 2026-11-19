@@ -21,7 +21,8 @@ function useShortcuts() {
   const st = usePsSettings();
   const sc = st?.shortcuts;
   const list: OpenShortcut[] = sc?.list?.length ? sc.list.map(tidy) : legacyList(st?.triggerKey, st?.slashChord);
-  // V1.58: one rule per account (the Mac's BuildRules.swift). The developer's: PS never opens over 1Password or Signal.
+  // V1.58: one rule per account (the Mac's BuildRules.swift); PS 1.71: per BUILD. The developer's own build: PS never opens over
+  // 1Password or Signal. The G Squad build: it does, for every account.
   const overProtected = sc?.overProtected !== false;
   return { ready: !!st, list, custom: !!sc?.custom, labels: sc?.labels, layout: sc?.layout, taken: new Set(sc?.taken ?? []), error: st?.error, overProtected };
 }

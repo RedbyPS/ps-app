@@ -1,6 +1,8 @@
-// The mobile web app's "Remember me" for a phone signed in from the Mac (V1.55, src/core/phonepair.ts).
+// The mobile web app's "Remember me": a phone signed in from the Mac (V1.55, src/core/phonepair.ts), and since PS 1.71 a
+// passphrase sign in on the phone with Stay signed in on (src/core/phonestay.ts, vault.ts keepPhoneSignIn).
 //
-// What the Mac sends (the account's derived login password and key encryption key, never the passphrase) is kept here
+// What the Mac sends, or what the phone derived from the typed passphrase (the account's derived login password and key
+// encryption key, never the passphrase itself), is kept here
 // encrypted with AES-256-GCM under a device key that WebCrypto made NON-EXTRACTABLE: the browser keeps the key and
 // lets this site's own page use it, but no script can read its bytes out. Both sit in this site's IndexedDB, one entry
 // per project.
@@ -10,7 +12,10 @@
 // by iOS's file encryption while the phone is locked, not by the Secure Enclave and not by Face ID. Anyone who can run
 // script on cincee.com in that browser, or who has the unlocked phone in hand, can open PS. That is the same as any web
 // app that keeps you signed in. Lock in PS on the phone forgets it (the passphrase is needed again), Remove on the Mac
-// makes the phone forget it the next time it opens, and a lost phone is closed for good by changing the passphrase.
+// makes the phone forget it the next time it opens or comes back to the front, a new passphrase does the same (1.71),
+// Stay signed in off and Change project forget it, and a lost phone is closed for good by changing the passphrase.
+import { setStay } from "./phonestay.ts";
+
 const DB = "ps-phone-keys";
 const STORE = "keys";
 const AAD = new TextEncoder().encode("ps-phone-keys-v1");
@@ -40,8 +45,10 @@ async function tx<T>(mode: IDBTransactionMode, f: (s: IDBObjectStore) => IDBRequ
 }
 const slot = (projectUrl: string) => projectUrl.trim().replace(/\/+$/, "").toLowerCase();
 
-/** Keep the phone's sign in for this project. */
+/** Keep the phone's sign in for this project. A kept sign in means Stay signed in is on here (1.71: so the Mac's scan
+ *  also turns the phone's switch on; a passphrase sign in only keeps it while the switch is on). */
 export async function savePhoneKeys(projectUrl: string, p: PhoneKeys): Promise<void> {
+  setStay(true);
   const key = await crypto.subtle.generateKey({ name: "AES-GCM", length: 256 }, false, ["encrypt", "decrypt"]);
   const iv = crypto.getRandomValues(new Uint8Array(12));
   const ct = await crypto.subtle.encrypt({ name: "AES-GCM", iv, additionalData: AAD }, key, new TextEncoder().encode(JSON.stringify(p)));

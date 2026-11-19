@@ -53,6 +53,45 @@ class UpdateWhereTest {
         assertEquals(UpdateRoute("local", "mia", null), UpdateWhere.route("""{"name":"mia","channel":{"kind":"local"}}"""))
     }
 
+    // V1.71: the private build carries its maker's whole layer profile (web ps-layer/profile.json, unchanged),
+    // so the phone asks the same unlisted folder as that person's Macs. Fictional folder here.
+    private val own = "https://example.invalid/client/ps/own-0123456789abcdef/"
+    private val layer = """{
+      "schema": 1, "name": "red", "display": "Me",
+      "channel": { "kind": "url", "url": "$own" },
+      "othersShared": "on",
+      "features": { "client-emails": true, "whatsapp": false, "remote-screen": true },
+      "rules": { "tabOverProtectedApps": false, "islandOverProtectedApps": false }
+    }"""
+
+    @Test fun aWholeLayerProfileAsksItsOwnFolder() {
+        val r = UpdateWhere.route(layer)
+        assertEquals(UpdateRoute("url", "red", own), r)
+        assertEquals(own + "gos-version.json", UpdateWhere.note(r.base!!, "gos-version.json"))
+        // the APK sits beside the note, in the same folder as the Mac's ps-update.json
+        assertEquals(own + "ps-gos-1.71.apk", UpdateWhere.apk("ps-gos-1.71.apk", r.base!!))
+        assertNull(UpdateWhere.apk("../gos/ps-gos-1.71.apk", r.base!!))
+        // the same file is a whole profile for the rest of the app too (Profile.kt)
+        val p = Profile.from(layer)!!
+        assertEquals("red", p.name)
+        assertEquals(Profile.Channel.Url(own), p.channel)
+    }
+
+    @Test fun theOwnFolderTakesOnlyItsOwnNotes() {
+        val r = UpdateWhere.route(layer)
+        assertTrue(r.takes(UpdateWhere.noteChannel(JSONObject("""{"versionCode":76,"channel":"red"}"""))))
+        assertTrue(r.takes(UpdateWhere.noteChannel(JSONObject("""{"versionCode":76}"""))))
+        // a G Squad note never moves this build (its APK is signed with another key anyway)
+        assertFalse(r.takes(UpdateWhere.noteChannel(JSONObject("""{"versionCode":76,"channel":"gsquad"}"""))))
+        assertFalse(r.takes(UpdateWhere.noteChannel(JSONObject("""{"versionCode":76,"channel":"jan"}"""))))
+    }
+
+    @Test fun withoutTheProfileItWouldBeGitHub() {
+        // What the V1.68 to V1.70 private APKs did: no assets/profile.json, so the G Squad channel on GitHub.
+        assertEquals(UpdateWhere.GSQUAD, UpdateWhere.route(null))
+        assertEquals(gh + "gos-version.json", UpdateWhere.note(UpdateWhere.GSQUAD.base ?: BuildConfig.UPDATE_BASE))
+    }
+
     @Test fun aBadPrivateChannelIsNotUsed() {
         for (p in listOf("""{"name":"jan","channel":{"kind":"url","url":"http://example.invalid/gos/"}}""",
                          """{"name":"jan","channel":{"kind":"url","url":"https://example.invalid/gos"}}""",

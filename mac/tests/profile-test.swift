@@ -1,5 +1,6 @@
 // Offline test for Sources/Profile.swift and Sources/Features.swift (V1.58, multiple developers): the profile file, the
-// 1Password and Signal rule join (fails closed on the developer's account), the registry and Features.on's answers.
+// 1Password and Signal rules (PS 1.71: per BUILD, the G Squad build on for every account, the developer's build off for every
+// account, the per account answer only for a build that says nothing), the registry and Features.on's answers.
 // No app, no self test: tests/profile-test.sh compiles these two files with this one.
 import Foundation
 
@@ -27,13 +28,47 @@ check("display-falls-back", Profile.from(json(#"{"schema":1,"name":"jan","channe
 check("no-file-nil", Profile.load(URL(fileURLWithPath: "/nonexistent/profile.json")) == nil)
 check("ids", Profile.isFeatureId("island-menu-strip") && !Profile.isFeatureId("Island") && !Profile.isFeatureId("a--b") && !Profile.isFeatureId("-a") && !Profile.isFeatureId("a-"))
 
-// MARK: the 1Password and Signal rule join (both must allow it)
-for (acct, label) in [(true, "public-account"), (false, "red-account")] {
-  check("no-profile-is-per-account-\(label)", Profile.allows("tabOverProtectedApps", account: acct, profile: nil) == acct)
-  check("gsquad-profile-\(label)", Profile.allows("tabOverProtectedApps", account: acct, profile: gsquad) == acct)
-  check("red-profile-\(label)", Profile.allows("islandOverProtectedApps", account: acct, profile: red) == false)
+// MARK: the 1Password and Signal rules, per BUILD (PS 1.71, the developer: two rules per build, never one shared switch)
+// The layer's rules alone (Resources/build-rules.json, written by build.sh for a private tree such as the developer's).
+let redLayer = Profile.rulesFrom(json(#"{"tabOverProtectedApps":false,"islandOverProtectedApps":false}"#))
+check("layer-rules-read", redLayer == ["tabOverProtectedApps": false, "islandOverProtectedApps": false])
+check("layer-rules-empty-says-nothing", Profile.rulesFrom(json("{}")) == nil)
+check("layer-rules-not-an-object", Profile.rulesFrom(json("[false]")) == nil)
+check("layer-rules-number-is-not-a-bool", Profile.rulesFrom(json(#"{"tabOverProtectedApps":0,"islandOverProtectedApps":"false"}"#)) == nil)
+check("layer-rules-unknown-names-dropped", Profile.rulesFrom(json(#"{"tabOverProtectedApps":true,"other":false}"#)) == ["tabOverProtectedApps": true])
+check("layer-rules-no-file", Profile.loadRules(URL(fileURLWithPath: "/nonexistent/build-rules.json")) == nil)
+// The developer's real file: tests/profile-test.sh runs build.sh's own line on web ps-layer/profile.json.
+let realLayer = CommandLine.arguments.count > 3 ? Profile.loadRules(URL(fileURLWithPath: CommandLine.arguments[3])) : nil
+check("red-real-layer-rules-off", realLayer == ["tabOverProtectedApps": false, "islandOverProtectedApps": false], "\(String(describing: realLayer))")
+
+// The 2x2 (plus the others): which build x who is signed in. The developer's account's per account answer is false, a friend's
+// true, and nobody signed in yet (a fresh install, or after Sign out of this Mac) counts as public, true.
+let accounts: [(String, Bool)] = [("red-account", false), ("friend-account", true), ("nobody-signed-in-yet", true)]
+let builds: [(String, Profile?, [String: Bool]?, Bool)] = [
+  ("gsquad-build", gsquad, nil, true),               // core's profiles/gsquad.json, bundled as Resources/profile.json
+  ("red-private-build", nil, realLayer, false),      // build.sh: no profile.json, the layer's rules alone
+  ("red-private-build-fixture", nil, redLayer, false),
+  ("red-assembled-build", red, nil, false),          // a red build made with tools/assemble.mjs (the full profile)
+]
+for (b, prof, layer, on) in builds {
+  for (a, acct) in accounts {
+    for rule in Profile.ruleNames {
+      check("\(b)-\(a)-\(rule)-\(on ? "on" : "off")", Profile.allows(rule, account: acct, profile: prof, layer: layer) == on)
+    }
+  }
 }
-check("fails-closed-gsquad-profile-on-red-account", !Profile.allows("tabOverProtectedApps", account: false, profile: gsquad))
+// A build that says nothing keeps the per account answer exactly as in V1.57.
+for (a, acct) in accounts { for rule in Profile.ruleNames {
+  check("no-build-rules-\(a)-\(rule)-per-account", Profile.allows(rule, account: acct, profile: nil, layer: nil) == acct)
+} }
+let janNoRules = Profile.from(json(#"{"schema":1,"name":"jan","channel":{"kind":"local"},"othersShared":"off"}"#))
+check("profile-without-rules-falls-to-layer", !Profile.allows("tabOverProtectedApps", account: true, profile: janNoRules, layer: redLayer))
+check("profile-without-rules-falls-to-account", Profile.allows("tabOverProtectedApps", account: true, profile: janNoRules, layer: nil)
+  && !Profile.allows("tabOverProtectedApps", account: false, profile: janNoRules, layer: nil))
+check("profile-wins-over-layer", Profile.allows("islandOverProtectedApps", account: false, profile: gsquad, layer: redLayer))
+// The bug the developer saw on 19 Nov: the G Squad build signed in with his account was off (the old join ANDed them).
+check("bug-19-nov-gsquad-on-red-account-now-on", Profile.allows("tabOverProtectedApps", account: false, profile: gsquad, layer: nil)
+  && Profile.allows("islandOverProtectedApps", account: false, profile: gsquad, layer: nil))
 
 // MARK: the registry
 let reg = Features.registry(from: json(#"""
@@ -93,15 +128,27 @@ check("bundle-before-page-core-default", !Features.decide("campaigns", told: nil
 check("bundle-before-page-friends-off", janIds.allSatisfy { !Features.decide($0, told: nil, registry: coreReg, profile: nil) })
 let redAnswers = Dictionary(uniqueKeysWithValues: janIds.map { ($0, $0 != "whatsapp") })
 check("bundle-after-page-follows", janIds.allSatisfy { Features.decide($0, told: redAnswers, registry: coreReg, profile: nil) == ($0 != "whatsapp") })
-check("gsquad-bundle-before-page", Features.decide("island-moments", told: nil, registry: coreReg, profile: gsquad) && !Features.decide("client-emails", told: nil, registry: coreReg, profile: gsquad))
+// Client emails is on by default since 1.62 (registry "default": "on"), so the G Squad build starts with both on.
+check("gsquad-bundle-before-page", Features.decide("island-moments", told: nil, registry: coreReg, profile: gsquad) && Features.decide("client-emails", told: nil, registry: coreReg, profile: gsquad))
 
-// BuildRules.fromProfile (protected-158's place, fed from the profile)
+// BuildRules.fromProfile (protected-158's place, fed from the build: PS 1.71, the build decides when it says)
 let pub = BuildRules.rules(red: false), redAcct = BuildRules.rules(red: true)
-check("buildrules-no-profile-public", BuildRules.fromProfile(pub, profile: nil) == pub)
-check("buildrules-no-profile-red", BuildRules.fromProfile(redAcct, profile: nil) == redAcct)
-check("buildrules-gsquad-public-on", BuildRules.fromProfile(pub, profile: gsquad) == BuildRules.Rules(tabOverProtected: true, islandOverProtected: true))
-check("buildrules-gsquad-on-red-account-off", BuildRules.fromProfile(redAcct, profile: gsquad) == BuildRules.Rules(tabOverProtected: false, islandOverProtected: false))
-check("buildrules-red-profile-off", BuildRules.fromProfile(pub, profile: red) == BuildRules.Rules(tabOverProtected: false, islandOverProtected: false))
+let allOn = BuildRules.Rules(tabOverProtected: true, islandOverProtected: true)
+let allOff = BuildRules.Rules(tabOverProtected: false, islandOverProtected: false)
+check("buildrules-no-build-rules-public", BuildRules.fromProfile(pub, profile: nil, layer: nil) == pub)
+check("buildrules-no-build-rules-red", BuildRules.fromProfile(redAcct, profile: nil, layer: nil) == redAcct)
+check("buildrules-gsquad-friend-on", BuildRules.fromProfile(pub, profile: gsquad, layer: nil) == allOn)
+check("buildrules-gsquad-red-account-on", BuildRules.fromProfile(redAcct, profile: gsquad, layer: nil) == allOn)
+check("buildrules-red-private-red-account-off", BuildRules.fromProfile(redAcct, profile: nil, layer: realLayer) == allOff)
+check("buildrules-red-private-friend-off", BuildRules.fromProfile(pub, profile: nil, layer: realLayer) == allOff)
+check("buildrules-red-profile-friend-off", BuildRules.fromProfile(pub, profile: red, layer: nil) == allOff)
+check("buildrules-red-profile-red-account-off", BuildRules.fromProfile(redAcct, profile: red, layer: nil) == allOff)
+// The defaults, as the app has them: a command line binary's bundle is its own folder, and tests/profile-test.sh writes
+// build-rules.json next to it (as build.sh does in the developer's PS.app/Contents/Resources) and no profile.json. So this binary
+// is "The developer's private build": it finds the file by itself and is off for every account.
+check("bundle-finds-layer-rules", Profile.current == nil && Profile.layerRules == realLayer && realLayer != nil)
+check("bundle-defaults-red-private-off", BuildRules.fromProfile(pub) == allOff && BuildRules.fromProfile(redAcct) == allOff
+  && !Profile.allows("tabOverProtectedApps", account: true) && !Profile.allows("islandOverProtectedApps", account: true))
 
 print("\(count - fails)/\(count) ok")
 exit(fails == 0 ? 0 : 1)

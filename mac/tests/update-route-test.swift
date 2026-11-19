@@ -17,7 +17,10 @@ check("no-profile-is-gsquad", none.kind == .gsquad && none.id == "gsquad" && non
 check("no-profile-keys-as-v157", none.keys == [UPDATE_PUBLIC_KEY] || none.keys == [UPDATE_PUBLIC_KEY, UPDATE_GSQUAD_PUBLIC_KEY])
 check("requirement-as-v157", UPDATE_GSQUAD_PUBLIC_KEY.isEmpty && PS_CERT_ROOT_GSQUAD.isEmpty
       ? none.requirement == #"identifier "com.cincee.ps" and certificate root = H"b278d9d09dfed336675cfb367b2f8a3b51896689""# : true, none.requirement)
-check("this-test-has-no-profile", UpdateRoute.current == UpdateRoute.gsquad && PS_REQUIREMENT == UpdateRoute.gsquad.requirement)
+// V1.71: this test copy has no profile and is signed by neither the developer nor the G Squad, so it takes no updates (its
+// requirement stays the G Squad one, for the sign in it may be handed).
+check("this-test-has-no-profile", UpdateRoute.current.kind == .local && UpdateRoute.current.base == nil && UpdateRoute.selfSigner == .other
+      && PS_REQUIREMENT == UpdateRoute.gsquad.requirement)
 for bad in [profile(["name": "jan"]), profile(["name": "jan", "channel": ["kind": "ftp"]]), Data("not json".utf8),
             profile(["name": "Jan Smith", "channel": ["kind": "url", "url": "https://example.invalid/ps/"]]),
             profile(["name": "jan", "channel": ["kind": "url", "url": "http://example.invalid/ps/"]]),
@@ -108,6 +111,37 @@ let ownNote = note(payload(["by": "red", "shared": true, "channel": "red"]), red
 check("own-note-opens-with-red-key", (try? UpdateManifest.open(ownNote, publicKeys: [pk(red)])).map { own.takes($0.channel) } == true)
 check("squad-note-refused-on-own", (try? UpdateManifest.open(note(squadNote, squad), publicKeys: [pk(red)])) == nil)
 check("red-signed-squad-note-not-taken-on-own", (try? UpdateManifest.open(note(squadNote, red), publicKeys: [pk(red)])).map { own.takes($0.channel) } == false)
+
+// 5. V1.71 (item 3): three releases never blended. A build signed by neither the developer nor the G Squad with no profile never
+// follows the G Squad channel (its next release would replace a person's own build); a person's own channel can be a
+// folder in their own Library/Application Support.
+let noUpdates = UpdateRoute.resolve(profile: nil, channel: nil, signer: .other)
+check("own-signed-no-profile-no-updates", noUpdates.kind == .local && noUpdates.base == nil)
+check("own-signed-bad-profile-no-updates", UpdateRoute.resolve(profile: Data("{".utf8), channel: nil, signer: .other).base == nil
+      && UpdateRoute.resolve(profile: profile(["name": "jan", "channel": ["kind": "url", "url": "http://x.invalid/"]]), channel: nil, signer: .other).base == nil)
+check("own-signed-gsquad-profile-follows-gsquad", UpdateRoute.resolve(profile: squadFile, channel: nil, signer: .other) == UpdateRoute.gsquad)
+check("gsquad-signed-no-profile-unchanged", UpdateRoute.resolve(profile: nil, channel: nil, signer: .gsquad) == UpdateRoute.gsquad)
+check("red-signed-no-profile-red-only", UpdateRoute.resolve(profile: nil, channel: nil, signer: .red) == lost)
+check("own-signed-own-channel-unchanged", UpdateRoute.resolve(profile: profile(["name": "jan", "channel": ["kind": "url", "url": "https://example.invalid/jan/ps/",
+  "key": janKey.publicKey.rawRepresentation.base64EncodedString(), "certRoot": String(repeating: "a", count: 40)]]), channel: nil, signer: .other) == jan)
+let home = NSHomeDirectory()
+let folderProfile = profile(["name": "jan", "channel": ["kind": "folder", "path": "~/Library/Application Support/PS Own Channel/",
+  "key": janKey.publicKey.rawRepresentation.base64EncodedString(), "certRoot": String(repeating: "b", count: 40)]])
+let folder = UpdateRoute.resolve(profile: folderProfile, channel: nil, signer: .other)
+check("folder-channel", folder.kind == .folder && folder.id == "jan" && folder.base?.isFileURL == true
+      && folder.base?.path == home + "/Library/Application Support/PS Own Channel", folder.base?.path ?? "nil")
+check("folder-own-key-and-cert-only", folder.keys == [janKey.publicKey.rawRepresentation.base64EncodedString()]
+      && folder.requirement == #"identifier "com.cincee.ps" and certificate root = H""# + String(repeating: "b", count: 40) + #"""#)
+check("folder-takes-only-its-notes", folder.takes("jan") && !folder.takes("gsquad") && !folder.takes("red"))
+check("folder-file-keeps-its-folder", UpdateChannel.remote("updates/PS-app-9.zip", base: folder.base!).path
+      == home + "/Library/Application Support/PS Own Channel/updates/PS-app-9.zip")
+for bad in ["/tmp/ps/", "~/Documents/ps/", "~/Library/Application Support/", "~/Library/Application Support/ps",
+            "~/Library/Application Support/../ps/", "~/Library/Application Support/a/./b/", "/Users/other/Library/Application Support/ps/"] {
+  check("folder-refused", UpdateRoute.ownFolder(bad) == nil && UpdateRoute.resolve(profile: profile(["name": "jan", "channel": ["kind": "folder", "path": bad]]),
+        channel: nil, signer: .other).base == nil, bad)
+}
+check("folder-full-path-ok", UpdateRoute.ownFolder(home + "/Library/Application Support/PS Own Channel/") != nil)
+check("folder-home-given", UpdateRoute.ownFolder("~/Library/Application Support/x/", home: "/Users/you")?.path == "/Users/you/Library/Application Support/x")
 
 print(fails == 0 ? "update-route: all ok" : "update-route: \(fails) FAILED")
 exit(fails == 0 ? 0 : 1)

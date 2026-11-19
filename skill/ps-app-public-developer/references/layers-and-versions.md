@@ -82,7 +82,11 @@ Make the folder next to the clone and ask the person before making a GitHub repo
 - `name` is their private release name from `contributors.md`. Never `gsquad`, never `red`, never someone else's.
 - `channel` `local`: their build never updates by itself; they install each of their own builds. (A person with
   their own https server may use `{"kind": "url", "url": "https://.../", "key": "<their own update public key>"}`;
-  only if they ask, and never the G Squad channel.)
+  only if they ask, and never the G Squad channel.) Since V1.71 a `folder` channel on their own Mac gets them their
+  own copy of every new version, waiting for their click: "Your own copy of every new version" below.
+- Every own build names a channel of its own (`local`, `url` or `folder`). Since V1.71 `tools/build.mjs` stops a
+  layer build that does not: such a PS would follow the G Squad channel and the next G Squad release would replace
+  it. A PS signed by neither the owner nor the G Squad that has no profile at all takes no updates.
 - `othersShared` `off`: features other people shared stay off in their build until they switch each one on in
   "From the squad". `on` would switch them all on, as in the G Squad build. Their choice; `off` is the safe default.
 - `rules`: the two 1Password and Signal rules, kept separate, copied from `profiles/gsquad.json`. A profile can only
@@ -178,6 +182,42 @@ Is a feature on?
 No write access yet: they cannot claim. Build with the version on `main`, mark the build with a local tag that is
 never pushed and never reused (`git tag <release name>-v<version>-<n>`, for example `sam-v1.58-2`), and tell them
 that their build will show the same number as `main` until the owner gives them write access.
+
+## Your own copy of every new version (since V1.71)
+
+When the owner or anyone else releases a new shared version, the person's own build gets it too, still as their own
+build (their layer, their profile, their keys), and the G Squad build never replaces it. `tools/follow.mjs` does
+that on their Mac: a small watcher (a LaunchAgent, plain node, no AI), installed OFF.
+
+1. Their profile names a folder channel, their own update key and their certificate's root:
+
+   ```json
+   "channel": { "kind": "folder", "path": "~/Library/Application Support/PS Own Channel/",
+                "key": "<their update public key>", "certRoot": "<their certificate root, 40 hex>" }
+   ```
+
+   Their signing certificate and their Ed25519 update key are made on their own Mac and never go in any repo (rule
+   16). The private half of the update key stays in a file only they can read.
+2. Install it OFF, look, then a dry run:
+
+   ```bash
+   node tools/follow.mjs install --layer ../ps-<release name>-layer/layer.json --key <their update private key file>
+   node tools/follow.mjs check
+   node tools/follow.mjs run --version <the newest version> --dry-run
+   ```
+
+3. One real run, on their yes: `node tools/follow.mjs run --version <v>`. Their PS shows Update available and waits
+   for their click.
+4. Switch it on, on their yes: `node tools/follow.mjs on` (`off` and `status` too).
+
+Every 15 minutes while it is on, it fetches core's main and version tags (fetch only). When a shared version newer
+than the one in their folder is claimed on core main, it builds their copy at that version's tag in a worktree of
+its own (their working branch is never touched): `tools/build.mjs` web, then mac under `/tmp/ps-build.lock`. It
+checks the app is signed with their certificate and follows their folder alone, signs the note for their channel
+with that version's approved What's new lines (`mac/release/publish.sh`), then puts the files, and last the note,
+into their folder. Any step that fails stops: nothing goes into the folder, one line goes in
+`~/Library/Logs/PS/follow.log`, and it is not tried again by itself. It never pushes, never claims a version, never
+touches the G Squad channel and never installs anything.
 
 ## A shared release (core, for everyone)
 

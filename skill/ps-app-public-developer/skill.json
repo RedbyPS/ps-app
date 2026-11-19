@@ -1,6 +1,6 @@
 {
  "skill": "ps-app-public-developer",
- "version": 5,
+ "version": 6,
  "ps": "1.62",
  "oldFiles": [
   "gmail-connect.mjs"

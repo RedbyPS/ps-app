@@ -14,6 +14,8 @@ package com.cincee.ps.gos
  *   {"name": "jan", "channel": {"kind": "url", "url": "https://.../"}}   that person's own channel
  *   {"name": "jan", "channel": {"kind": "local"}}                        no channel (they install their own builds)
  * No profile (every build before V1.58) or anything not understood: the G Squad channel, today's, so nothing changes.
+ * V1.71: a private build made the old way gets its maker's whole layer profile (Gradle -PpsProfile, ps-gos release.sh
+ * from web ps-layer/profile.json), so it asks the same unlisted folder as that person's Macs, never GitHub.
  * Every note says which channel it is for ("channel"); a note for another channel is refused. Notes from before V1.58
  * say nothing and are taken as before. The APK must still be signed with this app's own key (Updater.verifySigner).
  */

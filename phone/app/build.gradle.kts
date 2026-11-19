@@ -16,7 +16,8 @@ val signingProps = Properties().apply {
 val versionProps = Properties().apply { rootProject.file("version.properties").inputStream().use { load(it) } }
 // Where the phone asks for updates (V1.57, the developer, 13 Nov 2026: "Remove the IP address part so I can't see their IP
 // address when [PS] asks Cincee for updates"): the public PS repo's newest GitHub release, where the release puts
-// the phone's note as gos-version.json next to the APK. Not cincee.com, and no fallback to it.
+// the phone's note as gos-version.json next to the APK. Not cincee.com, and no fallback to it. A build with a profile
+// that names its own channel (psProfile below, or ps-build.json) asks that channel instead, for the same note name.
 val updateBase = (project.findProperty("updateBase") as String?) ?: "https://github.com/RedbyPS/ps/releases/latest/download/"
 val updateNote = (project.findProperty("updateNote") as String?) ?: "gos-version.json"
 
@@ -25,12 +26,49 @@ val updateNote = (project.findProperty("updateNote") as String?) ?: "gos-version
 // in V1.57 has neither (the folder is emptied), and the app keeps its per account answers.
 val psBuildFile = rootProject.file("../ps-build.json")
 val psBuildAssets = layout.buildDirectory.dir("generated/ps-build").get().asFile
-psBuildAssets.deleteRecursively()
-if (psBuildFile.exists()) {
-    psBuildAssets.mkdirs()
-    psBuildFile.copyTo(File(psBuildAssets, "ps-build.json"), overwrite = true)
-    val profile = (groovy.json.JsonSlurper().parse(psBuildFile) as Map<*, *>)["profile"]
-    if (profile != null) File(psBuildAssets, "profile.json").writeText(groovy.json.JsonOutput.prettyPrint(groovy.json.JsonOutput.toJson(profile)) + "\n")
+// V1.71 (the developer's phone, 19 Nov 2026: it never got the own update channel his Macs follow since V1.69, so it kept asking the
+// G Squad channel on GitHub and refused every APK there, signed with the G Squad key): a private build made the old way
+// has no ps-build.json, so its release names the maker's layer profile itself, -PpsProfile=<file> (scripts/release.sh
+// passes web ps-layer/profile.json). The file goes in unchanged as assets/profile.json and the app follows its
+// channel (UpdateWhere.route). Anything wrong with it stops the build: never a quiet fall back to the G Squad channel.
+val psProfileFile = (project.findProperty("psProfile") as String?)?.let { File(it) }
+fun checkedLayerProfile(f: File) {
+    val why = "psProfile ${f.path}"
+    check(f.isFile) { "$why: no such file" }
+    val p = try { groovy.json.JsonSlurper().parse(f) as? Map<*, *> } catch (e: Exception) { null } ?: error("$why: not a JSON object")
+    check(p["schema"] == 1) { "$why: not a profile (schema 1)" }
+    // The name rules of Profile.kt and UpdateWhere.kt both hold, and it is never the G Squad's.
+    val name = p["name"] as? String ?: ""
+    check(Regex("^[a-z][a-z0-9]{0,30}$").matches(name) && name != "gsquad") { "$why: no own name" }
+    val ch = p["channel"] as? Map<*, *> ?: error("$why: no channel")
+    when (ch["kind"]) {
+        // The same test as UpdateWhere.route, so a profile that passes here is never read as the G Squad channel there.
+        "url" -> { val u = ch["url"] as? String ?: ""
+            check(u.startsWith("https://") && u.length > 9 && u.endsWith("/") && !u.substring(8).startsWith("/") && !u.contains(' ')) { "$why: the channel is not a plain https folder ending in /" } }
+        "local" -> {}
+        else -> error("$why: the channel is not an own channel (kind url or local)")
+    }
+}
+// Checked as soon as Gradle reads this file, so a wrong profile stops any build at once.
+if (psBuildFile.exists()) check(psProfileFile == null) { "psProfile and ../ps-build.json both name a profile: build with one of them" }
+else if (psProfileFile != null) checkedLayerProfile(psProfileFile)
+// Written by a task before every build, never while Gradle reads this file: `clean assembleRelease` (scripts/release.sh)
+// deletes the build folder after that, and the APK came out without its profile (found by V1.71's first test build).
+// No declared outputs, so it always runs: a build without a profile never keeps one from an earlier build.
+val psBuildAssetsTask = tasks.register("psBuildAssets") {
+    doLast {
+        psBuildAssets.deleteRecursively()
+        if (psBuildFile.exists()) {
+            psBuildAssets.mkdirs()
+            psBuildFile.copyTo(File(psBuildAssets, "ps-build.json"), overwrite = true)
+            val profile = (groovy.json.JsonSlurper().parse(psBuildFile) as Map<*, *>)["profile"]
+            if (profile != null) File(psBuildAssets, "profile.json").writeText(groovy.json.JsonOutput.prettyPrint(groovy.json.JsonOutput.toJson(profile)) + "\n")
+        } else if (psProfileFile != null) {
+            checkedLayerProfile(psProfileFile)
+            psBuildAssets.mkdirs()
+            psProfileFile.copyTo(File(psBuildAssets, "profile.json"), overwrite = true)
+        }
+    }
 }
 
 android {
@@ -106,6 +144,7 @@ val checkTesseractAar = tasks.register("checkTesseractAar") {
     }
 }
 tasks.named("preBuild") { dependsOn(checkTesseractAar) }
+tasks.named("preBuild") { dependsOn(psBuildAssetsTask) }   // the build's profile in assets (above)
 
 // Receipt scan (PS 1.65): the reading models bundled in assets/tessdata must be exactly the files from tesseract-ocr/tessdata_fast at
 // commit 87416418657359cb625c412a48b6e1d6d41c29bd (docs/receipt-scan.md). Nothing is downloaded at build or run time.
