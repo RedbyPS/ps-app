@@ -425,6 +425,8 @@ export const SETTINGS: SetEntry[] = [
   // V1.54 (the developer, 12 Nov 2026): how often PS looks for a new version; one choice for every device (core/updateevery.ts).
   { id: "update-every", group: "about", name: "Check for updates every", line: "Minutes between looks for a new version. Off: no automatic looks, Check now still works.", words: ["update", "check", "how often", "minutes", "frequency", "interval", "delay", "new version", "every", "off", "automatic", "never"] },
   { id: "whats-new", group: "about", name: "What's new", line: "The changes in this version.", on: NOT_PHONE, words: ["changelog", "release notes", "changes", "news", "new"] },
+  // PS 1.69 (the developer, 18 Nov 2026): plays the update animation (Hatch, ps-mac Hatch.swift) again with made up progress. Mac only, every build.
+  { id: "replay-update", group: "about", name: "Replay the update animation", line: "Plays the update animation again. Nothing is downloaded or installed. Esc skips it.", on: MAC, words: ["replay", "again", "play", "watch", "update", "animation", "hatch", "icon", "island", "hatches", "intro", "show"] },
   { id: "setup", group: "about", name: "Setup menu", line: "The few settings that matter, in plain words, one at a time.", on: MAC, words: ["welcome", "tour", "onboarding", "setup", "start"] },
   // V1.55 (the developer, 12 Nov 2026): the first use tips come once per account; this brings them back.
   { id: "tips", group: "about", name: "Tips", line: "Short tips about swiping between pages, the dots, Edit and reminders. They show once each.", words: ["tips", "show tips again", "hints", "tutorial", "help", "tour", "swipe", "learn"] },

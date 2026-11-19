@@ -4,7 +4,7 @@
 // never get the same number: the one who pushes second is refused, fetches again and takes the next number.
 //
 //   node tools/claim-version.mjs --by jan --kind private|shared [--remote origin] [--commit HEAD]
-//                                [--floor 1.57] [--keywords web/scripts/ps-keywords.json] [--dry-run] [--json]
+//                                [--floor 1.57] [--version 1.69] [--keywords web/scripts/ps-keywords.json] [--dry-run] [--json]
 //
 //   --by        who makes the release: a profile name (lowercase, "gsquad" for the shared build)
 //   --kind      private (only that person's build gets it) or shared (the G Squad build gets it)
@@ -13,6 +13,9 @@
 //   --floor     never claim at or below this version (the version in web/ps-version.json, say)
 //   --keywords  a keyword list ({"1": ["Beginnings", ...], ...}): the release gets the first name of its number
 //               that no earlier tag carried. Names never repeat and are never "Truth".
+//   --version   claim exactly this number (1.69) or stop: never the next one. For a release whose number is already
+//               fixed elsewhere (the developer's own build carries it), so the G Squad build gets the same number.
+//               When the tag is already there as the same maker's claim of the same kind, nothing is pushed again.
 //   --dry-run   fetches and prints what it would claim; makes no tag and pushes nothing
 //   --json      prints {"version","tag","by","kind","at","name"} instead of the number alone
 //
@@ -98,13 +101,26 @@ export function readTags(git, remote) {
  * A refused push (someone took the number first) fetches again and tries the next one, up to `tries` times.
  * Any other failure (no network, no rights) stops with git's words: nothing is left behind locally.
  */
-export function claim({ git, remote = "origin", commit = "HEAD", by, kind, floor = "", pickName, dryRun = false, now = () => new Date(), tries = 20, log = () => {} }) {
+export function claim({ git, remote = "origin", commit = "HEAD", by, kind, floor = "", exact = "", pickName, dryRun = false, now = () => new Date(), tries = 20, log = () => {} }) {
   if (typeof by !== "string" || !BY.test(by)) throw new Error(`--by must be a profile name like "jan" (lowercase), not ${JSON.stringify(by)}`);
   if (!KINDS.includes(kind)) throw new Error(`--kind must be private or shared, not ${JSON.stringify(kind)}`);
+  if (exact && !hundredths(exact)) throw new Error(`--version must be a version like 1.69, not ${JSON.stringify(exact)}`);
   const sha = git(["rev-parse", "--verify", `${commit}^{commit}`]).trim();
   for (let attempt = 1; attempt <= tries; attempt++) {
     const tags = readTags(git, remote);
-    const version = nextVersion(tags.map((t) => t.tag.slice(1)), floor);
+    const version = exact ? fromHundredths(hundredths(exact)) : nextVersion(tags.map((t) => t.tag.slice(1)), floor);
+    if (exact) {
+      // Exactly this number or nothing. Already ours (same maker, same kind): done, nothing pushed again.
+      const there = tags.find((t) => t.tag === `v${version}`);
+      if (there) {
+        if (there.msg && there.msg.by === by && there.msg.kind === kind) {
+          log(`v${version} is already claimed by ${by} (${kind}); nothing pushed again`);
+          return { version, tag: `v${version}`, by, kind, at: there.msg.at, name: there.msg.name || "", commit: git(["rev-parse", `refs/tags/v${version}^{commit}`]).trim(), tries: attempt, already: true };
+        }
+        throw new Error(`v${version} is already taken${there.msg ? ` by ${there.msg.by} (${there.msg.kind})` : ""}; it is never claimed twice`);
+      }
+      if (hundredths(version) <= hundredths(floor || "0")) throw new Error(`v${version} is not above ${floor}`);
+    }
     const tag = `v${version}`;
     const used = tags.map((t) => t.msg && t.msg.name).filter(Boolean);
     const name = pickName ? String(pickName(version, used) || "") : "";
@@ -123,6 +139,7 @@ export function claim({ git, remote = "origin", commit = "HEAD", by, kind, floor
       // Anything else (offline, no rights): stop here with git's own words.
       const again = readTags(git, remote);
       if (!again.some((t) => t.tag === tag)) throw new Error(`could not push ${tag}: ${e.message}`);
+      if (exact) throw new Error(`${tag} was just taken by someone else; it is never claimed twice`);
       log(`${tag} was just taken by someone else; trying the next number`);
       continue;
     }
@@ -136,7 +153,7 @@ export function claim({ git, remote = "origin", commit = "HEAD", by, kind, floor
 }
 
 function args(argv) {
-  const o = { remote: "origin", commit: "HEAD", floor: "", keywords: "", dryRun: false, json: false };
+  const o = { remote: "origin", commit: "HEAD", floor: "", exact: "", keywords: "", dryRun: false, json: false };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i], val = () => { if (i + 1 >= argv.length) throw new Error(`${a} needs a value`); return argv[++i]; };
     if (a === "--by") o.by = val();
@@ -144,6 +161,7 @@ function args(argv) {
     else if (a === "--remote") o.remote = val();
     else if (a === "--commit") o.commit = val();
     else if (a === "--floor") o.floor = val();
+    else if (a === "--version") o.exact = val();
     else if (a === "--keywords") o.keywords = val();
     else if (a === "--dry-run") o.dryRun = true;
     else if (a === "--json") o.json = true;
@@ -157,7 +175,7 @@ if (isMain) {
   try {
     const o = args(process.argv.slice(2));
     const words = o.keywords ? JSON.parse(readFileSync(o.keywords, "utf8")) : null;
-    const r = claim({ git: gitIn(process.cwd()), remote: o.remote, commit: o.commit, by: o.by, kind: o.kind, floor: o.floor,
+    const r = claim({ git: gitIn(process.cwd()), remote: o.remote, commit: o.commit, by: o.by, kind: o.kind, floor: o.floor, exact: o.exact,
       pickName: words ? (v, used) => keywordFor(words, v, used) : undefined, dryRun: o.dryRun, log: (s) => console.error(s) });
     process.stdout.write((o.json ? JSON.stringify({ version: r.version, tag: r.tag, by: r.by, kind: r.kind, at: r.at, name: r.name }) : r.version) + "\n");
   } catch (e) {

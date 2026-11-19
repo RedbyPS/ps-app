@@ -21,6 +21,9 @@ check("web-file-on-github", UpdateChannel.remote("updates/PS-web-202611130424272
       == "https://github.com/RedbyPS/ps/releases/latest/download/PS-web-20261113042427274.zip")
 let folder = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("ps-channel-\(UUID().uuidString)", isDirectory: true)
 check("test-folder-keeps-updates", UpdateChannel.remote("updates/PS-app-1.zip", base: folder).path == folder.appendingPathComponent("updates/PS-app-1.zip").path)
+// V1.69: a person's own channel on their own web server keeps the updates/ folder publish.sh made.
+let ownBase = URL(string: "https://example.invalid/ps/own-0000/")!
+check("own-channel-keeps-updates", UpdateChannel.remote("updates/PS-app-1.zip", base: ownBase).absoluteString == "https://example.invalid/ps/own-0000/updates/PS-app-1.zip")
 
 // 3. The signature check is the same as before: only the developer's key opens a note.
 func hex(_ d: Data) -> String { SHA256.hash(data: d).map { String(format: "%02x", $0) }.joined() }

@@ -16,6 +16,12 @@
 # your sync folder for builds older than the channel. web-only stays web-only; --app
 # also refreshes PS.dmg. The download pages read release.json there: its patch notes are public
 # copy, so they are in it only once the developer approved the exact words (scripts/ps-public.mjs).
+# V1.69 (the developer, 18 Nov 2026, after the G Squad's V1.68 reached his Mac and macOS dropped Accessibility and Input
+# Monitoring): a tree with a layer profile (the developer's: ps-layer/profile.json) has its OWN update channel, an unlisted folder
+# on the website (scripts/own-channel.mjs). Its Mac build carries that channel alone (Resources/channel.json) and trusts
+# only the developer's key and certificate. Its releases go ONLY there (ps-own-release/, signed for that channel): never to the
+# G Squad channel on GitHub and never to the public download folder, so friends never get his build and his Macs never
+# get theirs. The G Squad's builds come from the G Squad release workflow. No layer profile: everything as before.
 # The developer's PRIVATE notes for the version (ps-notes-private.json) are never in any build, the channel or the APK:
 # the audit below refuses any of their words, and they are sealed to his own vault instead (scripts/ps-private.ts),
 # where only his PS shows them, as "For you" under the public ones.
@@ -73,6 +79,24 @@ if [ "$VER_NOW" = "$VER_LIVE" ]; then
   exit 1
 fi
 
+# V1.69: the own update channel (empty: none, the public channel as before). A layer profile whose channel cannot be
+# used stops here: its build would follow the G Squad channel.
+OWN_URL=""; OWN_NAME=""
+if [ -f ps-layer/profile.json ]; then
+  OWN_URL="$(node scripts/own-channel.mjs url)" || { echo "STOP: ps-layer/profile.json has no usable own update channel (https, an unlisted folder under /client/ps/, ending in /). Nothing was built."; exit 1; }
+  OWN_NAME="$(node scripts/own-channel.mjs name)"
+  if [ -z "$DRY" ]; then
+    # Friends get this same number as the G Squad build (scripts/gsquad-follow.mjs, after the export): it must still be
+    # free on core, or already the developer's own shared claim.
+    node scripts/gsquad-follow.mjs check "$VER_NOW" || { echo "Nothing was built."; exit 1; }
+    VER_OWN="$(curl -s --max-time 20 "${OWN_URL}ps-update.json" | node scripts/own-channel.mjs note-version)"
+    if [ "$VER_NOW" = "$VER_OWN" ]; then
+      echo "STOP: V$VER_NOW is already live on your own channel. Every release needs a new number: node scripts/ps-version.mjs bump, commit ps-version.json, get the developer's yes on the What's new words, then release. Nothing was built."
+      exit 1
+    fi
+  fi
+fi
+
 # V1.58 (multiple developers): this script makes the release everyone gets (the cincee.com pages and the G Squad channel
 # on GitHub). A private release (ps-version.json "made" says shared: false) goes only to its maker's own channel, which
 # is built with tools/build.mjs after the cut over, never here. So it stops before anything is built.
@@ -118,6 +142,17 @@ find_installed() {
   if [ -f ../mac/tools/installed-app.sh ]; then . ../mac/tools/installed-app.sh; INSTALLED="$(ps_installed_app)"; fi
   if [ -n "$DRY" ] && [ -n "${PS_DRY_INSTALLED:-}" ]; then INSTALLED="$PS_DRY_INSTALLED"; fi
 }
+
+# V1.69: this Mac's PS must already follow the own channel to see this release there. One that does not yet (V1.68 and
+# older, no Resources/channel.json) still follows the G Squad channel: this release must carry the app and install it
+# here at once (no --wait), which moves this Mac over. Dry runs skip the look.
+if [ -n "$OWN_URL" ] && [ -z "$DRY" ]; then
+  find_installed
+  if [ -d "$INSTALLED" ] && [ "$(node scripts/own-channel.mjs installed "$INSTALLED")" != "$OWN_URL" ] && { [ -z "$APPFLAG" ] || [ -n "$WAIT" ]; }; then
+    echo "STOP: PS on this Mac ($INSTALLED) does not follow your own update channel yet, so it would never see this release there. Release this one with the app and without --wait (it installs here at once and moves this Mac over): npm run release -- --app. Nothing was built."
+    exit 1
+  fi
+fi
 
 # --fast: can the two builds run side by side at all? If not, say why in one line and release as normal.
 if [ -n "$FAST" ]; then
@@ -211,25 +246,31 @@ else
   fi
 fi
 
-# The public channel, staged in a copy first: it replaces ps-release/ only when the audit is clean.
-run mkdir -p ps-release
-PUB="$(mktemp -d)/ps-release"; run cp -R ps-release "$PUB"
+# The channel, staged in a copy first: it replaces its folder only when the audit is clean. The public channel
+# (ps-release/, cincee.com/client/ps/ and the G Squad channel on GitHub), or V1.69 with an own channel only that
+# (ps-own-release/, signed for it alone; postbuild.mjs puts it in its unlisted folder).
+CH=ps-release; [ -z "$OWN_URL" ] || CH=ps-own-release
+run mkdir -p "$CH"
+PUB="$(mktemp -d)/$CH"; run cp -R "$CH" "$PUB"
 # The Mac's gear menu shows the developer's approved notes under the version (none until he approved them).
 export PS_NOTES="$(node scripts/ps-public.mjs notes-text 2>/dev/null || true)"
 # V1.52: and the earlier versions' approved notes (last 20), so an update across several versions shows every skipped one.
 export PS_HISTORY="$(node scripts/ps-public.mjs history-json 2>/dev/null || echo '[]')"
-if [ "$KIND" = app ]; then step stage env PS_RELEASE_OUT="$PUB" bash ../mac/release/publish.sh app dist-ps ../mac/build/PS.app
-else step stage env PS_RELEASE_OUT="$PUB" bash ../mac/release/publish.sh web dist-ps; fi
+if [ "$KIND" = app ]; then step stage env PS_RELEASE_OUT="$PUB" PS_UPDATE_CHANNEL="${OWN_NAME:-gsquad}" PS_FLAVOUR="$OWN_NAME" bash ../mac/release/publish.sh app dist-ps ../mac/build/PS.app
+else step stage env PS_RELEASE_OUT="$PUB" PS_UPDATE_CHANNEL="${OWN_NAME:-gsquad}" PS_FLAVOUR="$OWN_NAME" bash ../mac/release/publish.sh web dist-ps; fi
 # The phone's APK is one for everyone: the download pages offer it only when it is clean too.
 GOSOK=gos-release; step audit-apk python3 -I ../mac/release/audit.py gos-release >/dev/null || { GOSOK=""; echo "The phone APK is not clean (python3 -I ../mac/release/audit.py gos-release): the download pages will not offer it."; }
-swap_channel() { rm -rf ps-release.old && mv ps-release ps-release.old && mv "$PUB" ps-release && rm -rf ps-release.old && node scripts/ps-public.mjs stage ps-release $GOSOK; }
+swap_channel() {
+  rm -rf "$CH.old" && mv "$CH" "$CH.old" && mv "$PUB" "$CH" && rm -rf "$CH.old"
+  [ -n "$OWN_URL" ] || node scripts/ps-public.mjs stage ps-release $GOSOK   # the download pages: the public build only
+}
 CHANNEL_OK=""
 if step audit python3 -I ../mac/release/audit.py "$PUB"; then
   step channel swap_channel
   CHANNEL_OK=1
   node scripts/ps-public.mjs approved || echo "Public patch notes for this version are not approved by the developer yet: release.json has no notes (node scripts/ps-public.mjs show)."
 else
-  echo "STOP: the audit found something of the developer's in the public build. The public channel keeps its last good release; nothing new goes to cincee.com/client/ps/."
+  echo "STOP: the audit found something of the developer's in the build. The channel ($CH/) keeps its last good release; nothing new goes to cincee.com/client/ps/."
 fi
 
 # The build prompt page (cincee.com/client/build/<path>/): the newest prompt, encrypted again. A STOP
@@ -243,7 +284,13 @@ step deploy netlify deploy --prod --dir=dist --site "$SITE"
 # with exactly the files the notes name, marked latest, then the website's web-version.json. After the deploy, so the
 # website's note never points at a build that is not live yet. Only a clean channel goes up. A failure stops nothing
 # that already happened; it says how to send it again.
-if [ -n "$CHANNEL_OK" ]; then
+if [ -n "$OWN_URL" ]; then
+  echo "Your own release: it went to your own update channel only, never to the G Squad channel on GitHub, so friends' PS never gets your build and yours never gets theirs."
+  # V1.69 (the developer, 19 Nov 2026: "No, friends too"): friends get this same version as the G Squad build (G Squad
+  # certificate, so their Macs keep Accessibility and Input Monitoring). Not done from here: the export pull request's
+  # words need the developer's yes and its diff a look (it must not undo the G Squad's own work on core).
+  echo "Friends get V$VER_NOW as the G Squad build in two steps: (1) export this version to core and merge that pull request (its words need the developer's yes; commits as the developer's GitHub identity, as the core checks want); (2) then: node scripts/gsquad-follow.mjs claim $VER_NOW"
+elif [ -n "$CHANNEL_OK" ]; then
   step github node scripts/github-channel.mjs publish || echo "STOP: the GitHub channel was not updated, so PS V1.57 and newer do not see this release yet. Send it again: node scripts/github-channel.mjs publish"
 else
   echo "The GitHub channel keeps its last good release (the audit stopped the public channel)."

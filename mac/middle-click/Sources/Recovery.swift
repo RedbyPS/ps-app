@@ -87,30 +87,63 @@ struct TapRecovery {
   }
 }
 
-/// Secure input (a password field, 1Password, Terminal's Secure Keyboard Entry) makes macOS pause
-/// every tap with "user input", and pause each NEW tap again the moment it is made. On 14 Nov the
-/// helper rebuilt its taps every 5 s for as long as a password field was open (824 pause lines),
-/// each rebuild making a new pause. Now: while secure input is on, the taps are only switched back
-/// on (that sticks), and they are made again once, after it ends. One log line each way.
-struct SecureInputPause {
+/// "User input" pauses (V1.69, 19 Nov 2026). macOS pauses every tap with "user input" when secure
+/// input comes on (a password field, a password manager, Terminal's Secure Keyboard Entry), and it
+/// pauses each NEW tap the moment it is made while that lasts. A tap that was paused and switched back
+/// on keeps handing over clicks, but the pressure tap stays deaf (1 Nov 2026), so presses then carry
+/// 0 pressure events and no firm press can become a middle click.
+///
+/// V1.65 (SecureInputPause) only waited while IsSecureEventInputEnabled() said yes. On macOS 27 it
+/// almost never does for another app's secure input (1 time in about 400 pauses on 18 and 19 Nov), so
+/// the helper went on making new taps every 5 s, each one paused at once (deaf) for as long as it
+/// lasted: 12 minutes after PS 1.67 started on 19 Nov at 01:01.
+///
+/// Now it does not need to see secure input at all:
+/// - A pause only switches the taps back on. They are made again once, after 10 s with no pause.
+/// - If the new taps are paused at once (within 2 s), the condition is still on: the wait doubles
+///   (10, 20, 40, then 60 s at most) instead of a new try every 5 s. A rebuild that holds for 2 s
+///   brings the wait back to 10 s.
+/// - When secure input can be seen (macOS sometimes says so), the taps are made again within 2 s of
+///   it ending.
+/// One log line per episode, never one per pause.
+struct PauseCalm {
+  static let calm = 10.0
+  static let echoWindow = 2.0
+  static let waitMax = 60.0
+
   private(set) var waiting = false
+  private(set) var wait = PauseCalm.calm
+  private var lastPause = -Double.infinity
+  private var lastRebuild = -Double.infinity
+  private var sawSecure = false
 
-  enum Step: Equatable { case rebuildNow, waitForEnd, alreadyWaiting }
-
-  /// macOS paused the taps for user input. secure: secure input is on right now.
-  mutating func paused(secure: Bool) -> Step {
-    guard secure else { return waiting ? .alreadyWaiting : .rebuildNow }
-    if waiting { return .alreadyWaiting }
+  /// macOS paused the taps (or a tap was found off). True when this opens an episode (one log line).
+  mutating func paused(at t: Double, secure: Bool) -> Bool {
+    if t - lastRebuild < PauseCalm.echoWindow, lastPause < lastRebuild {   // the fresh taps were paused at once
+      wait = min(wait * 2, PauseCalm.waitMax)
+    }
+    let first = !waiting
     waiting = true
-    return .waitForEnd
+    lastPause = t
+    if secure { sawSecure = true }
+    return first
   }
 
-  /// Every 2 s. True: secure input just ended, make the taps again now.
-  mutating func check(secure: Bool) -> Bool {
-    guard waiting, !secure else { return false }
+  /// Every 2 s. True: make the taps again now (once per episode).
+  mutating func check(at t: Double, secure: Bool) -> Bool {
+    guard waiting else {
+      if lastRebuild > lastPause, t - lastRebuild >= PauseCalm.echoWindow { wait = PauseCalm.calm }   // the last rebuild held
+      return false
+    }
+    if secure { sawSecure = true; return false }
+    guard sawSecure || t - lastPause >= wait else { return false }
     waiting = false
+    sawSecure = false
     return true
   }
+
+  /// Any rebuild (after calm, a timeout, or deaf pressure): for telling an echo pause from a new one.
+  mutating func rebuilt(at t: Double) { lastRebuild = t }
 }
 
 /// A fresh copy is opened with "--replaces <pid of the old copy>": it may start while that copy is

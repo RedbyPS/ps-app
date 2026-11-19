@@ -219,6 +219,14 @@ struct TapHealth {
   private var lastRebuild = -Double.infinity
   private var lastDryRebuild = -Double.infinity
 
+  /// seenBefore: Force Touch pressure has reached this app on this Mac before (kept across starts,
+  /// V1.69). A fresh copy that is deaf from its first second (after a PS update restart on 18 Nov)
+  /// never saw pressure itself, so without this the rule never fired.
+  init(seenBefore: Bool = false) { seenPressure = seenBefore }
+
+  /// A rebuild that was set up is not needed after all (one is already coming another way).
+  mutating func cancel() { pending = false }
+
   /// macOS paused a tap. Returns how long to wait before rebuilding, nil if one is already coming.
   mutating func paused(at t: Double) -> Double? {
     guard !pending else { return nil }

@@ -53,6 +53,10 @@ final class Hatch: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
   private(set) var holding = false
   /// The page said the island has settled: the real one is back.
   private var islandBack = true
+  /// PS 1.69: Settings, "Replay the update animation": the update scene with made up progress. Nothing is downloaded or
+  /// installed, What's new does not follow, and Esc skips it.
+  private(set) var replaying = false
+  private var replayTimer: Timer?
   static let queueId = "hatch"
 
   // MARK: the switch and the sounds
@@ -94,9 +98,38 @@ final class Hatch: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
     present()
   }
 
+  // MARK: the replay (PS 1.69)
+
+  /// Settings > About and updates > Replay the update animation. The whole update scene again: the island leaves, the icon
+  /// builds with made up progress, then it cracks, falls and hatches the island, and the number reads 'Updated to'. No
+  /// restart, no download, no What's new. Never while another scene is on screen, or over 1Password or Signal.
+  func replay() {
+    guard !test, mode == nil, !Updater.shared.busy, HatchCore.mayShow(protectedFront: Protected.front) else { psLog("PS hatch: replay not started"); return }
+    psLog("PS hatch: replay")
+    replaying = true
+    mode = .update; dismissed = false; built = HatchCore.replayBuilt(elapsed: 0)
+    phase = .building
+    showBuild()
+    startEsc()
+    let t0 = Date()
+    replayTimer?.invalidate()
+    replayTimer = Timer.scheduledTimer(withTimeInterval: 0.12, repeats: true) { [weak self] tm in
+      guard let self, self.replaying, self.phase == .building else { tm.invalidate(); return }
+      let e = Date().timeIntervalSince(t0)
+      self.built = HatchCore.replayBuilt(elapsed: e)
+      self.call("progress", self.built)
+      if e >= HatchCore.replaySeconds { tm.invalidate(); self.replayTimer = nil; self.replayFinish() }
+    }
+  }
+  /// The made up download is done: the same hand over a real update makes after the relaunch (the icon is already up).
+  private func replayFinish() {
+    guard replaying, mode == .update else { return }
+    take()
+  }
+
   /// Every state the updater gives the gear menu (Updater.pageSet).
   func updaterStep(_ state: String, frac: Double?) {
-    guard mode == .update, phase == .building || phase == .resting || phase == .tucked else { return }
+    guard mode == .update, !replaying, phase == .building || phase == .resting || phase == .tucked else { return }
     switch HatchCore.step(state, frac: frac) {
     case .build(let f):
       built = f
@@ -200,7 +233,7 @@ final class Hatch: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
     if m == .update { extra["ver"] = HatchCore.versionText(PSVersion.name) }
     call("finish", opts(sc, mode: m, extra: extra))
     present()
-    if HatchCore.skippable(m) { startEsc() }
+    if HatchCore.skippable(m, replay: replaying) { startEsc() }
     // A page that never says it is done must not leave a stuck scene (the update scene is about 11 s, the start one 3 s).
     safety?.cancel()
     let w = DispatchWorkItem { [weak self] in if self?.phase == .finishing { psLog("PS hatch: the scene reached its longest, ended"); self?.end() } }
@@ -213,12 +246,13 @@ final class Hatch: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
 
   /// Esc or a click: skips the start scene. The update scene is watched to the end (the developer, 18 Nov 2026), so nothing happens.
   func skip() {
-    guard let m = mode, HatchCore.skippable(m) else { return }
+    guard let m = mode, HatchCore.skippable(m, replay: replaying) else { return }
     switch phase {
     case .finishing:
       call("skip")
       DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [weak self] in if self?.phase == .finishing { self?.end() } }
     case .building, .resting:
+      if replaying { replayTimer?.invalidate(); replayTimer = nil; dismissed = true; tuck(thenEnd: true); return }   // a replay ends whole
       dismissed = true; tuck()
     case .waiting:
       end()
@@ -251,10 +285,12 @@ final class Hatch: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
     restWork?.cancel(); restWork = nil
     safety?.cancel(); safety = nil
     waitTimer?.invalidate(); waitTimer = nil; waitSince = nil
+    replayTimer?.invalidate(); replayTimer = nil
     stopEsc()
     hideWindow()
     releaseIsland()
     let had = mode != nil
+    replaying = false
     mode = nil; phase = .idle; holding = false; endAfterTuck = false; dismissed = false; hiddenForProtected = false
     if had { IslandQueue.shared.finish(Hatch.queueId) }
     // The window and its page go too (the scene is rare, its memory is not kept), on the next turn: this may run inside
@@ -271,11 +307,12 @@ final class Hatch: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
 
   /// The real island pinches into a dot and is held off (at once when it is not on screen).
   private func holdIsland() { islandBack = false; Island.shared.hatchExit() }
-  /// The blob reached the island's place: the real island is born out of it. At a start the page may not have told the
+  /// The blob reached the island's place: the real island is born out of it. After a relaunch the page may not have told the
   /// island what to show yet: it waits for that a moment (at most 1.5 s), the blob hovering meanwhile.
   private func born(blob: Double, tries: Int = 0) {
     guard phase == .finishing else { return }
-    if mode == .launch, Island.shared.pageStates == 0, tries < 15 {
+    // Just after a relaunch (update or start) the page has not told the island what to show yet: it waits for that a moment.
+    if Island.shared.pageStates == 0, tries < 15 {
       DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in self?.born(blob: blob, tries: tries + 1) }
       return
     }
@@ -296,10 +333,18 @@ final class Hatch: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
                             "words": ["updated": "Updated to"]]
     let isl = HatchCore.pageRect(Island.shared.shapeOnScreen(), screen: sc.frame)
     o["isl"] = isl ?? NSNull()
-    // Where the blob flies: the real island's resting place (also while the scene holds it off), else a best guess.
-    o["target"] = isl ?? HatchCore.pageRect(Island.shared.restShape(), screen: sc.frame) ?? fallbackTarget(sc)
+    o["target"] = targetNow(sc)
     for (k, v) in extra { o[k] = v }
     return o
+  }
+  /// Where the blob flies, as of now. PS 1.69 (the developer, 18 Nov 2026: it flew to the top under the notch although his island was
+  /// moved): the real island on screen, else where it will rest, else the kept spot (a relaunch: the page has not told the
+  /// island what to show yet, so it has no rest place, and this used to fall through to the top), else the top centre.
+  private func targetNow(_ sc: NSScreen) -> [String: Double] {
+    HatchCore.aim(shown: HatchCore.pageRect(Island.shared.shapeOnScreen(), screen: sc.frame),
+                  rest: HatchCore.pageRect(Island.shared.restShape(), screen: sc.frame),
+                  spot: HatchCore.pageRect(Island.shared.hatchSpot(), screen: sc.frame),
+                  fallback: fallbackTarget(sc))
   }
   /// Where the island will be when it is not on screen yet (a start: the page has not sent it anything): around the
   /// camera notch, or a pill just below the top centre.
@@ -336,8 +381,8 @@ final class Hatch: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
   private func present() {
     guard let p = win, HatchCore.mayShow(protectedFront: Protected.front) else { return }
     // Clicks pass through to whatever is under it, always for the update scene (it is watched, and must never block the
-    // mouse); only the start scene takes a click, as its skip.
-    p.ignoresMouseEvents = !(phase == .finishing && mode.map(HatchCore.skippable) == true)
+    // mouse), the replay too (Esc skips that one); only the start scene takes a click, as its skip.
+    p.ignoresMouseEvents = !(phase == .finishing && mode == .launch)
     p.orderFrontRegardless()
   }
   private func hideWindow() { stopEsc(); win?.orderOut(nil) }
@@ -358,6 +403,8 @@ final class Hatch: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
       for js in waiting { web?.evaluateJavaScript(js, completionHandler: nil) }
       waiting = []
     case "cover": holdIsland()                       // the real island is (being) taken away
+    case "aim":                                      // the blob is about to fly: where is the island now? (the page may have told it since)
+      if phase == .finishing, let sc = screenNow() { call("aimed", ["target": targetNow(sc)]) } else { call("aimed", [:]) }
     case "arrive": born(blob: (o["blob"] as? Double) ?? 24)   // the blob is at the island's place
     case "tucked": tucked()
     case "done": if phase == .finishing { end() }

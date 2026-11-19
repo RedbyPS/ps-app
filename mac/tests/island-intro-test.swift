@@ -29,6 +29,8 @@ ok("hangs from the island when everything is on", IslandIntroCore.hangsFromIslan
 ok("Reduce Motion: plain card", !IslandIntroCore.hangsFromIsland(islandOff: false, reduceMotion: true, momentsOn: true, islandOnScreen: true))
 ok("island off: plain card", !IslandIntroCore.hangsFromIsland(islandOff: true, reduceMotion: false, momentsOn: true, islandOnScreen: true))
 ok("island moments off: plain card", !IslandIntroCore.hangsFromIsland(islandOff: false, reduceMotion: false, momentsOn: false, islandOnScreen: true))
+ok("island kept in the lower half: plain card in the middle (PS 1.69)", !IslandIntroCore.hangsFromIsland(islandOff: false, reduceMotion: false, momentsOn: true, islandOnScreen: true, islandLow: true))
+ok("island in the upper half or at home: hangs from it as before", IslandIntroCore.hangsFromIsland(islandOff: false, reduceMotion: false, momentsOn: true, islandOnScreen: true, islandLow: false))
 ok("island not on screen: plain card", !IslandIntroCore.hangsFromIsland(islandOff: false, reduceMotion: false, momentsOn: true, islandOnScreen: false))
 
 // the squeeze and the chime

@@ -40,7 +40,9 @@ enum IslandIntroCore {
 
   /// The island's turn: the card is on screen only after the island's squeeze and chime, so Reduce Motion, the island being off or not on
   /// screen means a plain card (no place to hang from), never no intro.
-  static func hangsFromIsland(islandOff: Bool, reduceMotion: Bool, momentsOn: Bool, islandOnScreen: Bool) -> Bool {
-    !islandOff && !reduceMotion && momentsOn && islandOnScreen
+  /// PS 1.69: also not when the island is kept in the lower half of the screen (V1.58): the card hangs from the island's lower
+  /// edge, which would put it off the bottom. It is the plain card in the middle then (the same as What's new).
+  static func hangsFromIsland(islandOff: Bool, reduceMotion: Bool, momentsOn: Bool, islandOnScreen: Bool, islandLow: Bool = false) -> Bool {
+    !islandOff && !reduceMotion && momentsOn && islandOnScreen && !islandLow
   }
 }

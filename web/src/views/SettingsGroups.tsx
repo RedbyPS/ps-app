@@ -489,6 +489,10 @@ export const CONTROLS: Controls = {
       </div>} />;
   },
   "whats-new": row(() => <WhatsNewEntry />),
+  // PS 1.69: the Hatch update animation again, with made up progress (no restart, no download, no What's new). Esc skips it.
+  "replay-update": function ReplayUpdate({ e }) {
+    return <SetRow e={e} right={<button type="button" className="btn quiet sm" onClick={() => { sfx.click(); psPost({ type: "psSettings:replayHatch" }); }}>Replay</button>} />;
+  },
   "setup": function Setup({ e }) {
     return (<>
       {/* Minecraft mode is switched off (core/mcmode.ts): switched on, its card sits here, above the setup menu. */}

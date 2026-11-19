@@ -622,6 +622,13 @@ final class SetupIsland {
     after(IslandMotionCore.tickHold) { [self] in if transient == .tick { transient = nil; render() } }
   }
 
+  /// PS 1.69: the island (bottom left origin) is in the lower half of its screen: What's new and the feature intro card hang from its
+  /// lower edge, so they open in the middle instead (HatchCore.inLowerHalf).
+  static func inLowerHalf(_ r: NSRect) -> Bool {
+    guard let sc = NSScreen.screens.first(where: { $0.frame.intersects(r) }) else { return false }
+    return HatchCore.inLowerHalf(r, screen: sc.frame)
+  }
+
   /// What's new from the island (PS 1.60): the island squeezes, bounces and says "What's new" with a chime. `ready` is called
   /// when the island has said it, and gives the island's place in the page (x centre, y of its bottom edge, width, all in the
   /// Tab list window's points), so the panel can come out attached to it. `ready(nil)` when the island cannot do it
@@ -629,6 +636,9 @@ final class SetupIsland {
   func whatsNew(overlay: NSWindow?, ready: @escaping ([String: Double]?) -> Void) {
     guard enabled, !facts.islandOff, Features.on("island-moments"), !model.reduce,
           let o = overlay, let r = Island.shared.shapeOnScreen(), ensurePanel() else { ready(nil); return }
+    // PS 1.69: the panel hangs from the island's lower edge, so an island kept in the lower half of the screen (V1.58) cannot
+    // hold it (it would open off the bottom): it opens in the middle then, as it always did without the island.
+    if Self.inLowerHalf(r) { ready(nil); return }
     psLog("PS island moment: whatsNew")
     log.append("moment:whatsNew")
     Island.shared.moment(.whatsNew)
@@ -655,7 +665,8 @@ final class SetupIsland {
   /// off, Reduce Motion, not on screen): the page draws the same card plainly. The words and the mark are the page's (core/featureintro.ts).
   func featureIntro(overlay: NSWindow?, ready: @escaping ([String: Double]?) -> Void) {
     guard enabled, IslandIntroCore.hangsFromIsland(islandOff: facts.islandOff, reduceMotion: model.reduce, momentsOn: Features.on("island-moments"),
-                                                   islandOnScreen: Island.shared.shapeOnScreen() != nil), let o = overlay, let r = Island.shared.shapeOnScreen() else {
+                                                   islandOnScreen: Island.shared.shapeOnScreen() != nil,
+                                                   islandLow: Island.shared.shapeOnScreen().map(Self.inLowerHalf) ?? false), let o = overlay, let r = Island.shared.shapeOnScreen() else {
       ready(nil); return
     }
     psLog("PS island moment: featureIntro")
