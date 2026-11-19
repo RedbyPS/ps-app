@@ -179,6 +179,66 @@ export function cleanPhoneLayout(v: unknown, phone: PhoneKind, red = false): Pho
   if (look) out.look = look;
   return out;
 }
+// PS 1.71 (item 3): a phone layout save never drops what this build cannot draw. A page of a kind it does not know (a
+// newer PS's), a panel it does not know or cannot draw here, a navbar button it does not know, a field it does not know
+// and a value it cannot read all stay in the record exactly where they were; what the person removed here stays removed.
+const PHONE_TOP = new Set(["phone", "at", "pages", "nav", "bg", "look"]);
+const PHONE_PAGE = new Set(["id", "kind", "name", "tiles", "bg", "look"]);
+const PHONE_NAV = new Set(["edge", "align", "items"]);
+type PObj = Record<string, unknown>;
+const pobj = (v: unknown): v is PObj => !!v && typeof v === "object" && !Array.isArray(v);
+/** Fields of `s` that `n` lacks: unknown ones (not in `known`), and known ones whose value `seen` (this build's reading
+ *  of `s`) left out. */
+function carryFields(s: PObj, n: PObj, seen: PObj, known: ReadonlySet<string>) {
+  for (const [k, v] of Object.entries(s)) if (!(k in n) && v !== undefined && (!known.has(k) || !(k in seen))) n[k] = v;
+}
+/** `next` with every item of `stored` that `read` does not have put back after the stored item it followed. */
+function carryPlaced<T>(stored: unknown[], next: T[], key: (x: unknown) => string | null, read: ReadonlySet<string>, inNext: ReadonlySet<string>): T[] {
+  const out = [...next];
+  let prev: string | null = null;
+  for (const x of stored) {
+    const k = key(x);
+    if (k === null) continue;
+    if (!read.has(k) && !inNext.has(k) && !out.some((y) => key(y) === k)) {
+      const i = prev === null ? -1 : out.findIndex((y) => key(y) === prev);
+      out.splice(i + 1, 0, x as T);
+    }
+    if (out.some((y) => key(y) === k)) prev = k;
+  }
+  return out;
+}
+/** The phone layout to write: `next` (cleaned, what this build changed) plus everything of the stored record it cannot draw. */
+export function carryUnknownPhone(stored: unknown, next: PhoneLayout, red = false): PhoneLayout {
+  if (!pobj(stored)) return next;
+  const was = cleanPhoneLayout(stored, next.phone, red);
+  const wasPages = new Map(was.pages.map((p) => [p.id, p as unknown as PObj]));
+  const rawPages = Array.isArray(stored.pages) ? stored.pages : [];
+  const pid = (x: unknown) => (pobj(x) && typeof x.id === "string" ? x.id : null);
+  const nextTiles = new Set(next.pages.flatMap((p) => (p.tiles ?? []).map((t) => t.id)));
+  const readTiles = new Set(was.pages.flatMap((p) => (p.tiles ?? []).map((t) => t.id)));
+  let pages = next.pages.map((p) => {
+    const n = { ...p } as unknown as PObj;
+    const s = rawPages.find((x) => pid(x) === p.id), r = wasPages.get(p.id);
+    if (!pobj(s) || !r) return n;
+    carryFields(s, n, r, PHONE_PAGE);
+    if (p.kind === "panels" && Array.isArray(s.tiles)) {
+      n.tiles = carryPlaced(s.tiles, [...(p.tiles ?? [])], pid, readTiles, nextTiles);
+    }
+    return n;
+  });
+  pages = carryPlaced(rawPages, pages, pid, new Set(wasPages.keys()), new Set(next.pages.map((p) => p.id)));
+  const out = { ...next, pages } as unknown as PObj;
+  const sn = pobj(stored.nav) ? stored.nav : {}, nav = { ...next.nav } as unknown as PObj;
+  if (Array.isArray(sn.items)) {
+    const readItems = new Set(was.nav.items);
+    nav.items = carryPlaced(sn.items, [...next.nav.items], (x) => (typeof x === "string" ? x : null), readItems, new Set(next.nav.items));
+  }
+  carryFields(sn, nav, was.nav as unknown as PObj, PHONE_NAV);
+  out.nav = nav;
+  carryFields(stored, out, was as unknown as PObj, PHONE_TOP);
+  return out as unknown as PhoneLayout;
+}
+
 /** The navbar's buttons checked: known ones, pages that exist, no twice, Settings always (added at the end if missing). */
 export function cleanNavItems(items: unknown[], pages: PhonePage[], red: boolean): NavItem[] {
   const out: NavItem[] = [];

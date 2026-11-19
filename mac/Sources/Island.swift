@@ -1296,8 +1296,8 @@ final class Island {
   }
 
   private var shown: Bool { panel?.isVisible == true }
-  /// On screen only when switched on and with something to show. Over 1Password or Signal it follows the account's
-  /// rule (BuildRules.swift, V1.58): shown for everyone except the developer, hidden on the developer's account.
+  /// On screen only when switched on and with something to show. Over 1Password or Signal it follows the build's
+  /// rule (BuildRules.now, PS 1.71): shown in the G Squad build for every account, hidden in the developer's own build.
   private func place() {
     guard let p = panel else { return }
     let (g, s) = IslandGeo.read()
@@ -1326,7 +1326,7 @@ final class Island {
     startWatching()
     shapeChanged()
   }
-  /// 1Password or Signal came to the front or went. Where the island shows over them (everyone except the developer) nothing
+  /// 1Password or Signal came to the front or went. Where the island shows over them (the G Squad build) nothing
   /// about it depends on that, so nothing runs at all: no window is looked at and no line is written at that moment.
   func protectedChanged() { SquadIsland.shared.protectedChanged(); if !BuildRules.now.islandOverProtected { place(); BigIslandWindow.shared.protectedChanged() } }
   /// Who is signed in changed (Owner.onChange): the rule over 1Password and Signal may be another one now.

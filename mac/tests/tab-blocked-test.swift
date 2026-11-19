@@ -153,6 +153,39 @@ check("sp-quick-tap-goes-on", S.passOnTap(protectedFront: false))
 check("sp-log-front", S.logLine(armed: true, why: .secureFront).contains("watching for a hold"))
 check("sp-log-never-names", !S.logLine(armed: true, why: .secureFront).lowercased().contains("1password"))
 
+// ---------- PS 1.71: per BUILD (Profile.allows, BuildRules.now) ----------
+// The 1.70 changes against the developer's rule (Tab and the island over 1Password and Signal: on in the G Squad build, off in
+// his own build, whoever is signed in). Over 1Password or Signal the Tab blocked card never shows on either build (the
+// golden rule), Secure Input held by them never arms .secureFront, and the hold follows the build's rule to the list.
+func pj(_ s: String) -> Any { try! JSONSerialization.jsonObject(with: s.data(using: .utf8)!) }
+let gsqP = Profile.from(pj(#"{"schema":1,"name":"gsquad","channel":{"kind":"gsquad"},"othersShared":"on","rules":{"tabOverProtectedApps":true,"islandOverProtectedApps":true}}"#))
+let redLayerR = Profile.rulesFrom(pj(#"{"tabOverProtectedApps":false,"islandOverProtectedApps":false}"#))
+for (b, prof, layer, on) in [("gsquad-build", gsqP, nil, true), ("red-build", nil, redLayerR, false)] as [(String, Profile?, [String: Bool]?, Bool)] {
+  for (a, isRed) in [("red-account", true), ("friend-account", false)] {
+    let r = BuildRules.fromProfile(BuildRules.rules(red: isRed), profile: prof, layer: layer)
+    let t = "1.71-\(b)-\(a)"
+    for (n, h, pid) in [("1password", onePw, Int32(700)), ("1password-helper", onePwNamed, Int32(701)), ("signal", signal, Int32(702))] {
+      // Secure Input held by them while they are in front: never the app in front for the card, never stuck.
+      check("\(t)-\(n)-front-holder-never", SecureInputCore.frontHolder(on: true, holders: [h], frontPid: pid, me: me, protectedFront: true) == nil)
+      check("\(t)-\(n)-not-stuck-in-front", !SecureInputCore.stuck(on: true, holders: [h], frontPid: pid).stuck)
+    }
+    // No card over them, whatever else is wrong.
+    check("\(t)-no-card-secure", blind { $0.secureOn = true; $0.protectedFront = true } == nil)
+    check("\(t)-no-card-permission", blind { $0.trusted = false; $0.protectedFront = true } == nil)
+    check("\(t)-no-card-deaf", blind { $0.deaf = true; $0.protectedFront = true } == nil)
+    // secureFront left over from the app before (DuckDuckGo) while 1Password or Signal is now in front: protected wins,
+    // the build decides, a hold brings the list (never the card), Esc follows.
+    var i = S.Inputs(); i.protectedFront = true; i.secureFront = true; i.tabOverProtected = r.tabOverProtected
+    check("\(t)-secure-front-leftover-protected-wins", S.blind(i) == .protected)
+    check("\(t)-secure-front-leftover-\(on ? "armed" : "never")", S.wantTab(i) == on)
+    check("\(t)-secure-front-leftover-list-not-card", !S.holdShowsCard(S.blind(i)))
+    check("\(t)-secure-front-leftover-esc", S.wantEsc(protectedFront: true, secureStuck: false, shown: true, tabOverProtected: r.tabOverProtected) == on)
+    // Back in DuckDuckGo with its password box: the 1.70 card rule is the same on both builds and every account.
+    var d = S.Inputs(); d.secureFront = true; d.tabOverProtected = r.tabOverProtected
+    check("\(t)-duckduckgo-card-unchanged", S.wantTab(d) && S.holdShowsCard(S.blind(d)))
+  }
+}
+
 print(fails == 0 ? "tab-blocked: all passed" : "tab-blocked: \(fails) FAILED")
 exit(fails == 0 ? 0 : 1)
 

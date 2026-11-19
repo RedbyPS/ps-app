@@ -76,7 +76,7 @@ export function LinkedPhones({ refresh }: { refresh: unknown }) {
   const day = (s: string) => new Date(s).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
   return (
     <div className="li-phones">
-      <b>Phones signed in by scanning</b>
+      <b>Phones that stay signed in</b>
       {list.map((d, i) => (
         <div className="li-phone" key={d.id}>
           <span>Phone {i + 1}, since {day(d.created_at)}</span>

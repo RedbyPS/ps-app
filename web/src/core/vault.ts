@@ -25,6 +25,7 @@ import type { MoveTarget } from "./move";
 import { noteDevice } from "./whatsnew";
 import { sealForPhone, type LinkPayload, type MacSide } from "./phonepair";
 import { forgetPhoneKeys, readPhoneKeys, savePhoneKeys } from "./phonekeys";
+import { checkDue, phoneVerdict, setStay, shouldKeep, stayOn } from "./phonestay";
 import { feedOfAccount, isFeedSource, okFeedId } from "./calfeeds";
 import { lowPower } from "./lowpower.ts";
 
@@ -542,7 +543,7 @@ export async function restoreSession(): Promise<boolean> {
     startLoops();
     void saveSession();
     void sync();
-    if (MOBILE_PAGE) void readPhoneKeys(PROJECT.url).then((k) => { if (k && k.u === s!.username) { phoneDevice = k.d; void phoneStillLinked(); } });
+    if (MOBILE_PAGE) void readPhoneKeys(PROJECT.url).then((k) => { if (k && k.u === s!.username && meta) { phoneDevice = k.d; phoneCreds = { u: k.u, a: k.a, k: k.k }; void phoneCheck(true); } });
     return true;
   } catch {
     lock();
@@ -588,7 +589,8 @@ export async function unlock(username: string, passphrase: string, derived?: { a
   try {
     const login = await acctLogin(username);
     const ps = NATIVE;
-    const d = derived ?? await acctDerive(passphrase, username, undefined, ps);
+    // PS 1.71: the phone web app derives the key exportable too (the same bytes), so Stay signed in can keep it.
+    const d = derived ?? await acctDerive(passphrase, username, undefined, ps || MOBILE_PAGE);
     let userId: string | null = null;
     let keys: KeysRow | null = null;
     let role: "owner" | "client" | null = null;
@@ -627,8 +629,9 @@ export async function unlock(username: string, passphrase: string, derived?: { a
     }
     await finishUnlock(login, username.trim(), userId!, role!, keys, vk, red);
     let kekRaw = "";
-    if (ps && d.kek.extractable) { try { kekRaw = C.b64url(new Uint8Array(await crypto.subtle.exportKey("raw", d.kek))); } catch { /* not exportable */ } }
+    if ((ps || MOBILE_PAGE) && d.kek.extractable) { try { kekRaw = C.b64url(new Uint8Array(await crypto.subtle.exportKey("raw", d.kek))); } catch { /* not exportable */ } }
     if (kekRaw) holdLinkCreds(username.trim(), d.authPassword, kekRaw);
+    if (kekRaw && MOBILE_PAGE) { phoneCreds = { u: username.trim(), a: d.authPassword, k: kekRaw }; if (!offline) void keepPhoneSignIn(); }
     if (ps && (opts.remember ?? !derived) && psRememberHook && kekRaw) {
       try { psRememberHook(username.trim(), d.authPassword, kekRaw); }
       catch { /* not remembered: PS asks for the password next launch */ }
@@ -677,7 +680,7 @@ export async function unlockPassphraseOnly(passphrase: string) {
   if (!passphrase) throw new Error("Enter your passphrase.");
   emit({ status: "busy" });
   let d: C.ProjectDerived;
-  try { d = await C.deriveForProjectWithHint(passphrase, id, undefined, NATIVE); }
+  try { d = await C.deriveForProjectWithHint(passphrase, id, undefined, NATIVE || MOBILE_PAGE); }
   catch (e) { emit({ status: "locked" }); throw e; }
   try {
     await unlock(PROJECT_HANDLE, passphrase, { authPassword: d.authPassword, kek: d.kek }, { remember: true });
@@ -736,7 +739,8 @@ async function restorePhone(): Promise<boolean> {
     return false;
   }
   phoneDevice = k.d;
-  void phoneStillLinked();
+  phoneCreds = { u: k.u, a: k.a, k: k.k };
+  void phoneCheck(true);
   return true;
 }
 /** Removed on the Mac: forget the keys here and lock. Only a clear "not in the list" counts (offline keeps it). */
@@ -772,6 +776,7 @@ export async function unlockFromMac(p: LinkPayload) {
   await unlock(p.u, "", { authPassword: p.a, kek: await C.importAesRaw(C.unb64url(p.k)) });
   await savePhoneKeys(PROJECT.url, { u: p.u, a: p.a, k: p.k, d: p.d });
   phoneDevice = p.d;
+  phoneCreds = { u: p.u, a: p.a, k: p.k };
 }
 const GOS_DEVICE = "ps.gos.device";
 let onPhoneRemoved: (() => void) | null = null;
@@ -785,12 +790,110 @@ export function gosPhoneCheck(username: string) {
     if (o?.u === username && typeof o.d === "string") { phoneDevice = o.d; void phoneStillLinked(); }
   } catch { /* nothing kept */ }
 }
-/** Whether this phone stays signed in with the Mac's keys (no auto lock, like Stay signed in on PS GOS). */
+/** Whether this phone stays signed in (no auto lock, like Stay signed in on PS GOS): by the Mac's scan, or since 1.71 by
+ *  its own passphrase sign in with Stay signed in on. */
 export const phoneKept = () => !!phoneDevice;
+
+// ---------- PS 1.71: the phone web app stays signed in after a passphrase sign in (core/phonestay.ts) ----------
+// What a sign in on the phone web app derived (the login password and the key that opens the vault key, never the
+// passphrase), held in memory while unlocked, like linkCreds on the Mac. Cleared by lock().
+let phoneCreds: { u: string; a: string; k: string } | null = null;
+let keeping: Promise<boolean> | null = null;
+/** Keep this sign in on the phone: its row on the account's phone list first (the Mac's Remove), then the keys under the
+ *  phone's non extractable device key (core/phonekeys.ts). No row (offline, a project without migration 029): nothing
+ *  is kept, as before 1.71, and the next check or sign in tries again. */
+function keepPhoneSignIn(): Promise<boolean> {
+  return keeping ??= keepNow().finally(() => { keeping = null; });
+}
+async function keepNow(): Promise<boolean> {
+  const c = phoneCreds;
+  if (!c || !meta || !shouldKeep({ mobilePage: MOBILE_PAGE, stay: stayOn(), online: navigator.onLine, local: !!meta.local, kept: !!phoneDevice, haveKeys: true })) return false;
+  // The same phone signing in again (a Lock that kept its keys, an error): its own row on the list, not a second one.
+  const old = await readPhoneKeys(PROJECT.url);
+  let d: string | null = null;
+  if (old && old.u === c.u) {
+    const r = await sb.from("ps_devices").select("id").eq("id", old.d).then((x) => x, () => null);
+    if (r && !r.error && Array.isArray(r.data) && r.data.length) d = old.d;
+  }
+  const reused = !!d;
+  if (!d) {
+    const r = await sb.from("ps_devices").insert({ kind: "phone" }).select("id").single().then((x) => x, () => null);
+    if (!r || r.error || !r.data) return false;
+    d = String((r.data as { id: string }).id);
+  }
+  const drop = (row: boolean) => row ? sb.from("ps_devices").delete().eq("id", d!).then(() => {}, () => {}) : Promise.resolve();
+  if (phoneCreds !== c || !stayOn()) { await drop(!reused); return false; }   // locked, signed in again, or switched off meanwhile
+  try { await savePhoneKeys(PROJECT.url, { u: c.u, a: c.a, k: c.k, d }); }
+  catch { await drop(!reused); return false; }   // storage off: nothing kept
+  if (phoneCreds !== c || !stayOn()) { await forgetPhoneKeys(PROJECT.url); await drop(true); return false; }
+  phoneDevice = d;
+  void askPersist();
+  return true;
+}
+// iOS 17 and later: ask once that this app's storage is not cleared under storage pressure (WebKit grants it on its own
+// rules, for example to a Home Screen web app; there is no prompt). Best effort: if it is cleared, the passphrase opens it.
+let persistAsked = false;
+async function askPersist() {
+  if (persistAsked) return;
+  persistAsked = true;
+  try { const st = navigator.storage; if (st?.persist && !(await st.persisted?.())) await st.persist(); } catch { /* best effort */ }
+}
+/** When PS app opens (force) and each time it comes back to the front, at most every 5 minutes, online only: removed on
+ *  the Mac, or a new passphrase (the kept key no longer opens the account's vault key)? Then forget the keys and lock.
+ *  A failed request never counts as an answer. A phone that signed in offline is kept here once it is online. */
+let phoneCheckedAt = 0;
+async function phoneCheck(force = false) {
+  if (!MOBILE_PAGE || snap.status !== "unlocked" || !meta || meta.local || !navigator.onLine) return;
+  const now = Date.now();
+  if (!checkDue(phoneCheckedAt, now, force)) return;
+  phoneCheckedAt = now;
+  if (!phoneDevice) { if (stayOn() && phoneCreds) void keepPhoneSignIn(); return; }
+  const session = (await sb.auth.getSession().catch(() => null))?.data.session;
+  if (!session) return;   // no login to ask with: the next open signs in properly
+  const d = phoneDevice, c = phoneCreds, userId = meta.userId;
+  const listed = await sb.from("ps_devices").select("id").eq("id", d).then(
+    ({ data, error }) => (error || !Array.isArray(data) ? null : data.length > 0), () => null);
+  let opens: boolean | null = null;
+  if (c && listed !== false) {
+    const r = await sb.from("user_keys").select("wrapped_vk, wrapped_vk_prev").eq("user_id", userId).maybeSingle().then((x) => x, () => null);
+    const row = r && !r.error ? r.data as { wrapped_vk?: string; wrapped_vk_prev?: string | null } | null : null;
+    if (row?.wrapped_vk) {
+      opens = false;
+      try {
+        const kek = await C.importAesRaw(C.unb64url(c.k));
+        for (const w of [row.wrapped_vk, row.wrapped_vk_prev]) {
+          if (!w) continue;
+          try { await C.unwrapKey(kek, w, C.aad.vk); opens = true; break; } catch { /* not this one */ }
+        }
+      } catch { opens = null; }
+    }
+  }
+  if (phoneDevice !== d) return;   // locked or signed out meanwhile
+  const v = phoneVerdict({ listed, opens });
+  if (v !== "removed" && v !== "new-passphrase") return;
+  phoneDevice = null;
+  await forgetPhoneKeys(PROJECT.url);
+  if (v === "new-passphrase") await sb.from("ps_devices").delete().eq("id", d).then(() => {}, () => {});
+  lock();
+}
+/** Stay signed in, this phone's switch (gos/PhoneRows.tsx "mweb-stay"). Off: forget the kept sign in and take this phone
+ *  off the Mac's list; it stays unlocked now and the auto lock applies again. On: keep this sign in now if it can (a
+ *  passphrase sign in in this open), else at the next sign in. */
+export async function setPhoneStay(on: boolean): Promise<void> {
+  if (!MOBILE_PAGE) return;
+  setStay(on);
+  if (on) { await keepPhoneSignIn(); return; }
+  const d = phoneDevice;
+  phoneDevice = null;
+  await forgetPhoneKeys(PROJECT.url);
+  if (d && meta && navigator.onLine) await sb.from("ps_devices").delete().eq("id", d).then(() => {}, () => {});
+  lastActivity = Date.now();
+  void saveSession();   // the refresh session again, for the auto lock time
+}
 
 export function lock() {
   void kvDel(kSession).catch(() => {});
-  linkCreds = null; phoneDevice = null;
+  linkCreds = null; phoneDevice = null; phoneCreds = null;
   stopLoops();
   VK = null; inboxPriv = null; WKS.clear(); meta = null; trustedAuthors = null; roleConfirmedFor = null;
   rows = new Map(); outbox = new Map(); undecryptable = new Set();
@@ -804,7 +907,13 @@ export function lock() {
 export async function signOutAndForget() {
   if (meta?.local) { lock(); return; }   // the local vault is the only copy: signing out never deletes it
   const login = meta?.login;
+  // PS 1.71: on the phone web app, Change project also ends Stay signed in for the project it leaves (keys and list row).
+  const phone = MOBILE_PAGE ? phoneDevice ?? (await readPhoneKeys(PROJECT.url))?.d ?? null : null;
   lock();
+  if (MOBILE_PAGE) {
+    await forgetPhoneKeys(PROJECT.url);
+    if (phone && navigator.onLine) await sb.from("ps_devices").delete().eq("id", phone).then(() => {}, () => {});
+  }
   await sb.auth.signOut().catch(() => {});
   if (login) { await kvDel(kMeta(login)); await kvDel(kRows(login)); await kvDel(kOut(login)); }
   await kvDel(kLastUser);
@@ -966,7 +1075,7 @@ export async function changePassphrase(oldPass: string, newPass: string) {
   if (!keys) throw new Error("Keys not found.");
   let vk: CryptoKey;
   try { vk = await C.unwrapKey(d1.kek, keys.wrapped_vk, C.aad.vk, true); } catch { throw new Error("Current passphrase is wrong."); }
-  const d2 = await acctDerive(newPass, username);
+  const d2 = await acctDerive(newPass, username, undefined, MOBILE_PAGE);   // the phone web app keeps it (same bytes)
   const wrapped_vk = await C.wrapKey(d2.kek, vk, C.aad.vk);
   // Keep the old wrap as wrapped_vk_prev until the login password has changed, so a failure
   // between the two steps can never lock you out (unlock falls back to the previous wrap).
@@ -985,6 +1094,15 @@ export async function changePassphrase(oldPass: string, newPass: string) {
   if (linkCreds && NATIVE) {
     try { const d3 = await acctDerive(newPass, username, undefined, true); holdLinkCreds(username, d3.authPassword, C.b64url(new Uint8Array(await crypto.subtle.exportKey("raw", d3.kek)))); }
     catch { linkCreds = null; }
+  }
+  // PS 1.71: a phone web app that stays signed in keeps the new keys, or its own check would end it. Not kept: the next
+  // open asks for the new passphrase.
+  if (MOBILE_PAGE && phoneCreds) {
+    try {
+      const k = C.b64url(new Uint8Array(await crypto.subtle.exportKey("raw", d2.kek)));
+      phoneCreds = { u: phoneCreds.u, a: d2.authPassword, k };
+      if (phoneDevice) await savePhoneKeys(PROJECT.url, { u: phoneCreds.u, a: phoneCreds.a, k: phoneCreds.k, d: phoneDevice });
+    } catch { /* see above */ }
   }
   void writeAccountHint(newPass, username);
 }
@@ -1899,7 +2017,7 @@ export function nudge() {
 function onActivity() { lastActivity = Date.now(); }
 function onOnline() { emit({ online: true }); void runSync(); }
 function onOffline() { emit({ online: false }); }
-function onVisible() { if (document.visibilityState === "visible") { checkAutoLock(); void sync(); } }
+function onVisible() { if (document.visibilityState === "visible") { checkAutoLock(); void sync(); void phoneCheck(); } }
 
 export function autoLockMinutes(): number {
   const s = docs<{ autoLockMin?: number }>("settings")[0];
@@ -1910,7 +2028,7 @@ let psKeepOpen = false;
 export function setPsKeepOpen(v: boolean) { if (import.meta.env.MODE === "ps" || import.meta.env.MODE === "gos") psKeepOpen = v; }   // PS GOS: Stay signed in
 function checkAutoLock() {
   if (psKeepOpen || localOnly()) return;   // the local vault has no passphrase to ask for again
-  if (phoneDevice && MOBILE_PAGE) return;   // V1.55: a phone signed in from the Mac stays signed in (its Lock forgets that)
+  if (phoneDevice && MOBILE_PAGE) return;   // a kept phone stays signed in (V1.55 the Mac's scan, 1.71 Stay signed in); its Lock forgets that
   const mins = autoLockMinutes();
   if (mins > 0 && Date.now() - lastActivity > mins * 60_000) { lock(); return; }
   // Keep the refresh session alive while you are active (at most one write a minute).

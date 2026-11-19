@@ -478,7 +478,11 @@ export function snapRect(r: Rect, others: Rect[], vw: number, vh: number, near =
 //    they were. cleanLayout still leaves them out of what is drawn; the next save puts them back from the saved record.
 // 2. Nothing is saved before the account's own layout has loaded (layoutReady): a draw from the empty layout (the Tab
 //    list before the main page has handed the vault over, a first download still running) is never a base for a save.
-const CFG_KNOWN = new Set(["cal", "of", "open"]);
+// 3. PS 1.71 (item 3): also a new top level field of the record, a newer value of a setting this build knows but cannot
+//    read (a calendar kind it has no word for) while this save leaves that panel's settings as they were, and a page id
+//    in a newer form. Nothing a newer build wrote is lost to an older build's save.
+const CFG_KNOWN = new Set(["cal", "of", "open", "rows"]);
+const TOP_KNOWN = new Set(["pos", "hidden", "at", "extra", "page", "size", "cfg"]);
 /** A copy or original this build cannot show (unknown here, or switched off in this build): never touched by a save. */
 const foreign = (id: string, carried: ReadonlySet<string>) => {
   if (!ID.test(id)) return false;
@@ -498,6 +502,7 @@ const cfgExtra = (v: unknown): Record<string, string | number | boolean> | null 
 /** The layout to write: `next` (what this build changed) plus everything of the saved record this build cannot show. */
 export function carryUnknown(stored: unknown, next: TabLayout): TabLayout {
   const o = (stored && typeof stored === "object" ? stored : {}) as { pos?: unknown; hidden?: unknown; extra?: unknown; page?: unknown; size?: unknown; cfg?: unknown };
+  const was = cleanLayout(stored);   // what this build saw of the stored record
   const obj = (m: unknown) => (m && typeof m === "object" && !Array.isArray(m) ? Object.entries(m as Record<string, unknown>).slice(0, MAX_SLOTS + MAX_EXTRA) : []);
   const have = new Set(next.extra ?? []);
   const carried = new Set(Array.isArray(o.extra) ? o.extra.filter((x): x is string => typeof x === "string" && ID.test(x) && isCopy(x) && !have.has(x)
@@ -512,20 +517,32 @@ export function carryUnknown(stored: unknown, next: TabLayout): TabLayout {
   }
   if (Array.isArray(o.hidden)) for (const x of o.hidden) if (typeof x === "string" && !isCopy(x) && foreign(x, carried) && !out.hidden.includes(x)) out.hidden.push(x);
   const page = { ...(next.page ?? {}) }, size = { ...(next.size ?? {}) }, cfg: Record<string, InstCfg> = { ...(next.cfg ?? {}) };
-  for (const [id, v] of obj(o.page)) if (foreign(id, carried) && !(id in page) && typeof v === "string" && PAGE_ID.test(v) && v !== MAIN_PAGE) page[id] = v;
+  const alive = (id: string) => (isCopy(id) ? !!out.extra?.includes(id) : KNOWN.has(id));
+  for (const [id, v] of obj(o.page)) {
+    if (id in page || typeof v !== "string" || v === MAIN_PAGE) continue;
+    if (foreign(id, carried)) { if (PAGE_ID.test(v)) page[id] = v; continue; }
+    // A page id in a form this build does not read: it drew the panel on the main page, so it cannot have moved it there.
+    if (!PAGE_ID.test(v) && /^[A-Za-z0-9_:-]{1,64}$/.test(v) && alive(id) && !(id in (was.page ?? {}))) page[id] = v;
+  }
   for (const [id, v] of obj(o.size)) { const z = sizeOk(v); if (foreign(id, carried) && !(id in size) && z !== null && z !== 1) size[id] = z; }
   for (const [id, v] of obj(o.cfg)) {
     const x = cfgExtra(v);
     if (!x) continue;
     if (foreign(id, carried)) { if (!(id in cfg)) cfg[id] = x as InstCfg; continue; }
-    // A panel this build knows, with a setting this build does not: that setting stays (a newer PS made it).
-    const alive = isCopy(id) ? out.extra?.includes(id) : KNOWN.has(id);
-    const extraKeys = Object.entries(x).filter(([k]) => !CFG_KNOWN.has(k));
-    if (alive && extraKeys.length) cfg[id] = { ...Object.fromEntries(extraKeys), ...(cfg[id] ?? {}) } as InstCfg;
+    // A panel this build knows, with a setting this build does not: that setting stays (a newer PS made it). A value of
+    // a setting it knows but could not read stays too, unless this save changed that panel's settings.
+    if (!alive(id)) continue;
+    const seen = (was.cfg?.[id] ?? {}) as Record<string, unknown>;
+    const untouched = JSON.stringify(seen) === JSON.stringify(next.cfg?.[id] ?? {});
+    const keep = Object.entries(x).filter(([k]) => !CFG_KNOWN.has(k) || (untouched && !(k in seen)));
+    if (keep.length) cfg[id] = { ...Object.fromEntries(keep), ...(cfg[id] ?? {}) } as InstCfg;
   }
   if (Object.keys(page).length) out.page = page;
   if (Object.keys(size).length) out.size = size;
   if (Object.keys(cfg).length) out.cfg = cfg;
+  for (const [k, v] of Object.entries(o as Record<string, unknown>)) {
+    if (!TOP_KNOWN.has(k) && !(k in out) && /^[a-zA-Z][a-zA-Z0-9]{0,31}$/.test(k) && v !== undefined) (out as Record<string, unknown>)[k] = v;
+  }
   return out;
 }
 /** The account's own layout is here to build on: the vault is open and its first download (or the offline copy) is

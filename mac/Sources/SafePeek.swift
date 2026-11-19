@@ -30,6 +30,8 @@ import Carbon.HIToolbox
 // The developer's account: never armed over 1Password or Signal (no hold key, no combo, no Esc), and a list left up (pinned,
 // Keep overlay) goes away when one of them comes to the front (TabWatch.protectedChanged). Why friends still could not
 // open PS over Signal before V1.58: see SafePeekCore.swift (a typing flag left over while the list was hidden).
+// PS 1.71: "The developer's account" above now means "a build that says off" (the developer's own build, for every account), and
+// "everyone else" means "a build that says on" (the G Squad build, the developer's account too). BuildRules.now decides.
 final class SafePeek {
   static let shared = SafePeek()
   weak var app: App?

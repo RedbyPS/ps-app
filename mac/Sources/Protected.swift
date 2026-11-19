@@ -6,8 +6,9 @@ import Cocoa
 // step aside completely. Matching is broad on purpose: any 1Password or Signal build or helper.
 // While one of them is in front the keyboard tap is switched OFF (macOS hands PS none of its keys).
 // Whether the Tab list (SafePeek, one macOS hotkey for plain Tab, so PS still never sees a key typed in either app)
-// and the floating island may show over them is decided per account in BuildRules.swift (V1.58, the developer, 13 Nov 2026):
-// yes for everyone except the developer, never on the developer's own account.
+// and the floating island may show over them is decided per BUILD since PS 1.71 (BuildRules.swift, Profile.allows):
+// yes in the G Squad build for every account, never in the developer's own build. A build that says nothing: per account as in
+// V1.58 (yes for everyone except the developer).
 enum Protected {
   static func matches(_ bundleId: String?) -> Bool {
     guard let id = bundleId?.lowercased() else { return false }

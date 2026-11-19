@@ -1178,8 +1178,8 @@ export interface PsSettings {
   /** V1.47 Tab overlay shortcuts (core/openkeys.ts, ps-mac OpenKeysCore.swift): the list in use (custom false: the old
    *  settings as a list, never changed), what each key code types on this Mac's layout, and which combos (their place
    *  among the combos) another app already holds. */
-  /** overProtected (V1.58, the Mac's BuildRules): false on the developer's account, where PS never opens over 1Password or
-   *  Signal. Missing (an older Mac) means true. */
+  /** overProtected (V1.58, the Mac's BuildRules; PS 1.71 per BUILD): false in the developer's own build, where PS never opens
+   *  over 1Password or Signal, true in the G Squad build for every account. Missing (an older Mac) means true. */
   shortcuts?: { custom: boolean; list: import("./core/openkeys").OpenShortcut[]; labels?: Record<string, string>; layout?: string; taken?: number[]; overProtected?: boolean };
   /** Hold / and press . (on by default), and what those two keys type on this Mac's keyboard layout. */
   slashChord?: boolean; slashKeys?: { slash: string; dot: string; layout: string }; ignoredApps?: { id: string; name: string }[]; runningApps?: { id: string; name: string }[];

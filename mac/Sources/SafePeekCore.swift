@@ -21,6 +21,8 @@ import Foundation
 //  - Everyone except the developer: armed over 1Password and Signal, as above.
 //  - the developer: never armed over them (tabOverProtected false). Secure Input stuck does not change that while one of them
 //    is in front.
+// PS 1.71: `tabOverProtected` is the BUILD's answer (Profile.allows): true in the G Squad build for every account,
+// The developer's too; false in the developer's own build for every account. The rules here did not change, only who decides the input.
 // And the cause of "Tab still does not open over Signal" on the public build: `editing` (typing in the floating list)
 // stayed true after the list had gone, because the page can say "a screen is open" (G Squad, Fitness, Dimension X,
 // Brief and the others send {type:"dimx"}, a box sends {type:"edit"}) while the list is hidden, for example a screen

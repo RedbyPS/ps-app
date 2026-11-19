@@ -116,10 +116,13 @@ export function profileRule(rule: Rule, p: Profile | null = profile()): boolean 
   return typeof v === "boolean" ? v : null;
 }
 
-/** A rule's answer for this build: the per account answer (protected-158's place) unless the profile narrows it.
- *  Both must allow it, so a wrong profile on the developer's account can never open PS over 1Password or Signal (fails closed),
- *  and with no profile the answer is exactly the per account one, as in V1.57. */
+/** A rule's answer for this build. PS 1.71 (the developer, 13 Nov 2026, again 19 Nov: "it's just turned off again"): the Tab
+ *  list and the island over 1Password and Signal are two rules per BUILD, never one shared switch: on in the G Squad
+ *  build, off in the developer's own build, whoever is signed in. So the profile decides whenever it says. Before 1.71 it was
+ *  ANDed with the per account answer, so the G Squad build signed in with the developer's account was off.
+ *  No profile, or one that does not say: the per account answer, as in V1.57. (The Mac's Profile.allows does the same,
+ *  and a Mac built from a private tree also carries its layer's rules alone, Resources/build-rules.json.) */
 export function joinRule(rule: Rule, perAccount: boolean, p: Profile | null = profile()): boolean {
   const v = profileRule(rule, p);
-  return v === null ? perAccount : v && perAccount;
+  return v === null ? perAccount : v;
 }

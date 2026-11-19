@@ -94,7 +94,7 @@ import { resetMinOf } from "../core/resetday";
 import { Completed } from "./Completed";
 import { SleepHost, SleepRow } from "./SleepMode";
 import { TaskMenuHost, openTaskMenu, openTaskMenuAt } from "./TaskMenu";
-import { EmptyList, ListDots, ListMenuHost, ListPager, ListStrip, PlusPage, SecTitle, addGroupHere, deleteList, goToPage, jumpToPage, listDragHint, listDropAt, listName, moveToList, newPanelsPage, openSecMenu, pageBg, pageForNewGroup, pagePrefs, setListCtx, setPageOrder, useActivePage } from "./ListPager";
+import { EmptyList, ListDots, ListMenuHost, ListPager, ListStrip, PlusPage, SecTitle, addGroupHere, deleteList, goToPage, jumpToPage, listDragHint, listDropAt, listName, moveToList, newPanelsPage, openSecMenu, pageBg, pageForNewGroup, pagePrefs, restoreLostPages, setListCtx, setPageOrder, useActivePage } from "./ListPager";
 import { MAIN, allPages, isPlus, pageOfTask, pagerIds, secsByPage, shownName } from "../core/lists";
 import { useSectionOrder } from "../ui/sectionDrag";
 import { MiniList, MiniToggle, miniAllDone, useMiniOpen, useSubOpenList } from "./MiniTasks";
@@ -1158,6 +1158,10 @@ export function Overlay({ onClose, controls, docked, web, footer }: { onClose: (
     secs: (id) => (byPage.get(id) ?? []).filter((k) => secShown(k, id === MAIN)).map(secTitle),
     go: goToPage, jump: jumpToPage, add: newPanelsPage, order: setPageOrder, remove: (id) => deleteList(id, false),
   });
+  // PS 1.71 (R4, core/keepunknown.ts): once the account's own layout and pages are in, a page of panels that got lost
+  // comes back with its panels on it (once a session, never a page the person deleted).
+  const hasLayout = !!layoutDoc;
+  useEffect(() => { if (editable && ready && hasLayout) restoreLostPages(savedLayout.page); }, [editable, ready, hasLayout]); // eslint-disable-line react-hooks/exhaustive-deps
   const ovOn = useEditing();
   useEffect(() => { if (ovOn && isPlus(curPage.id)) goToPage(MAIN); }, [ovOn]); // eslint-disable-line react-hooks/exhaustive-deps
   // PS 1.61: the island's envelope or reply arrow asked for the email panel (core/mailopen.ts): go to the page it sits

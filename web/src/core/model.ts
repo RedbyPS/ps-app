@@ -523,6 +523,7 @@ export interface Settings {
   tmSecOrder?: string[];         // the Tab list's sections top to bottom: "p1", "prio", "daily" and "g:<group id>" (the developer, 29 Oct 2026), see core/groups.ts
   tmGroups?: TaskGroup[];        // The developer's own task groups in the Tab list, made by dragging Cmd-selected tasks out (the developer, 29 Oct 2026)
   tmPages?: import("./lists").ListPage[];   // V1.55: the developer's extra to-do lists, each a page of sections he swipes to (core/lists.ts). Unset = the main list only
+  tmPagesGone?: string[];        // PS 1.71: pages the person deleted (newest last, core/keepunknown.ts), so a lost page brought back is never one of them
   tmPageOrder?: string[];        // V1.55: the pages left to right, "main" among them (lists on both sides of home), core/lists.ts
   tmNames?: import("./lists").ListNames;    // V1.55: the main list's and the built-in sections' own names (Priorities and the rest). Unset = as before
   tmSwipeDir?: import("./lists").SwipeDir;  // V1.55: a two finger swipe to the right goes to the list on the right (push, default) or brings the left one (drag)

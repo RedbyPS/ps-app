@@ -11,8 +11,9 @@
 //    away sooner (the list hides, a meeting starts, a menu opens) it comes back, at that same step, another calm time;
 //  - Mac app only (the island, Tab over 1Password and Signal and the Pomodoro button all live there). The website and
 //    the phone never show it and never mark it seen, so a person who opens the website first still gets it on the Mac;
-//  - the friends only step (Tab and the island over 1Password and Signal) never shows on the developer's account, and never where
-//    the Mac says the list does not open over them (BuildRules, protected-158);
+//  - the friends only step (Tab and the island over 1Password and Signal) never shows where the Mac says the list does
+//    not open over them (PS 1.71: per BUILD, so never in the developer's own build and on every account in the G Squad build);
+//    an older Mac that does not say falls back to the account (never on the developer's);
 //  - it starts after What's new (or the "Updated to" card) has been up and closed on this device. A brand new install has
 //    no What's new, so it waits until the first use tips have finished (same gate as the V1.56 pop-ups);
 //  - never two at once: it waits while a first use tip or a V1.56 pop-up shows, and those wait for it. It uses the same
@@ -35,7 +36,7 @@ export interface WalkStep {
   jump?: string;
   /** The little picture in the card. */
   picture: "menu" | "settings" | "topbar" | "pomodoro" | "standup" | "meeting" | "ai" | "protected";
-  /** Friends only: never on the developer's account. */
+  /** Only where the list opens over 1Password and Signal: never in the developer's own build (PS 1.71: per build). */
   notRed?: boolean;
 }
 
@@ -100,7 +101,8 @@ export interface WalkFacts {
   mac: boolean;
   /** The developer's own account (core/account.ts isRedAccount). */
   red: boolean;
-  /** The Mac says the list opens over 1Password and Signal on this account (null: an older Mac that does not say). */
+  /** The Mac says the list opens over 1Password and Signal in this build (PS 1.71: per build, before it per account;
+   *  null: an older Mac that does not say). */
   overProtected: boolean | null;
   /** Steps whose feature the person switched off themselves (the Pomodoro button off): nothing to point at. */
   off: Partial<Record<WalkStepId, boolean>>;
@@ -118,7 +120,9 @@ export interface WalkFacts {
 export function stepApplies(f: Pick<WalkFacts, "mac" | "red" | "overProtected" | "off">, s: WalkStep): boolean {
   if (!f.mac) return false;
   if (f.off[s.id]) return false;
-  if (s.notRed && (f.red || f.overProtected === false)) return false;
+  // PS 1.71: the Mac's answer is the BUILD's (G Squad on, the developer's own build off, whoever is signed in); only an older Mac
+  // that does not say falls back to the account.
+  if (s.notRed && (f.overProtected === false || (f.overProtected === null && f.red))) return false;
   return true;
 }
 /** Every step of this person's walkthrough, seen or not, in order (the "2 of 6" counts these). */

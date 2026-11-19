@@ -12,6 +12,7 @@ import { mergeAiMsgs } from "./aimessage.ts";
 import { mergeMailRules } from "./mailrules.ts";
 import { mergeMailReply } from "./mailreply.ts";
 import { mergePicks } from "./devicebg.ts";
+import { LIST_KEYS, mergeLists } from "./keepunknown.ts";
 
 // PS 1.68 (Jan, 18 Nov 2026: "on every single update it resets my things ... it deletes all of it and moves it all on the
 // main page", and "sometimes it's resetting my settings"). The cause: every device writes the WHOLE settings record from
@@ -22,11 +23,17 @@ import { mergePicks } from "./devicebg.ts";
 // device says which settings it really changed (`changed`, from settingsWrite below): only those come from its copy,
 // everything else stays as the server has it. Without `changed` (a change kept from before a restart whose list was
 // lost) it does what it always did.
-export function mergeSettings(local: Settings, remote: Settings, changed?: ReadonlySet<string>): Settings {
+// PS 1.71 (core/keepunknown.ts mergeLists): a list this device changed (its pages, their order, the section order, the
+// groups) is merged item by item with the server's, from `base` (the list as it was here before the change): pages made
+// on another device meanwhile stay, even when this device's copy was old when the person changed a list here.
+export function mergeSettings(local: Settings, remote: Settings, changed?: ReadonlySet<string>, base?: Readonly<Record<string, unknown>>): Settings {
   let out: Settings = { ...local };
   if (changed) {
     const o = { ...remote } as Record<string, unknown>, l = local as unknown as Record<string, unknown>;
-    for (const k of changed) { if (k in l && l[k] !== undefined) o[k] = l[k]; else delete o[k]; }
+    for (const k of changed) {
+      if (!(k in l) || l[k] === undefined) { delete o[k]; continue; }
+      o[k] = base && LIST_KEYS.has(k) && k in base ? mergeLists(k, base[k], l[k], o[k]) : l[k];
+    }
     out = o as unknown as Settings;
   }
   const lead = mergeLeadState(local.leadCards, remote.leadCards);

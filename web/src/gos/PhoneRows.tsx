@@ -8,7 +8,8 @@
 import { useState } from "react";
 import { MOBILE_APP_NAME } from "../core/appname";
 import { activeProject } from "../core/project";
-import { lock, lockPhone, phoneKept } from "../core/vault";
+import { lock, lockPhone, phoneKept, setPhoneStay } from "../core/vault";
+import { stayOn } from "../core/phonestay";
 import { useVault } from "../ui/kit";
 import { secondOnSnap } from "../core/secondsnap";
 import { openSettings, SetRow, type Controls, type RowProps } from "../views/SettingsScreen";
@@ -101,11 +102,19 @@ export const PHONE_CONTROLS: Controls = {
     return <SetRow e={e} right={<Switch on={on} onChange={(v) => setP({ stay: v })} label={e.name} />}
       body={<Note>{on ? "Your keys stay sealed in this phone's Keystore. Lock still locks it: the next open then asks for your fingerprint once." : "Your fingerprint every time PS app opens, and it locks after a while unused."}</Note>} open />;
   },
+  // PS 1.71: the iPhone web app's own Stay signed in (core/phonestay.ts, vault.ts setPhoneStay). This phone's switch.
+  "mweb-stay": function MwebStay({ e }: RowProps) {
+    const local = !!useVault().local;
+    const [on, setOn] = useState(stayOn);
+    if (local) return null;   // local first: no passphrase yet, nothing to keep
+    return <SetRow e={e} right={<Switch on={on} onChange={(v) => { haptic("press"); setOn(v); void setPhoneStay(v); }} label={e.name} />}
+      body={<Note>{on ? "Your sign in stays on this phone. Lock, Remove on your Mac or a new passphrase ends it." : "Your passphrase every time PS app opens, and it locks after a while unused."}</Note>} open />;
+  },
   "phone-lock": function Lock({ e }: RowProps) {
     const local = !!useVault().local;
     if (MWEB && local) return null;   // local first: no passphrase yet, so nothing to lock with
     return <SetRow e={e} right={<button type="button" className="gos-btn sm" onClick={() => { haptic("press"); openSettings(null); if (MWEB && phoneKept()) void lockPhone(); else if (MWEB) lock(); else gos.lock(); }}>Lock</button>}
-      body={MWEB && phoneKept() ? <Note>Signed in from your Mac: this phone stays signed in. Lock forgets that here, and your passphrase opens it again.</Note> : undefined} open={MWEB && phoneKept()} />;
+      body={MWEB && phoneKept() ? <Note>This phone stays signed in. Lock forgets that here, and your passphrase opens it again.</Note> : undefined} open={MWEB && phoneKept()} />;
   },
 
   // This phone

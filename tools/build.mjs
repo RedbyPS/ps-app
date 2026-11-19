@@ -11,12 +11,13 @@
 // --check builds nothing: web tsc (+ the web unit tests with --tests), mac swiftc -typecheck, phone compileDebugKotlin.
 // --allow-fail names web tests (file name without .test.ts) that may fail (ones that already fail on main).
 // Nothing is installed, signed with anyone else's key, published or pushed here.
+// PS 1.71: a layer build (not --check) whose profile has no channel of its own stops before anything is built.
 import { spawn, spawnSync } from "node:child_process";
 import { existsSync, readdirSync } from "node:fs";
 import { cpus } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { assemble, PARTS, readLayer } from "./assemble.mjs";
+import { assemble, channelProblem, PARTS, readLayer } from "./assemble.mjs";
 
 const CORE = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const stop = (msg) => { console.error(`build: STOP, ${msg}`); process.exit(1); };
@@ -40,7 +41,13 @@ for (let i = 0; i < a.length; i++) {
 }
 if (which !== "gsquad") opt.layerPath = which;
 
-const { out, name } = assemble(opt);
+const { out, name, build } = assemble(opt);
+// PS 1.71: a person's own Mac or phone build follows a channel of its own (tools/assemble.mjs channelProblem), never
+// the G Squad one: the next G Squad release would replace it. A check (--check) builds nothing and is not stopped.
+if (opt.layerPath && !check && (part === "all" || part === "mac" || part === "phone")) {
+  const why = channelProblem(build.profile);
+  if (why) stop(`this is your own build, but ${why} in your profile.json, so it would follow the G Squad channel and the next G Squad release would replace it. Give it a channel of its own: {"kind": "local"}, {"kind": "url", ...} or {"kind": "folder", ...} (see the skill, layers-and-versions.md). Nothing was built.`);
+}
 // The layer's own Mac folder (its signing keys and, next to it, its middle-click helper), never copied into .build/.
 const layerMacRoot = opt.layerPath ? (opt.rootOverrides.mac || readLayer(resolve(opt.layerPath)).roots.mac) : null;
 const parts = part === "all" ? PARTS : [part];

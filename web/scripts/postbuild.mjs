@@ -2,7 +2,7 @@
 import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { approved as psDownloadApproved, files as psDownloadFiles } from "./ps-download.mjs";
-import { ownChannelOf } from "./own-channel.mjs";
+import { ownChannelOf, phoneNote, PHONE_NOTE } from "./own-channel.mjs";
 
 const SB = "https://mxusokxekkecebwqgeru.supabase.co";
 // G Squad hub (V1.40): the website reaches only its chat (src/squad/chathub.ts); every call is signed, nothing secret.
@@ -142,6 +142,20 @@ if (existsSync("ps-release/ps-update.json")) {
     for (const f of readdirSync("ps-own-release")) if (/^(ps-update\.json|PS\.dmg)$/.test(f)) copyFileSync(`ps-own-release/${f}`, `${to}${f}`);
     if (existsSync("ps-own-release/updates")) for (const f of readdirSync("ps-own-release/updates")) if (/^PS-(app|web)-[0-9]+\.zip$/.test(f)) copyFileSync(`ps-own-release/updates/${f}`, `${to}updates/${f}`);
     console.log(`postbuild: ${own.name}'s own PS update channel copied to its unlisted folder`);
+  }
+  // V1.71: the phone of the same person asks the same folder (its APK carries the layer profile): the staged phone
+  // build goes there as gos-version.json with its APK, but only when it was made for this channel (else it stays
+  // where it was; release.sh stops a release in that case). /client/gos/ above is filled as before.
+  if (own) {
+    let phone = null;
+    try { phone = phoneNote("gos-release", own); } catch (e) { console.log(`postbuild: the phone build in gos-release/ is not copied to ${own.name}'s own channel: ${e.message}`); }
+    if (phone) {
+      const to = `dist${own.folder}`;
+      mkdirSync(to, { recursive: true });
+      copyFileSync(phone.note, `${to}${PHONE_NOTE}`);
+      copyFileSync(`gos-release/${phone.apk}`, `${to}${phone.apk}`);
+      console.log(`postbuild: ${own.name}'s phone update (${phone.apk}) copied to the same unlisted folder`);
+    }
   }
 }
 

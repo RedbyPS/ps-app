@@ -63,20 +63,26 @@ ok("a friend sees every step once, in order, then never again", () => {
   assert.equal(walkReady(facts({ seen })), false);
 });
 
-ok("The developer never sees the 1Password and Signal step (and neither does a Mac that says the list does not open over them)", () => {
-  const red = clickThrough(facts({ red: true }));
-  assert.ok(!red.includes("158-protected"));
-  assert.equal(red.length, WALK_IDS.length - 1);
-  assert.equal(stepCount(facts({ red: true }), "158-ai").total, WALK_IDS.length - 1);
-  assert.ok(!skipAll(facts({ red: true })).includes("158-protected"));
-  assert.ok(!clickThrough(facts({ overProtected: false })).includes("158-protected"));
-  // An older Mac that does not say: a friend still gets it (the rule is per account, and friends have it on).
+ok("the 1Password and Signal step follows the BUILD (PS 1.71): never in the developer's own build, for every account in the G Squad build", () => {
+  // The developer's own build: the Mac says the list does not open over them, whoever is signed in.
+  for (const red of [true, false]) {
+    const own = clickThrough(facts({ red, overProtected: false }));
+    assert.ok(!own.includes("158-protected"));
+    assert.equal(own.length, WALK_IDS.length - 1);
+    assert.equal(stepCount(facts({ red, overProtected: false }), "158-ai").total, WALK_IDS.length - 1);
+    assert.ok(!skipAll(facts({ red, overProtected: false })).includes("158-protected"));
+  }
+  // The G Squad build: the Mac says it does, for the developer's account too (before 1.71 his account never got it there).
+  assert.ok(clickThrough(facts({ red: true, overProtected: true })).includes("158-protected"));
+  assert.ok(clickThrough(facts({ red: false, overProtected: true })).includes("158-protected"));
+  // An older Mac that does not say: the per account answer (a friend gets it, the developer does not).
   assert.ok(clickThrough(facts({ overProtected: null })).includes("158-protected"));
+  assert.ok(!clickThrough(facts({ red: true, overProtected: null })).includes("158-protected"));
   // The view really asks the vault whether this is the developer's account.
   const view = read("../src/views/Walkthrough.tsx");
   assert.match(view, /red: isRedAccount\(snap\)/);
   assert.match(view, /shortcuts\?\.overProtected/);
-  assert.match(read("../src/core/walkthrough.ts"), /s\.notRed && \(f\.red \|\| f\.overProtected === false\)/);
+  assert.match(read("../src/core/walkthrough.ts"), /s\.notRed && \(f\.overProtected === false \|\| \(f\.overProtected === null && f\.red\)\)/);
 });
 
 ok("Skip and Esc end it: every step this person has counts as seen, so nothing comes back", () => {
@@ -104,12 +110,13 @@ ok("put away before a button: it comes back at the same step; the count and Done
   assert.equal(isLast(nearly, "158-protected"), true);
   // The last step says Done even if an earlier one was never seen (it would come back later on its own).
   assert.equal(isLast(facts(), "158-protected"), true);
-  assert.equal(isLast(facts({ red: true }), "158-ai"), true);
+  assert.equal(isLast(facts({ red: true, overProtected: false }), "158-ai"), true, "The developer's own build: the AI step is the last");
+  assert.equal(isLast(facts({ red: true, overProtected: true }), "158-ai"), false, "the G Squad build on the developer's account: the protected step comes after it");
   assert.equal(stepAfter(facts(), "158-topbar")!.id, "158-pomodoro");
   assert.equal(stepAfter(facts({ seen: markWalkSeen(null, ["158-pomodoro", "158-standup"], T0) }), "158-topbar")!.id, "158-meeting");
-  assert.equal(stepAfter(facts({ red: true }), "158-ai"), null);
-  const redNearly = facts({ red: true, seen: markWalkSeen(null, WALK_IDS.filter((id) => id !== "158-ai" && id !== "158-protected"), T0) });
-  assert.equal(isLast(redNearly, "158-ai"), true, "The developer's last step is the AI one, so it says Done");
+  assert.equal(stepAfter(facts({ red: true, overProtected: false }), "158-ai"), null);
+  const redNearly = facts({ red: true, overProtected: false, seen: markWalkSeen(null, WALK_IDS.filter((id) => id !== "158-ai" && id !== "158-protected"), T0) });
+  assert.equal(isLast(redNearly, "158-ai"), true, "In the developer's own build the last step is the AI one, so it says Done");
   assert.ok(WALK_TIMES.seenAfterMs >= 8_000, "long enough to read a step before it counts by itself");
 });
 

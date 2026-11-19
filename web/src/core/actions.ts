@@ -17,6 +17,7 @@ import { nextApps, planSplit } from "./screentime";
 import { planLines, toHours, type Timeline } from "./stline";
 import { isUnseen, mergeReply, remindPatch } from "./mailcards";
 import { mergeSettings, settingsWrite } from "./cardsync";
+import { LIST_KEYS, carrySettings } from "./keepunknown";
 import { cleanRuleEntry, mergeSender, setRule, type MailSender, type RuleList } from "./mailrules";
 import { addToLog, DAY_ENDS_DEFAULT, mergeDayLog, workDayOf, type DayLog } from "./daylog";
 import { addEvent, historyOn, type EvKind } from "./taskhist";
@@ -29,7 +30,7 @@ import { cleanTzPerson, type TzPerson } from "./tzpeople";
 import { cleanTzZones, sameZones, zonesOf, type TzZones } from "./tzzones";
 import type { Zone } from "./tz";
 import { carryUnknown, cleanLayout, isDefault, pickLayout, sameLayout, type TabLayout } from "./tablayout";
-import { cleanPhoneLayout, isDefaultPhone, pickPhoneLayout, samePhoneLayout, type PhoneLayout } from "./phonelayout";
+import { carryUnknownPhone, cleanPhoneLayout, isDefaultPhone, pickPhoneLayout, samePhoneLayout, type PhoneLayout } from "./phonelayout";
 import { cleanPhoneDev, shouldBeat, type PhoneDev } from "./phonedevices";
 import * as Dev from "./devicebg";
 import { cleanMonth, mergeMonth } from "./monthhist";
@@ -42,7 +43,7 @@ const now = () => new Date().toISOString();
 
 // Two devices writing the settings or a reply record join their copies, so a Dismiss on one is never undone
 // by the other's older copy (core/cardsync.ts).
-setMerger("settings", (a, b) => mergeSettings(a as Settings, b as Settings, settingsDirty()));
+setMerger("settings", (a, b) => { const out = mergeSettings(a as Settings, b as Settings, settingsDirty(), settingsBase()); rebase(b as Settings); return out; });
 setMerger("reply", (a, b) => mergeReply(a as Reply, b as Reply));
 setMerger("msender", (a, b) => mergeSender(a as MailSender, b as MailSender));
 setMerger("daylog", (a, b) => mergeDayLog(a as DayLog, b as DayLog));
@@ -108,11 +109,36 @@ function settingsDirty(): Set<string> | undefined {
   if (!dirty) { try { const v = JSON.parse(localStorage.getItem(DIRTY_KEY) || "null"); if (Array.isArray(v)) dirty = new Set(v.filter((x): x is string => typeof x === "string").slice(0, 400)); } catch { /* no storage: as before */ } }
   return dirty ?? undefined;
 }
-function noteDirty(keys: string[], sentBefore: boolean) {
+function noteDirty(keys: string[], sentBefore: boolean, before?: Settings) {
   const d = sentBefore ? new Set<string>() : settingsDirty() ?? new Set<string>();
-  for (const k of keys) d.add(k);
+  // PS 1.71: a list (pages, their order, sections, groups) as it was here before its first unsent change: the base
+  // core/keepunknown.ts mergeLists merges from, so a list changed on an old copy never drops what other devices made.
+  const b = sentBefore ? {} : { ...(settingsBase() ?? {}) };
+  for (const k of keys) {
+    if (LIST_KEYS.has(k) && !d.has(k)) b[k] = (before as unknown as Record<string, unknown> | undefined)?.[k] ?? null;
+    d.add(k);
+  }
   dirty = d;
+  setBase(b);
   try { localStorage.setItem(DIRTY_KEY, JSON.stringify([...d])); } catch { /* in memory only */ }
+}
+const BASE_KEY = "ps.settingsBase";
+let base: Record<string, unknown> | null = null;
+function settingsBase(): Record<string, unknown> | undefined {
+  if (!base) { try { const v = JSON.parse(localStorage.getItem(BASE_KEY) || "null"); if (v && typeof v === "object" && !Array.isArray(v)) base = v; } catch { /* no storage */ } }
+  return base ?? undefined;
+}
+function setBase(b: Record<string, unknown>) {
+  base = b;
+  try { localStorage.setItem(BASE_KEY, JSON.stringify(b)); } catch { /* in memory only */ }
+}
+/** The server's copy was just merged in: it is the base for the next merge (what it removed since is then removed). */
+function rebase(remote: Settings) {
+  const b = settingsBase();
+  if (!b) return;
+  const r = remote as unknown as Record<string, unknown>, n = { ...b };
+  for (const k of Object.keys(b)) n[k] = r[k] ?? null;
+  setBase(n);
 }
 
 export function saveSettings(patch: Partial<Settings>): Promise<void> {
@@ -124,9 +150,10 @@ export function saveSettings(patch: Partial<Settings>): Promise<void> {
     const s = settings(snap);
     // PS 1.68: still none (the download took longer than the wait): only the change goes in, never the defaults, so it
     // can never put the real record's choices back to their defaults when that arrives (core/cardsync.ts settingsWrite).
-    const w = settingsWrite(s?.data, patch, DEFAULT_SETTINGS, !!snap.lastSync);
+    // PS 1.71 (core/keepunknown.ts): pages, sections, groups and fields this build cannot read stay as they are stored.
+    const w = settingsWrite(s?.data, carrySettings(s?.data, patch), DEFAULT_SETTINGS, !!snap.lastSync);
     // What was sent before is on the server: the list starts again with this change (a record not sent yet keeps adding).
-    noteDirty(w.changed, !s?.pending);
+    noteDirty(w.changed, !s?.pending, s?.data);
     await put<Settings>("settings", w.data, { id: s?.id, ws: null });
     for (const id of extraSettingsIds(vaultStore.get())) await remove(id);   // folded into the one kept
   };
@@ -185,7 +212,8 @@ export function savePhoneLayout(next: PhoneLayout, newId?: string): Promise<void
     const { keep, extra } = pickPhoneLayout(docs<PhoneLayout>("phonelayout", null), data.phone);
     if (keep && samePhoneLayout(cleanPhoneLayout(keep.data, data.phone, red), data, red)) return;
     if (!keep && isDefaultPhone(data, red)) return;
-    await put<PhoneLayout>("phonelayout", data, { id: keep?.id ?? newId, ws: null });
+    // PS 1.71: pages, panels and buttons this build cannot draw stay in the record (core/phonelayout.ts carryUnknownPhone).
+    await put<PhoneLayout>("phonelayout", keep ? carryUnknownPhone(keep.data, data, red) : data, { id: keep?.id ?? newId, ws: null });
     for (const d of extra) await remove(d.id);   // a second copy from two devices that each made one
   };
   const p = phoneLane.then(run, run);

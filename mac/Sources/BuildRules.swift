@@ -12,6 +12,12 @@ import Foundation
 //  - Both: PS never reads or touches either app. No names, keys, window titles or bounds, screen, audio, time or
 //    network rows, and no log line when one comes to the front. Only the bundle id check in Protected.swift.
 //
+// PS 1.71 (the developer: two rules per BUILD, never one shared switch): the BUILD decides whenever it says (Profile.allows):
+// the G Squad build's profile says on, so it is on there for every account, the developer's too; the developer's private build carries
+// its layer's rules (Resources/build-rules.json) and says off, so it is off there for every account, also before
+// anyone has signed in. The per account answer below only counts for a build that says nothing (built without a
+// profile or a layer, as in V1.57).
+//
 // To add a person later: add an entry to `table` and say in `account(red:)` (or a later per person setting) who gets
 // it. Anyone not named gets "public".
 enum BuildRules {

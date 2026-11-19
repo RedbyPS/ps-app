@@ -97,6 +97,13 @@ else
   if [ -f "$WEB/ps-layer/profile.json" ]; then
     node "$WEB/scripts/own-channel.mjs" app-file "$WEB/ps-layer/profile.json" "$APP/Contents/Resources/channel.json" \
       || { echo "STOP: ps-layer/profile.json has no usable own update channel (https, ending in /), so this PS would follow the G Squad channel. Nothing was installed."; exit 1; }
+    # PS 1.71 (the developer: the Tab list and the island over 1Password and Signal are two rules per BUILD): the layer profile's
+    # two rules ALONE as Resources/build-rules.json (Sources/Profile.swift layerRules), so this build says them itself
+    # for every account, also before anyone has signed in (the developer's: both false). Nothing else of the profile comes along.
+    # A layer profile that cannot be read stops the build.
+    node -e 'const fs=require("fs"); const p=JSON.parse(fs.readFileSync(process.argv[1],"utf8")); const r={}; for (const k of ["tabOverProtectedApps","islandOverProtectedApps"]) if (p.rules && typeof p.rules[k]==="boolean") r[k]=p.rules[k]; if (Object.keys(r).length) fs.writeFileSync(process.argv[2], JSON.stringify(r)+"\n")' \
+      "$WEB/ps-layer/profile.json" "$APP/Contents/Resources/build-rules.json" \
+      || { echo "STOP: ps-layer/profile.json could not be read for its rules (Tab and the island over 1Password and Signal). Nothing was installed."; exit 1; }
   fi
 fi
 
