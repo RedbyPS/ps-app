@@ -1498,6 +1498,8 @@ final class App: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMess
       if let on = msg["on"] as? Bool { HelperAlert.shared.setRemind(on); sendSettings() }
     case "psSettings:launchScene" where fromMain || fromOverlay:   // PS 1.67: Settings, Play the start animation (Hatch.swift)
       if let on = msg["on"] as? Bool { Hatch.shared.launchOn = on; sendSettings() }
+    case "psSettings:replayHatch" where fromMain || fromOverlay:   // PS 1.69: Settings > About and updates > Replay the update animation (Hatch.swift)
+      Hatch.shared.replay()
     case "psSettings:screenTime" where fromMain || fromOverlay:   // the switch in PS > Settings, or Turn on in the screen time pop-up
       if let on = msg["on"] as? Bool { ScreenTime.shared.enabled = on; sendSettings() }
     case "screentime:send" where fromMain:          // the page asks for the latest totals (opening the card)

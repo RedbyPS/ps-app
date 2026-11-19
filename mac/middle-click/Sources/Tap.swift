@@ -1,5 +1,5 @@
 import Cocoa
-import Carbon   // IsSecureEventInputEnabled
+import Carbon   // IsSecureEventInputEnabled (rarely says yes for other apps on macOS 27, see PauseCalm)
 
 // The mouse tap: sees left button presses and trackpad pressure, asks ClickMachine what to do,
 // and does it. Each tap runs on its own thread with its own run loop and never waits on the main
@@ -19,8 +19,9 @@ import Carbon   // IsSecureEventInputEnabled
 //   now is (still down: the down; already up: a whole click), so nothing is lost or left stuck.
 //   Then both taps are torn down and made again (1 Nov 2026: a switched-back-on pressure tap can
 //   go on delivering nothing). Also when browser clicks stop carrying any pressure (TapHealth).
-//   During secure input they are only switched back on, and made again once it ends
-//   (SecureInputPause in Recovery.swift: new taps made during secure input get paused at once).
+//   A "user input" pause only switches them back on; they are made again once, after 10 s with no
+//   pause (PauseCalm in Recovery.swift, V1.69: new taps made while the pause lasts get paused at once,
+//   and a paused pressure tap stays deaf).
 // - The taps cannot be made for 30 s in a row, or macOS times them out again and again: a fresh
 //   copy of the app starts and this one quits (TapRecovery in Recovery.swift).
 //
@@ -48,10 +49,12 @@ final class Tap {
   private(set) var tap: CFMachPort?
   private var pressureTap: CFMachPort?
   private var loops: [CFRunLoop] = []
-  private var health = TapHealth()
+  private var health = TapHealth(seenBefore: UserDefaults.standard.bool(forKey: Tap.pressureSeenKey))
+  /// Force Touch pressure has reached this app on this Mac before (V1.69, kept across starts).
+  static let pressureSeenKey = "pressureSeen"
   // Main thread only.
   private var recovery = TapRecovery()
-  private var securePause = SecureInputPause()
+  private var calm = PauseCalm()
   /// Main thread: called when a fresh copy of the app should start (main.swift does it).
   var onRelaunch: ((String) -> Void)?
   /// Main thread: the wall time of the last fresh start (any copy), nil if none.
@@ -103,19 +106,29 @@ final class Tap {
   /// Every 2 s: install the taps once allowed, and switch them back on if macOS turned one off
   /// (then make them again, as after a pause notice).
   func check() {
-    if securePause.check(secure: IsSecureEventInputEnabled()) {
-      Log.write("secure input ended, making the taps again")
-      rebuild("after secure input")
+    let now = ProcessInfo.processInfo.systemUptime
+    if calm.check(at: now, secure: Tap.secureInputOn) {
+      Log.write("no pause for a while, making the taps again")
+      rebuild("after the pause ended")
       return
     }
     if tap == nil { if AXIsProcessTrusted() { install() }; return }
     mu.lock(); let run = shouldRun, ts = taps; mu.unlock()
+    var off = false
     for t in ts where run && !CGEvent.tapIsEnabled(tap: t) {
       CGEvent.tapEnable(tap: t, enable: true)
-      if securePause.waiting { continue }   // made again once secure input ends
-      Log.write("tap was off, switched back on")
-      scheduleRebuild("a tap was found off")
+      off = true
     }
+    if off, calm.paused(at: now, secure: Tap.secureInputOn) {
+      Log.write("a tap was found off, switched back on; made again once there is no pause for \(Int(calm.wait)) s")
+    }
+  }
+
+  /// Secure input is on for some app, when macOS says so (only whether it is on: never which app).
+  static var secureInputOn: Bool {
+    if IsSecureEventInputEnabled() { return true }
+    guard let d = CGSessionCopyCurrentDictionary() as? [String: Any] else { return false }
+    return d["kCGSSessionSecureInputPID"] != nil
   }
 
   /// Main thread: macOS paused the taps (the tap thread already switched them back on).
@@ -130,13 +143,9 @@ final class Tap {
       scheduleRebuild("after macOS paused them")
       return
     }
-    switch securePause.paused(secure: IsSecureEventInputEnabled()) {
-    case .waitForEnd:
-      Log.write("macOS paused the taps for secure input (a password field), switched back on; made again once it ends")
-    case .alreadyWaiting:
-      break
-    case .rebuildNow:
-      if scheduleRebuild("after macOS paused them") { Log.write("macOS paused the tap (user input), switched back on") }
+    // Never a rebuild straight away: new taps made while this lasts are paused at once (PauseCalm).
+    if calm.paused(at: ProcessInfo.processInfo.systemUptime, secure: Tap.secureInputOn) {
+      Log.write("macOS paused the taps (user input), switched back on; made again once there is no pause for \(Int(calm.wait)) s")
     }
   }
 
@@ -152,6 +161,16 @@ final class Tap {
     DispatchQueue.main.asyncAfter(deadline: .now() + wait) { self.rebuild(why) }
   }
 
+  /// Main thread: the deaf rule asked for a rebuild. Not while a pause lasts: the taps are made again
+  /// once it ends anyway, and taps made during it are paused (deaf) at once.
+  private func deafRebuild() {
+    if calm.waiting {
+      mu.lock(); health.cancel(); mu.unlock()
+      return
+    }
+    rebuild("pressure went quiet")
+  }
+
   /// Main thread: tears both taps down and makes them again. Anything held is given back first;
   /// for the moment in between every event passes straight through, untouched.
   private func rebuild(_ why: String) {
@@ -161,6 +180,7 @@ final class Tap {
     tap = nil; pressureTap = nil; loops = []
     health.rebuilt(at: ProcessInfo.processInfo.systemUptime)
     mu.unlock()
+    calm.rebuilt(at: ProcessInfo.processInfo.systemUptime)
     for t in old { CGEvent.tapEnable(tap: t, enable: false); CFMachPortInvalidate(t) }
     for l in oldLoops { CFRunLoopStop(l) }   // the old tap threads end
     Log.write("rebuilding the taps (\(why))")
@@ -291,11 +311,12 @@ final class Tap {
 
     guard let input else { return Unmanaged.passUnretained(e) }
     let before = m.state
+    if case .leftDown = input { press.clickPressure = e.getDoubleValueField(.mouseEventPressure) }
     let v = m.handle(input, at: now)
     if let n = press.note(input, quartz: type.rawValue, before: before, after: m.state, at: now),
        health.pressEnded(pressures: n, at: now) {
       Log.write("\(TapHealth.dryLimit) browser clicks in a row had no pressure at all, the pressure tap looks deaf")
-      rebuildLater(0, "pressure went quiet")
+      DispatchQueue.main.async { self.deafRebuild() }
     }
     if case .leftDown = input, m.state == .holding {
       held = e.copy()
@@ -389,7 +410,11 @@ final class Tap {
       guard let ns = NSEvent(cgEvent: e) else { return nil }
       switch ns.type {
       case .pressure:
-        if !sawPressure { sawPressure = true; Log.write("first Force Touch pressure event seen (Quartz type \(type.rawValue))") }
+        if !sawPressure {
+          sawPressure = true
+          UserDefaults.standard.set(true, forKey: Tap.pressureSeenKey)   // the deaf rule may act in later copies too
+          Log.write("first Force Touch pressure event seen (Quartz type \(type.rawValue))")
+        }
         return .pressure(stage: ns.stage, pressure: Double(ns.pressure), transition: Double(ns.stageTransition))
       case .quickLook:
         return .quickLook
@@ -455,6 +480,9 @@ struct PressLog {
   private var pressures = 0
   private var carriers: [UInt32: Int] = [:]
   private var lastStage = -1
+  /// The left down event's own pressure field (V1.69, to tell a tap to click from a real click when
+  /// reading a test back: a press with 0 pressure events may simply be a tap).
+  var clickPressure = -1.0
 
   /// Returns, when a browser click (held for a firm press) just ended, how many pressure events it had.
   @discardableResult
@@ -483,8 +511,8 @@ struct PressLog {
       }
       let via = carriers.map { "Quartz \($0.key) x\($0.value)" }.sorted().joined(separator: ", ")
       let path = stages.isEmpty ? "none" : stages.map(String.init).joined(separator: ">")
-      Log.write(String(format: "press %.0f ms: stages %@, %d pressure events%@, %@", (t - start) * 1000, path, pressures,
-                       via.isEmpty ? "" : " (\(via))", result))
+      Log.write(String(format: "press %.0f ms: stages %@, %d pressure events%@, click pressure %.2f, %@", (t - start) * 1000, path, pressures,
+                       via.isEmpty ? "" : " (\(via))", clickPressure, result))
       // Drags and long presses stop listening early, so only clicks say whether pressure flows.
       return before == .holding || before == .middle ? pressures : nil
     default:

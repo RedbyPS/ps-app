@@ -32,7 +32,8 @@ let PS_CERT_ROOT_RED = "b278d9d09dfed336675cfb367b2f8a3b51896689"
 /// V1.58: the G Squad build's signing certificate root (SHA-1, 40 hex). Empty until it is made.
 let PS_CERT_ROOT_GSQUAD = "c0e302f2ce304d062a50d6ebdaff97d5f7d4b6e6"
 /// What may be installed, and who may be handed the sign in: PS signed with the developer's own certificate, and on the G Squad
-/// channel also PS signed with the G Squad certificate once there is one (UpdateRoute.requirement).
+/// channel also PS signed with the G Squad certificate once there is one (UpdateRoute.requirement). A PS that is itself
+/// signed with the developer's certificate only ever takes the developer's certificate (V1.69, UpdateRoute.pinnedToRed).
 let PS_REQUIREMENT = UpdateRoute.current.requirement
 
 struct UpdateError: Error, CustomStringConvertible {
@@ -107,6 +108,15 @@ enum UpdatePaths {
 /// which is today's channel, so nothing changes for anyone until their build says otherwise.
 /// Every note says which channel it was made for ("channel": "gsquad" or the person's name); a note for another
 /// channel is refused next to the signature check. Notes from before V1.58 say nothing and are taken as before.
+/// V1.69 (the developer, 18 Nov 2026, after the G Squad's V1.68 reached his Mac: "The developer's Mac must get only the developer's own releases"):
+///  - A build from a person's private tree has no profile, so it may carry Contents/Resources/channel.json instead: the
+///    channel part alone, in the same shape ({"name": "red", "channel": {"kind": "url", "url": "https://.../"}}), written
+///    by build.sh from the person's layer profile. Nothing else of the profile comes with it, so every other answer
+///    stays exactly as with no profile. A profile.json, when there is one, wins.
+///  - A PS that is itself signed with the developer's certificate trusts only the developer's update key and the developer's certificate, whatever
+///    its channel says (pinnedToRed). So even a build of the developer's that lost its channel file can never take a G Squad
+///    note or install an app signed with another certificate (macOS would drop Accessibility and Input Monitoring,
+///    and the private features would be gone). G Squad builds are signed with the G Squad certificate: unchanged.
 struct UpdateRoute: Equatable {
   enum Kind: String { case gsquad, url, local }
   let kind: Kind
@@ -137,7 +147,26 @@ struct UpdateRoute: Equatable {
     guard let s = ch["url"] as? String, let u = URL(string: s), u.scheme == "https", u.host != nil, s.hasSuffix("/") else { return gsquad }
     return UpdateRoute(kind: .url, id: name, base: u, keys: [key], certRoots: [root])
   }
-  static let current: UpdateRoute = from(profile: Bundle.main.url(forResource: "profile", withExtension: "json").flatMap { try? Data(contentsOf: $0) })
+  /// V1.69: the route for a build's bundled files. `profile` (Resources/profile.json) wins; else `channel`
+  /// (Resources/channel.json); neither: the G Squad channel. `signedByRed`: this PS itself carries the developer's certificate.
+  static func resolve(profile: Data?, channel: Data?, signedByRed: Bool) -> UpdateRoute {
+    let r = from(profile: profile ?? channel)
+    return signedByRed ? r.pinnedToRed : r
+  }
+  /// The same channel, but only the developer's update key and only the developer's certificate.
+  var pinnedToRed: UpdateRoute { UpdateRoute(kind: kind, id: id, base: base, keys: [UPDATE_PUBLIC_KEY], certRoots: [PS_CERT_ROOT_RED]) }
+  static let current: UpdateRoute = resolve(profile: bundled("profile"), channel: bundled("channel"), signedByRed: selfSignedByRed)
+  private static func bundled(_ name: String) -> Data? {
+    Bundle.main.url(forResource: name, withExtension: "json").flatMap { try? Data(contentsOf: $0) }
+  }
+  /// Is this running PS signed with the developer's own certificate? (A test copy or an unsigned build: no.)
+  static let selfSignedByRed: Bool = {
+    var me: SecCode?, req: SecRequirement?
+    guard SecCodeCopySelf([], &me) == errSecSuccess, let me,
+          SecRequirementCreateWithString(#"certificate root = H""# + PS_CERT_ROOT_RED + #"""# as CFString, [], &req) == errSecSuccess, let req
+    else { return false }
+    return SecCodeCheckValidity(me, [], req) == errSecSuccess
+  }()
 
   /// The code requirement for an installed or handed over PS on this channel.
   var requirement: String {
@@ -174,11 +203,12 @@ enum UpdateChannel {
   /// Who answers, for the messages PS shows when a look fails.
   static var who: String { base?.isFileURL == false ? (base?.host == "github.com" ? "GitHub" : (base?.host ?? "the update server")) : "the update folder" }
   /// The address of a file the signed note names ("updates/PS-app-N.zip"). A release on GitHub holds its files
-  /// side by side with no folders, so on the web only the last part of the name is asked for; a test folder keeps
-  /// the folder. The name was already checked (UpdateManifest.safeFile) and the file is checked against the
+  /// side by side with no folders, so there only the last part of the name is asked for; a test folder keeps
+  /// the folder, and so does a person's own channel on their own web server (V1.69: publish.sh stages it with its
+  /// updates/ folder). The name was already checked (UpdateManifest.safeFile) and the file is checked against the
   /// signed size and SHA-256 after the download, wherever it came from.
   static func remote(_ file: String, base: URL) -> URL {
-    base.isFileURL ? base.appendingPathComponent(file) : base.appendingPathComponent((file as NSString).lastPathComponent)
+    base.isFileURL || base.host != "github.com" ? base.appendingPathComponent(file) : base.appendingPathComponent((file as NSString).lastPathComponent)
   }
   static let session: URLSession = {
     let c = URLSessionConfiguration.ephemeral

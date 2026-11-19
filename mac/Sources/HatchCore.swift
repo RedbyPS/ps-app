@@ -99,13 +99,34 @@ enum HatchCore {
   /// scene never takes the keyboard or the mouse (its window lets every click through and never becomes key, so other apps
   /// keep their keys and clicks), it is short (maxSeconds ends it whatever happens), and What's new after it closes on Esc
   /// as always. Reduce Motion gives the short fade, also not skippable.
-  static func skippable(_ mode: HatchMode) -> Bool { mode == .launch }
+  /// PS 1.69: a replay the user asked for (Settings, About and updates, "Replay the update animation") is the update scene,
+  /// but it may be skipped with Esc: they chose to watch it, and nothing is being installed.
+  static func skippable(_ mode: HatchMode, replay: Bool = false) -> Bool { mode == .launch || replay }
   /// The longest a scene may stay on screen once it has started: then it ends by itself, even if something stalls.
   static func maxSeconds(_ mode: HatchMode) -> Double { mode == .launch ? 10 : 15 }
+  /// PS 1.69, the replay: the icon builds in this many seconds (a made up download), then the scene finishes as after a real update.
+  static let replaySeconds: Double = 4.5
+  /// How much of the icon the replay shows after this many seconds (eased, from the first piece to the last the old build
+  /// would have built before the relaunch): the same range a real download covers.
+  static func replayBuilt(elapsed: Double) -> Double {
+    let t = clamp(elapsed / replaySeconds)
+    let e = t * t * (3 - 2 * t)
+    return 0.04 + (preRelaunchMax - 0.04) * e
+  }
   /// Never over 1Password or Signal, whatever the build's rule for the island: the scene waits (or, mid scene, ends).
   static func mayShow(protectedFront: Bool) -> Bool { !protectedFront }
   /// A wait that ran too long: the scene is not played late.
   static func giveUp(_ mode: HatchMode, waited: Double) -> Bool { waited > (mode == .launch ? launchWait : updateWait) }
+
+  /// PS 1.69: where the blob flies, in the order of how sure it is: the real island on screen now, the place it will rest
+  /// (it shows something), the kept spot (the island has nothing to show yet, as just after a relaunch, or is hidden for a
+  /// while), and last the top centre (the island is switched off, or no screen is known). The first one that exists wins.
+  static func aim(shown: [String: Double]?, rest: [String: Double]?, spot: [String: Double]?, fallback: [String: Double]) -> [String: Double] {
+    shown ?? rest ?? spot ?? fallback
+  }
+  /// The lower half of the screen (both rects bottom left origin, as AppKit gives them). What's new hangs from the island's
+  /// lower edge, so an island down there cannot hold it: it opens in the middle then.
+  static func inLowerHalf(_ island: CGRect, screen s: CGRect) -> Bool { island.midY < s.midY }
 
   /// The island's shape (bottom left origin, points) in the scene page's coordinates (top left origin, the screen's own).
   static func pageRect(_ r: CGRect?, screen s: CGRect) -> [String: Double]? {

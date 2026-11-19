@@ -35,4 +35,29 @@ ok("the setting is typed", () => { assert.match(src("src/ps.ts"), /launchScene\?
 ok("no dashes in the new words", () => {
   for (const f of ["src/views/PsSettings.tsx", "src/core/settingsindex.ts", "src/views/SettingsGroups.tsx"]) assert.ok(!/[–—]/.test(src(f)), f);
 });
+// ---------- PS 1.69: Replay the update animation (Settings, About and updates) ----------
+ok("the replay row is in About and updates, on the Mac only", () => {
+  const e = X.SETTINGS.find((x) => x.id === "replay-update");
+  assert.ok(e);
+  assert.equal(e!.group, "about");
+  assert.deepEqual(e!.on, ["mac"]);
+  assert.equal(e!.name, "Replay the update animation");
+  assert.ok(e!.words?.includes("replay") && e!.words?.includes("animation"));
+});
+ok("not hidden from anyone (no owner flag): the public build has the replay too", () => {
+  const e = X.SETTINGS.find((x) => x.id === "replay-update") as Record<string, unknown>;
+  assert.equal(e.red, undefined);
+  assert.equal(e.private, undefined);
+});
+ok("search finds it by the words people use", () => {
+  const ctx = { red: false, where: "mac", pf: true, ck: true } as const;
+  for (const q of ["replay", "update animation", "play again", "hatch"]) assert.ok(X.searchSettings(q, ctx as never).slice(0, 3).some((h: { e: { id: string } }) => h.e.id === "replay-update"), q);
+  const web = { red: false, where: "web", pf: true, ck: true } as const;
+  assert.ok(!X.searchSettings("replay the update animation", web as never).some((h: { e: { id: string } }) => h.e.id === "replay-update"));
+});
+ok("the row is a button that asks the Mac to replay: no restart, no download, no What's new from the page", () => {
+  const g = src("src/views/SettingsGroups.tsx");
+  assert.match(g, /"replay-update": function ReplayUpdate[\s\S]*?psPost\(\{ type: "psSettings:replayHatch" \}\)/);
+  assert.ok(!/replayHatch[\s\S]{0,200}(macUpdate|updater)/i.test(g.slice(g.indexOf('"replay-update"'), g.indexOf('"replay-update"') + 600)));
+});
 console.log(`\n${n} passed`);

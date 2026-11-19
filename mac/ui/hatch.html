@@ -13,7 +13,9 @@
   of black down from there, and at the end the Mac grows the real island out of the blob (its own shape, looks, tick and task).
   The Mac calls window.__hatch.build(o) / progress(f) / tuck() / finish(o) / arrived(a) / skip(); the page answers with
   {type:"ready"}, {type:"cover"}, {type:"arrive", blob} (the blob is at the island's place: the Mac answers arrived({real,
-  target})), {type:"tucked"} and {type:"done"}.
+  target})), {type:"tucked"} and {type:"done"}. PS 1.69: just before the blob flies the page asks {type:"aim"} (where is the
+  island now?) and the Mac answers aimed({target}), so a moved island (bottom, a corner) is aimed at even when it only learnt
+  what to show after a relaunch; an island in the lower half gets the number above it, not below.
 -->
 <style>
 :root{--island:#060608}
@@ -112,7 +114,19 @@ function islandExit(dropTo) {
 }
 /* The blob is at the island's place: the Mac grows the REAL island out of it, or says it will not show (switched off,
    nothing on it, 1Password or Signal): then the blob pops into sparks. At a start it may wait a moment for the island. */
-let arrivedRes = null;
+let arrivedRes = null, aimRes = null;
+function aimed(a) { if (aimRes) { const r = aimRes; aimRes = null; r(a || {}); } }
+/* Where is the island right now? Asked as the blob is about to fly (the answer is a few milliseconds away; no answer in 400 ms keeps the first guess). */
+async function aim(id) {
+  const a = await new Promise(res => { aimRes = res; post({ type: 'aim' }); setTimeout(() => aimed({}), 400); });
+  guard(id);
+  if (a && a.target && a.target.w > 0) { g.t = a.target; g.tcx = a.target.x + a.target.w / 2; g.tcy = a.target.y + a.target.h / 2; }
+}
+/* The number reads just under the island, or just above it when the island sits in the lower half of the screen. */
+function verTop(v) {
+  const t = g.t, h = Math.max(60, v.getBoundingClientRect().height || 0);
+  return t.y + t.h / 2 > g.H / 2 ? Math.max(8, t.y - 14 - h) : Math.max(40, t.y + t.h + 14);
+}
 function arrived(a) { if (arrivedRes) { const r = arrivedRes; arrivedRes = null; r(a || {}); } }
 async function born(id, B, blobs) {
   const a = await new Promise(res => { arrivedRes = res; post({ type: 'arrive', blob: B }); setTimeout(() => arrived({ real: false }), 2200); });
@@ -289,6 +303,7 @@ async function finishFull(id) {
   // and bounces up a little
   const bh = Math.min(110, H * .13);
   const bounce = A(wrap, [{ transform: 'translateY(' + dy + 'px)' }, { transform: 'translateY(' + (dy - bh) + 'px)' }], { duration: 320, delay: 60, easing: 'cubic-bezier(.2,.7,.35,1)' });
+  await aim(id);   // where the island is right now (it may have moved, or only now learnt what to show)
   await sleep(200, id);
   // at the bounce the shell opens and the island hatches out as a blob
   A(tl, [{ transform: 'none' }, { transform: 'rotate(-17deg) translateX(-3%)' }], { duration: 300, easing: 'cubic-bezier(.3,1.5,.5,1)' });
@@ -325,7 +340,7 @@ async function number(id) {
   const { cx, cy, S } = g;
   setupVer();
   const v = $('#ver');
-  const top = Math.max(40, g.t.y + g.t.h + 14);
+  const top = verTop(v);
   v.style.top = px(top);
   const T = verPlace(cx, cy);
   v.style.opacity = 1;
@@ -374,12 +389,13 @@ async function finishReduced(id) {
   sfx('hatch-chime');
   if (wrap) await play(wrap, [{ opacity: 1 }, { opacity: 0 }], { duration: 450, easing: 'ease-in' }, id);
   if (bar) bar.style.opacity = 0;
+  await aim(id);
   await born(id, 24, []);
   if (o.mode !== 'update' || !o.ver) { veil(false, 400); await sleep(420, id); return; }
   setupVer();
   [...document.querySelectorAll('#ver .dcol')].forEach(c => { c.firstChild.style.transform = 'translateY(-' + c.dataset.len + 'em)'; });
   const v = $('#ver');
-  v.style.top = px(Math.max(40, g.t.y + g.t.h + 14)); v.style.transform = 'none';
+  v.style.top = px(verTop(v)); v.style.transform = 'none';
   $('#ver .lbl').style.opacity = .92;
   await play(v, [{ opacity: 0 }, { opacity: 1 }], { duration: 400 }, id);
   veil(false, 600);
@@ -394,7 +410,7 @@ function skip() {
   setTimeout(() => { clear(); fx.style.opacity = ''; parts.forEach(p => p.getAnimations().forEach(a => a.cancel())); post({ type: 'done', skipped: true }); }, 200);
 }
 document.addEventListener('mousedown', () => post({ type: 'click' }));
-window.__hatch = { build, progress, tuck, finish, arrived, skip };
+window.__hatch = { build, progress, tuck, finish, arrived, aimed, skip };
 const ready = () => post({ type: 'ready' });
 const img = new Image(); img.src = 'hatch-icon.png';
 (img.decode ? img.decode() : Promise.resolve()).catch(() => {}).then(ready);

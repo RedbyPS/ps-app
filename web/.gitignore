@@ -10,6 +10,7 @@ tsconfig.tsbuildinfo
 .claude/settings.local.json
 gos-release
 ps-release
+ps-own-release
 build-prompt
 
 # V1.58: written by core tools/assemble.mjs in an assembled tree, never committed

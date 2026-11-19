@@ -242,5 +242,16 @@ let lean = IslandPlace.leanScale(-1), none = IslandPlace.leanScale(0)
 check("glide-lean-shape", lean.x > 1 && lean.x <= 1.15 && lean.y < 1 && lean.y >= 0.9 && none == (1, 1))
 check("glide-dropped-only-drops", IslandPlace.glide(from: bar, to: dropped, reduceMotion: false).stretch == 0)
 
+// PS 1.69 Hatch: where the update animation aims at a kept spot (Island.hatchSpot: the resting pill on screen), bottom left origin.
+func spotRect(_ s: CGPoint) -> CGRect {
+  let l = IslandPlace.moved(s, red, pillW: 330, pillH: 34)
+  let r = IslandPlace.movedShape(anchor: l.anchor, w: 330, h: 34, pillW: 330, pillH: 34, up: IslandPlace.opensUp(s))
+  return CGRect(x: l.frame.minX + r.minX, y: l.frame.maxY - r.maxY, width: r.width, height: r.height)
+}
+let spotBottom = spotRect(CGPoint(x: 0.5, y: 0.04)), spotCorner = spotRect(CGPoint(x: 0, y: 0)), spotTop = spotRect(CGPoint(x: 0.9, y: 1))
+check("hatch-spot-bottom-is-low-and-on-screen", spotBottom.midY < redFrame.midY && redFrame.contains(spotBottom) && near(spotBottom.width, 330) && near(spotBottom.height, 34), "\(spotBottom)")
+check("hatch-spot-bottom-corner-reaches-the-corner", redFrame.contains(spotCorner) && spotCorner.minX < 12 && spotCorner.minY < 12, "\(spotCorner)")
+check("hatch-spot-top-is-high-and-off-the-camera", spotTop.midY > redFrame.midY && redFrame.contains(spotTop) && spotTop.minX > red.notchLeft + red.notchW, "\(spotTop)")
+
 print("ISLAND PLACE: \(count - fails) of \(count) ok")
 exit(fails == 0 ? 0 : 1)

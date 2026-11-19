@@ -1419,6 +1419,17 @@ final class Island {
     let f = frameFor(g), r = model.restRect()
     return NSRect(x: f.minX + r.minX, y: f.maxY - r.maxY, width: r.width, height: r.height)
   }
+  /// PS 1.69: where the island sits when it is moved (V1.58 kept spot), whether or not it has anything to show or is hidden
+  /// for a while (bottom left origin, points). Just after a relaunch the page has not told the island what to show yet, so
+  /// restShape() is nil then and the update scene used to aim at the top: this one needs nothing from the page. Nil at home
+  /// (the scene's own guess round the notch fits there), switched off, or while the full screen bar holds the spot.
+  func hatchSpot() -> NSRect? {
+    guard panel != nil, model.st.mode != "off", model.fs == .off, let p = pos else { return nil }
+    let (g, _) = IslandGeo.read()
+    let l = IslandPlace.moved(p, g, pillW: model.pillW, pillH: model.pillH)
+    let r = IslandPlace.movedShape(anchor: l.anchor, w: model.pillW, h: model.pillH, pillW: model.pillW, pillH: model.pillH, up: IslandPlace.opensUp(p))
+    return NSRect(x: l.frame.minX + r.minX, y: l.frame.maxY - r.maxY, width: r.width, height: r.height)
+  }
   /// Cheap check (one property read): only when it shows but is missing from the desktop in front does it rejoin.
   private func followSpace(_ why: String) {
     guard let p = panel, IslandPlace.rejoin(visible: p.isVisible, onActiveSpace: p.isOnActiveSpace, dragging: drag?.moving == true) else { return }

@@ -82,5 +82,27 @@ ok("no island: nil (the blob goes to the top centre)", HatchCore.pageRect(nil, s
 ok("an island on another screen: nil", HatchCore.pageRect(CGRect(x: 2307, y: 840, width: 330, height: 34), screen: screen) == nil)
 ok("an empty shape: nil", HatchCore.pageRect(CGRect(x: 10, y: 10, width: 0, height: 0), screen: screen) == nil)
 
+// PS 1.69: the replay, and where the blob flies
+ok("the replay can be skipped", HatchCore.skippable(.update, replay: true))
+ok("the real update still cannot", !HatchCore.skippable(.update, replay: false) && !HatchCore.skippable(.update))
+ok("the replay starts at the first piece", near(HatchCore.replayBuilt(elapsed: 0), 0.04))
+ok("the replay ends where the old build would stop", near(HatchCore.replayBuilt(elapsed: HatchCore.replaySeconds), HatchCore.preRelaunchMax) && near(HatchCore.replayBuilt(elapsed: 99), HatchCore.preRelaunchMax))
+ok("the replay only goes forward", (0...45).map { HatchCore.replayBuilt(elapsed: Double($0) / 10) }.enumerated().allSatisfy { i, v in i == 0 || v >= HatchCore.replayBuilt(elapsed: Double(i - 1) / 10) })
+ok("negative time is the start", near(HatchCore.replayBuilt(elapsed: -3), 0.04))
+ok("the replay is short", HatchCore.replaySeconds <= 6)
+let home = ["x": 656.0, "y": 0.0, "w": 200.0, "h": 38.0]
+let moved = ["x": 400.0, "y": 940.0, "w": 330.0, "h": 34.0]
+let kept = ["x": 100.0, "y": 900.0, "w": 330.0, "h": 34.0]
+let seen = ["x": 10.0, "y": 20.0, "w": 330.0, "h": 34.0]
+ok("the island on screen wins", HatchCore.aim(shown: seen, rest: moved, spot: kept, fallback: home) == seen)
+ok("no island on screen: where it will rest", HatchCore.aim(shown: nil, rest: moved, spot: kept, fallback: home) == moved)
+ok("nothing to show yet (after a relaunch): the kept spot, not the top", HatchCore.aim(shown: nil, rest: nil, spot: kept, fallback: home) == kept)
+ok("switched off: the top centre", HatchCore.aim(shown: nil, rest: nil, spot: nil, fallback: home) == home)
+let low = CGRect(x: 600, y: 8, width: 330, height: 34)
+ok("an island at the bottom is in the lower half", HatchCore.inLowerHalf(low, screen: screen))
+ok("an island at the top is not", !HatchCore.inLowerHalf(CGRect(x: 591, y: 944, width: 330, height: 38), screen: screen))
+ok("a corner at the top is not", !HatchCore.inLowerHalf(CGRect(x: 4, y: 940, width: 330, height: 34), screen: screen))
+ok("a spot on a second screen is read against that screen", HatchCore.inLowerHalf(CGRect(x: 2000, y: -190, width: 330, height: 34), screen: second) && !HatchCore.inLowerHalf(CGRect(x: 2000, y: 800, width: 330, height: 34), screen: second))
+
 print("\n\(n - bad) of \(n) passed")
 exit(bad == 0 ? 0 : 1)

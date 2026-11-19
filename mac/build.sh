@@ -86,6 +86,15 @@ if [ -f "$HERE/../ps-build.json" ]; then
   node -e 'const b=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")); if(!b.profile) process.exit(0); require("fs").writeFileSync(process.argv[2], JSON.stringify(b.profile,null,2)+"\n")' "$HERE/../ps-build.json" "$APP/Contents/Resources/profile.json"
 else
   node "$HERE/tools/bundle-features.mjs" "$WEB" "$APP/Contents/Resources/ps-build.json"
+  # V1.69 (the developer, 18 Nov 2026: his Mac must get only his own releases): a private tree with a layer profile
+  # (ps-layer/profile.json) gets that profile's update channel ALONE as Resources/channel.json (Sources/UpdateCore.swift,
+  # UpdateRoute.resolve), so the build follows its maker's own channel and never the G Squad one. Nothing else of the
+  # profile comes along. A layer profile without a usable own channel stops the build: such an app would follow the
+  # G Squad channel. A tree with no layer profile (core, a friend's checkout) builds as before.
+  if [ -f "$WEB/ps-layer/profile.json" ]; then
+    node "$WEB/scripts/own-channel.mjs" app-file "$WEB/ps-layer/profile.json" "$APP/Contents/Resources/channel.json" \
+      || { echo "STOP: ps-layer/profile.json has no usable own update channel (https, ending in /), so this PS would follow the G Squad channel. Nothing was installed."; exit 1; }
+  fi
 fi
 
 # Icon: to swap the logo, replace icon/icon-1024.png (or rerun icon/make-icon.swift on a new logo).

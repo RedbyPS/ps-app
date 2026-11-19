@@ -2,6 +2,7 @@
 import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { approved as psDownloadApproved, files as psDownloadFiles } from "./ps-download.mjs";
+import { ownChannelOf } from "./own-channel.mjs";
 
 const SB = "https://mxusokxekkecebwqgeru.supabase.co";
 // G Squad hub (V1.40): the website reaches only its chat (src/squad/chathub.ts); every call is signed, nothing secret.
@@ -127,6 +128,21 @@ if (existsSync("ps-release/ps-update.json")) {
   for (const f of readdirSync("ps-release")) if (/^(ps-update\.json|release\.json|PS\.dmg)$/.test(f)) copyFileSync(`ps-release/${f}`, `dist/client/ps/${f}`);
   if (existsSync("ps-release/updates")) for (const f of readdirSync("ps-release/updates")) if (/^PS-(app|web)-[0-9]+\.zip$/.test(f)) copyFileSync(`ps-release/updates/${f}`, `dist/client/ps/updates/${f}`);
   console.log("postbuild: public PS files copied to client/ps/");
+}
+
+// V1.69: the maker's own update channel (the developer's: the unlisted folder in ps-layer/profile.json, scripts/own-channel.mjs).
+// release.sh stages his release in ps-own-release/ (gitignored), signed for his channel only; only his own builds ask
+// there (their Resources/channel.json). Never the G Squad channel or the public download. No layer profile: nothing.
+{
+  let own = null;
+  try { own = ownChannelOf(); } catch (e) { console.error(`postbuild: STOP, ${e.message}`); process.exit(1); }
+  if (own && existsSync("ps-own-release/ps-update.json")) {
+    const to = `dist${own.folder}`;
+    mkdirSync(`${to}updates`, { recursive: true });
+    for (const f of readdirSync("ps-own-release")) if (/^(ps-update\.json|PS\.dmg)$/.test(f)) copyFileSync(`ps-own-release/${f}`, `${to}${f}`);
+    if (existsSync("ps-own-release/updates")) for (const f of readdirSync("ps-own-release/updates")) if (/^PS-(app|web)-[0-9]+\.zip$/.test(f)) copyFileSync(`ps-own-release/updates/${f}`, `${to}updates/${f}`);
+    console.log(`postbuild: ${own.name}'s own PS update channel copied to its unlisted folder`);
+  }
 }
 
 // The easy way in (31 Oct 2026): `curl -fsSL https://cincee.com/client/ps/install.sh | bash` (checks the

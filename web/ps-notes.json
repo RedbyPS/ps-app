@@ -331,5 +331,14 @@
    "Dimension X: drag tasks between lists, move anything to Ideas, and moves never leave a copy behind.",
    "Private mode turns itself off when the meeting ends. The island's email count matches your email panel."
   ]
+ },
+ "1.69": {
+  "en": [
+   "The update animation now flies your island to wherever you keep it.",
+   "Replay the update animation any time in Settings, About and updates.",
+   "With your island low on the screen, What's new and new feature cards open in the middle.",
+   "Middle click recovers by itself after macOS pauses it, also right after an update.",
+   "PS only takes updates signed the same way as the copy you have, so your permissions stay put."
+  ]
  }
 }

@@ -21,8 +21,9 @@ enum Log {
     let now = Date()
     q.async {
       let line = "\(stamp.string(from: now))  \(s)\n"
-      // Keep it small: past 256 KB the log moves to "PSMiddleClicker.previous.log" (one kept).
-      if let size = (try? FileManager.default.attributesOfItem(atPath: url.path))?[.size] as? Int, size > 256_000 {
+      // Keep it small: past 1 MB the log moves to "PSMiddleClicker.previous.log" (one kept). V1.69: was
+      // 256 KB, which the pause loop filled in under a day, losing the 18 Nov update restart.
+      if let size = (try? FileManager.default.attributesOfItem(atPath: url.path))?[.size] as? Int, size > 1_000_000 {
         try? FileManager.default.removeItem(at: previous)
         try? FileManager.default.moveItem(at: url, to: previous)
       }

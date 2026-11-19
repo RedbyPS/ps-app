@@ -536,15 +536,83 @@ test("recovery: macOS timing the tap out 3 times within 2 minutes starts a fresh
   check(!q.timedOut(at: 2, wall: 2, lastRelaunch: 1), "but not within 5 minutes of the last fresh start")
 }
 
-test("secure input: the taps are made again once, after it ends (no rebuild every 5 s)") {
-  var p = SecureInputPause()
-  check(p.paused(secure: true) == .waitForEnd, "first pause during secure input: wait for its end (one line)")
-  check(p.paused(secure: true) == .alreadyWaiting, "the other tap's pause: nothing more")
-  for _ in 0..<100 { check(!p.check(secure: true), "still secure: no rebuild") }
-  check(p.paused(secure: true) == .alreadyWaiting, "later pauses while waiting: nothing more")
-  check(p.check(secure: false), "secure input ended: rebuild now")
-  check(!p.check(secure: false), "only once")
-  check(p.paused(secure: false) == .rebuildNow, "a user input pause without secure input: rebuild as before")
+/// Plays the helper's main thread against macOS for `secs` seconds: while `on(t)` the pause condition
+/// lasts (secure input), and every tap made then is paused at once. `seen(t)`: whether macOS says
+/// secure input is on. Returns the rebuild times.
+func calmRun(secs: Double, on: (Double) -> Bool, seen: (Double) -> Bool = { _ in false }, firstPause: Double = 1) -> [Double] {
+  var c = PauseCalm()
+  var rebuilds: [Double] = []
+  var t = 0.0
+  _ = c.paused(at: firstPause, secure: seen(firstPause))
+  while t <= secs {
+    if c.check(at: t, secure: seen(t)) {
+      rebuilds.append(t); c.rebuilt(at: t)
+      if on(t) { _ = c.paused(at: t + 0.001, secure: seen(t)) }   // the new taps are paused at once
+    }
+    t += 2
+  }
+  return rebuilds
+}
+
+test("pauses: 19 Nov 01:01, 12 minutes of pauses no longer make taps every 5 s") {
+  // V1.65 made new taps every 5 s (144 in 12 minutes), each paused at once: deaf the whole time.
+  let r = calmRun(secs: 900, on: { $0 < 720 })
+  let during = r.filter { $0 < 720 }
+  check(during.count <= 14, "at most a try a minute while it lasts: \(during.count) (\(during))")
+  let after = r.first { $0 >= 720 }
+  check(after != nil && after! - 720 <= 62, "made again within a minute after it ends: \(String(describing: after))")
+  check(r.filter { $0 > 720 }.count == 1, "and then left alone: \(r)")
+}
+
+test("pauses: one short pause, made again once after 10 s of calm") {
+  let r = calmRun(secs: 120, on: { _ in false }, firstPause: 1)
+  check(r == [12], "once, 10 s after the pause: \(r)")
+}
+
+test("pauses: a pause notice from both taps is one episode, one log line") {
+  var c = PauseCalm()
+  check(c.paused(at: 5, secure: false), "first: one line")
+  check(!c.paused(at: 5, secure: false), "the other tap's notice: no line")
+  check(!c.paused(at: 9, secure: false), "another pause in the same episode: no line")
+  check(!c.check(at: 18, secure: false), "9 s after the last pause: not yet")
+  check(c.check(at: 20, secure: false), "10 s of calm: made again")
+  check(!c.check(at: 22, secure: false), "once")
+}
+
+test("pauses: when macOS does say secure input, the taps are made again as it ends") {
+  let r = calmRun(secs: 300, on: { $0 < 100 }, seen: { $0 < 100 })
+  check(r.first.map { $0 >= 100 && $0 <= 102 } ?? false, "no tries while it says so, then within 2 s: \(r)")
+}
+
+test("pauses: the wait grows only while new taps are paused at once, and comes back to 10 s") {
+  var c = PauseCalm()
+  _ = c.paused(at: 0, secure: false)
+  check(c.check(at: 10, secure: false), "10 s")
+  c.rebuilt(at: 10); _ = c.paused(at: 10.001, secure: false)
+  check(c.wait == 20, "paused at once: 20 s (\(c.wait))")
+  check(!c.check(at: 28, secure: false) && c.check(at: 32, secure: false), "made again after 20 s")
+  c.rebuilt(at: 32); _ = c.paused(at: 32.001, secure: false)
+  check(c.wait == 40, "again: 40 s")
+  check(!c.check(at: 70, secure: false) && c.check(at: 74, secure: false), "made again after 40 s"); c.rebuilt(at: 74)
+  check(!c.check(at: 76, secure: false) && c.wait == PauseCalm.calm, "it held for 2 s: back to 10 s (\(c.wait))")
+  _ = c.paused(at: 200, secure: false)
+  check(c.wait == PauseCalm.calm, "a new pause much later is not an echo")
+  var d = PauseCalm()
+  for i in 0..<20 { let t = Double(i) * 100; _ = d.paused(at: t + 0.001, secure: false); d.rebuilt(at: t); _ = d.paused(at: t + 0.002, secure: false) }
+  check(d.wait <= PauseCalm.waitMax, "never more than a minute: \(d.wait)")
+}
+
+test("deaf rule: a fresh copy that never saw pressure itself still acts when this Mac has (18 Nov update restart)") {
+  var fresh = TapHealth()
+  var any = false
+  for i in 1...6 { any = fresh.pressEnded(pressures: 0, at: Double(i)) || any }
+  check(!any, "never seen on this Mac (Force Click off, or tap to click only): never")
+  var known = TapHealth(seenBefore: true)
+  check(!known.pressEnded(pressures: 0, at: 1) && !known.pressEnded(pressures: 0, at: 2), "two quiet clicks: not yet")
+  check(known.pressEnded(pressures: 0, at: 3), "seen on this Mac before: the third quiet click rebuilds")
+  known.cancel()
+  check(!known.pending, "a rebuild not needed (a pause is being waited out) leaves nothing pending")
+  check(known.paused(at: 4) != nil, "so a later pause can still set one up")
 }
 
 test("fresh copy: the one at a time rule lets only the replacing copy start") {

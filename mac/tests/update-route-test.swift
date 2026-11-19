@@ -46,6 +46,30 @@ check("old-note-taken-everywhere", UpdateRoute.gsquad.takes(nil) && jan.takes(ni
 check("gsquad-note-on-gsquad", UpdateRoute.gsquad.takes("gsquad") && !UpdateRoute.gsquad.takes("jan"))
 check("jan-note-only-on-jan", jan.takes("jan") && !jan.takes("gsquad") && !jan.takes("red"))
 
+// 3b. V1.69 (the developer, 18 Nov 2026, after the G Squad's V1.68 reached his Mac): his private build carries its own channel
+// in Resources/channel.json and takes only his own releases; a PS signed with his certificate never trusts anything else.
+let ownFile = profile(["name": "red", "channel": ["kind": "url", "url": "https://example.invalid/ps/own-0000/"]])
+let squadFile = profile(["name": "gsquad", "channel": ["kind": "gsquad"]])
+let own = UpdateRoute.resolve(profile: nil, channel: ownFile, signedByRed: true)
+check("own-channel-file-used", own.kind == .url && own.id == "red" && own.base?.absoluteString == "https://example.invalid/ps/own-0000/")
+check("own-red-key-only", own.keys == [UPDATE_PUBLIC_KEY] && !own.keys.contains(UPDATE_GSQUAD_PUBLIC_KEY))
+check("own-red-cert-only", own.requirement == #"identifier "com.cincee.ps" and certificate root = H""# + PS_CERT_ROOT_RED + #"""#, own.requirement)
+check("own-takes-only-own-notes", own.takes("red") && !own.takes("gsquad") && !own.takes("jan"))
+check("own-file-without-signature-same", UpdateRoute.resolve(profile: nil, channel: ownFile, signedByRed: false) == own)
+check("profile-wins-over-channel-file", UpdateRoute.resolve(profile: squadFile, channel: ownFile, signedByRed: false) == UpdateRoute.gsquad)
+// The developer's certificate pins the developer's key and certificate even with no channel file (a broken build of his): a G Squad note
+// or a G Squad signed app is never taken.
+let lost = UpdateRoute.resolve(profile: nil, channel: nil, signedByRed: true)
+check("red-signed-no-file-red-only", lost.keys == [UPDATE_PUBLIC_KEY] && lost.requirement == own.requirement && lost.base?.absoluteString == UPDATE_CHANNEL)
+check("red-signed-gsquad-profile-red-only", UpdateRoute.resolve(profile: squadFile, channel: nil, signedByRed: true).keys == [UPDATE_PUBLIC_KEY])
+// G Squad builds (signed with the G Squad certificate) and friends' own builds: exactly as before.
+check("gsquad-build-unchanged", UpdateRoute.resolve(profile: squadFile, channel: nil, signedByRed: false) == UpdateRoute.gsquad
+      && UpdateRoute.gsquad.keys == [UPDATE_PUBLIC_KEY, UPDATE_GSQUAD_PUBLIC_KEY].filter { !$0.isEmpty }
+      && UpdateRoute.gsquad.requirement.contains(PS_CERT_ROOT_GSQUAD) && UpdateRoute.gsquad.requirement.contains(PS_CERT_ROOT_RED))
+check("no-files-unsigned-unchanged", UpdateRoute.resolve(profile: nil, channel: nil, signedByRed: false) == UpdateRoute.gsquad)
+check("bad-channel-file-unsigned-is-gsquad", UpdateRoute.resolve(profile: nil, channel: Data("{".utf8), signedByRed: false) == UpdateRoute.gsquad)
+check("this-test-is-not-red-signed", !UpdateRoute.selfSignedByRed)
+
 // 4. The note: signed by any one of the channel's keys, with who made it and its channel.
 func hex(_ d: Data) -> String { SHA256.hash(data: d).map { String(format: "%02x", $0) }.joined() }
 let red = Curve25519.Signing.PrivateKey(), squad = Curve25519.Signing.PrivateKey(), other = Curve25519.Signing.PrivateKey()
@@ -79,6 +103,11 @@ check("old-note-as-before", old.by == nil && old.shared == nil && old.channel ==
 check("weird-by-ignored", (try! UpdateManifest.open(note(payload(["by": "<b>Jan</b>"]), red), publicKeys: [pk(red)])).by == nil)
 check("weird-channel-refused", (try? UpdateManifest.open(note(payload(["channel": 7]), red), publicKeys: [pk(red)])) == nil)
 check("show-plain", PSVersion.show("1.57", "Momentum") == "V1.57 · Momentum" && PSVersion.show("V1.57", nil) == "V1.57")
+// V1.69: on the developer's own channel a G Squad note never opens, even a correctly signed one, and a note for his channel does.
+let ownNote = note(payload(["by": "red", "shared": true, "channel": "red"]), red)
+check("own-note-opens-with-red-key", (try? UpdateManifest.open(ownNote, publicKeys: [pk(red)])).map { own.takes($0.channel) } == true)
+check("squad-note-refused-on-own", (try? UpdateManifest.open(note(squadNote, squad), publicKeys: [pk(red)])) == nil)
+check("red-signed-squad-note-not-taken-on-own", (try? UpdateManifest.open(note(squadNote, red), publicKeys: [pk(red)])).map { own.takes($0.channel) } == false)
 
 print(fails == 0 ? "update-route: all ok" : "update-route: \(fails) FAILED")
 exit(fails == 0 ? 0 : 1)
