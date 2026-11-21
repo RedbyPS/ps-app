@@ -444,6 +444,7 @@ final class Toast: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
     if let l = NoteDrop.life(c["life"]) { card["life"] = l }
     // Reply from PS (V1.44, MailSend.swift): a client email or a lead's reply can be answered from its card.
     if (c["reply"] as? Bool) == true && (tone == "mail" || tone == "lead" || tone == SquadMessageCard.tone) { card["reply"] = true }   // a WhatsApp card (icon whatsapp, tone mail) too: its Reply opens the Tab list's reply box
+    if AiMessageCard.markDone(tone: tone, c["markDone"]) { card["markDone"] = true }   // PS 1.74: an AI message's Mark done (AiMessageCard.swift)
     // Remind me in: where it starts and how far one wheel step moves it (chat cards 2 and 1, emails 15 and 5).
     if let r = c["remind"] as? [String: Any], let st = r["start"] as? Int, let sp = r["step"] as? Int, let lo = r["min"] as? Int, let hi = r["max"] as? Int {
       let f = { (v: Int) in max(1, min(240, v)) }
@@ -1632,6 +1633,7 @@ final class Toast: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
           if(ma.length||d.dismiss||d.reply){var mb=el('div','acts');ma.forEach(function(a,i){var b=el('button',i===0?'main':'',a.label);b.dataset.link=a.id;mb.appendChild(b)});
             if(d.tone==='squad')SquadMsg.buttons(c,mb);
             else{
+            if(d.tone==='ai')AiMsg.buttons(c,mb);   // PS 1.74 Mark done (AiMessageCard.swift)
             if(d.reply){var rp=el('button','rep','Reply');rp.dataset.reply='1';mb.appendChild(rp)}
             if(d.dismiss){mb.appendChild(remind(c));var db=el('button','dis','Dismiss');db.dataset.act='dismiss';mb.appendChild(db)}}
             full.appendChild(mb)}

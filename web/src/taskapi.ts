@@ -10,10 +10,13 @@ import { psPost } from "./ps";
 import { pokeCardsAfterSave, vaultStore } from "./core/vault";
 import { remindRec, settingsData, todos } from "./core/select";
 import { addTodo, deleteTodo, saveRemind, saveSettings, setTodoDone, updateTodo } from "./core/actions";
+import { clockStart, clockStop } from "./core/timesave";
+import { workingIdsOf } from "./core/model";
 import { isRedAccount } from "./core/account";
 import { DEVICE_TZ } from "./core/tz";
 import { newGroupId } from "./core/groups";
 import { todayISO } from "./ui/kit";
+import { landDayNow } from "./clients/clientsday";
 import { handleApi, API_PORT, cleanScopes, type ApiStore } from "./core/taskapi";
 import { aiConnect, aiGuide } from "./core/taskapidoc";
 import { startSentryForApi } from "./views/Sentry";
@@ -24,6 +27,7 @@ const store: ApiStore = {
   settings: () => settingsData(vaultStore.get()),
   remind: () => remindRec(vaultStore.get()),
   today: () => todayISO(),
+  land: () => landDayNow(vaultStore.get()),   // Clients (PS 1.73): the day client tasks land on, as the Tab list and the island use it
   now: () => Date.now(),
   deviceTz: () => DEVICE_TZ,
   red: () => isRedAccount(vaultStore.get()),
@@ -37,7 +41,19 @@ const store: ApiStore = {
   saveRemind: (change) => saveRemind(change),
   newGroupId: () => newGroupId(),
   startSentry: () => startSentryForApi(),   // start only (views/Sentry.tsx): there is no stop
+  setFocus: (ids) => setFocus(ids),
 };
+
+/** PUT /v1/focus (PS 1.74): these tasks, in order, are the ones being worked on, as clicks on them in the Tab list would make
+ *  them (the island shows the first, core/timesave.ts clocks start for new ones and stop for the ones taken off). core/taskapi.ts
+ *  always keeps the working tasks outside the AI's reach in `ids`, so their clocks are never touched (no clockStopAll). */
+async function setFocus(ids: string[]): Promise<void> {
+  const was = workingIdsOf(settingsData(vaultStore.get()));
+  if (was.length === ids.length && was.every((x, i) => x === ids[i])) return;   // already so: nothing to save
+  for (const x of was) if (!ids.includes(x)) void clockStop(x);
+  for (const x of ids) if (!was.includes(x)) void clockStart(x);
+  await saveSettings({ workingIds: ids, workingOn: ids[0] ?? null });
+}
 
 const ID = /^[a-z0-9]{8,40}$/;
 let lane: Promise<unknown> = Promise.resolve();

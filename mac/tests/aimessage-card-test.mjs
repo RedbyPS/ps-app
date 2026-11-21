@@ -16,7 +16,8 @@ function ok(name, cond) { if (cond) { passed++; } else { console.log(`FAIL - ${n
 // Tiny fakes: a class list, closest() by tag or class, and the "words" element with a measured height.
 function cls() { const s = new Set(); return { contains: (x) => s.has(x), toggle: (x) => (s.has(x) ? s.delete(x) : s.add(x)), add: (x) => s.add(x) }; }
 function node(tag, classes = [], parent = null) {
-  const n = { tagName: tag.toUpperCase(), className: classes.join(" "), classList: cls(), parentNode: parent, kids: [], textContent: "" };
+  const n = { tagName: tag.toUpperCase(), className: classes.join(" "), classList: cls(), parentNode: parent, kids: [], textContent: "", dataset: {} };
+  n.appendChild = (k) => { k.parentNode = n; n.kids.push(k); };
   classes.forEach((c) => n.classList.add(c));
   n.closest = (sel) => { for (let x = n; x; x = x.parentNode) { if (sel.startsWith(".") ? x.classList.contains(sel.slice(1)) : x.tagName === sel.toUpperCase()) return x; } return null; };
   n.insertBefore = (k) => { k.parentNode = n; n.kids.push(k); };
@@ -59,5 +60,21 @@ ok("a click on a short one does nothing", AiMsg.click(short.c, short.b) === fals
 const none = { el: node("div", ["card", "t-ai"]), inner: { querySelector: () => null } };
 AiMsg.made(none);
 ok("no detail: nothing made, nothing opens", !none.aiMore && AiMsg.click(none, node("div")) === false);
+
+// PS 1.74 Mark done: only when the page said so, first and main, sending "done", words as text.
+const withDone = card(40, 40); withDone.c.data = { tone: "ai", markDone: true };
+const row = node("div", ["acts"]);
+AiMsg.buttons(withDone.c, row);
+const md = row.kids[0];
+ok("markDone: one Mark done button", row.kids.length === 1 && md.tagName === "BUTTON" && md.textContent === "Mark done");
+ok("Mark done sends the action done and looks like the main button", md.dataset.act === "done" && md.className.split(" ").includes("main"));
+ok("a click on Mark done is the button's, not the words'", AiMsg.click(withDone.c, md) === false);
+for (const d of [{ tone: "ai" }, { tone: "ai", markDone: "true" }, { tone: "ai", markDone: 1 }, undefined]) {
+  const r = node("div", ["acts"]); AiMsg.buttons({ data: d }, r);
+  ok(`no Mark done without markDone true (${JSON.stringify(d)})`, r.kids.length === 0);
+}
+const swift = src;
+ok("the Swift side lets markDone through for AI messages only", /static func markDone\(tone: String, _ v: Any\?\) -> Bool \{ tone == Self.tone && \(v as\? Bool\) == true \}/.test(swift));
+ok("the label and action match the page (core/aimessage.ts AI_MSG_DONE)", swift.includes('doneLabel = "Mark done", doneAction = "done"') && js.includes("'Mark done'") && js.includes("dataset.act='done'"));
 
 console.log(`${passed} AI message card checks passed`);

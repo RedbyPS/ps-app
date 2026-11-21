@@ -45,11 +45,13 @@ function fake(init: { todos?: Doc[]; settings?: Data; locked?: boolean } = {}) {
     async saveRemind(change) { const next = change(rem); if (next) rem = cleanRemind(next); log.push("remind"); },
     newGroupId: () => `grp${++gseq}x`,
     async startSentry() { log.push("sentry start"); return sentry; },
+    async setFocus(ids) { settings = { ...settings, workingIds: ids, workingOn: ids[0] ?? null }; log.push(`focus ${ids.join(",") || "none"}`); },
   };
   return store;
 }
 const d = (id: string, order: number, x: Data = {}): Doc => ({ id, ws: null, kind: "todo", author: null, updatedAt: null, data: { title: `Task ${id}`, type: "once", done: false, order, ...x } });
 const ALL: Scopes = Object.fromEntries(SCOPES.map((s) => [s.id, true])) as Scopes;
+const ALL_BUT = (id: keyof Scopes): Scopes => ({ ...ALL, [id]: false });
 const call = (s: ApiStore, method: string, path: string, body?: unknown, scopes: unknown = DEFAULT_SCOPES, query?: Record<string, string>) =>
   handleApi({ method, path, body, query }, scopes, s) as Promise<{ status: number; body: any }>;   // eslint-disable-line @typescript-eslint/no-explicit-any
 const SETTINGS = {
@@ -64,7 +66,7 @@ const world = () => fake({
 
 // ---------- switches ----------
 ok("defaults: add, read and the AI Inbox on, everything else off", () => {
-  assert.deepEqual(DEFAULT_SCOPES, { inbox: true, lists: false, goals: false, rename: false, read: true, add: true, edit: false, done: false, delete: false, remind: false, sentry: false, gym: false, settings: false, message: false });
+  assert.deepEqual(DEFAULT_SCOPES, { inbox: true, lists: false, goals: false, rename: false, read: true, add: true, edit: false, done: false, delete: false, remind: false, focus: false, sentry: false, gym: false, settings: false, message: false });
   assert.deepEqual(cleanScopes({ lists: true, delete: "yes", bogus: true }), { ...DEFAULT_SCOPES, lists: true });
   assert.deepEqual(cleanScopes(null), DEFAULT_SCOPES);
 });
@@ -511,12 +513,13 @@ ok("settings: the switch is off by default, both endpoints refuse with scope_off
 ok("GET and PATCH /v1/settings: Invert swipe read, switched on and off, saved as swipeInvert only", async () => {
   const s = world();
   const sc = { ...DEFAULT_SCOPES, settings: true };
-  assert.deepEqual((await call(s, "GET", "/v1/settings", undefined, sc)).body, { settings: { invertSwipe: false } });
+  const base = { autoReset: false, autoResetAt: "00:00", dayEnds: "reset" };
+  assert.deepEqual((await call(s, "GET", "/v1/settings", undefined, sc)).body, { settings: { invertSwipe: false, ...base } });
   const on = await call(s, "PATCH", "/v1/settings", { invertSwipe: true }, sc);
-  assert.deepEqual([on.status, on.body], [200, { settings: { invertSwipe: true } }]);
+  assert.deepEqual([on.status, on.body], [200, { settings: { invertSwipe: true, ...base } }]);
   assert.equal(s.set().swipeInvert, true);
   assert.deepEqual(s.log.filter((x) => x.startsWith("settings")), ["settings swipeInvert"]);
-  assert.deepEqual((await call(s, "GET", "/v1/settings", undefined, sc)).body.settings, { invertSwipe: true });
+  assert.deepEqual((await call(s, "GET", "/v1/settings", undefined, sc)).body.settings, { invertSwipe: true, ...base });
   await call(s, "PATCH", "/v1/settings", { invertSwipe: false }, sc);
   assert.equal(s.set().swipeInvert, false);
   assert.equal((await call(fake({ locked: true }), "GET", "/v1/settings", undefined, sc)).status, 423);
@@ -818,6 +821,243 @@ ok("Connect your AI: a short rule with the key slot (never a key), the curl, the
   assert.ok(!/[\u2013\u2014]/.test(c), "no en or em dashes");
   assert.ok(!/\bRed\b|Cincee/.test(c), "nothing personal");
   assert.ok(aiConnect({ port: 5000 }).includes("http://127.0.0.1:5000/v1/island/message"));
+});
+
+// ---------- PS 1.74: the AI coach (focus, Mark done on messages, the reset and Day ends settings) ----------
+const FOCUS = { ...DEFAULT_SCOPES, focus: true };
+ok("focus: its own switch, off by default; GET and PUT refuse with scope_off and nothing changes", async () => {
+  const s = world();
+  assert.equal(DEFAULT_SCOPES.focus, false);
+  assert.ok(SCOPES.some((x) => x.id === "focus" && x.group === "what" && x.def === false));
+  for (const [m, b] of [["GET", undefined], ["PUT", { task: "a1" }], ["PUT", { task: null }]] as const) {
+    const r = await call(s, m, "/v1/focus", b, ALL_BUT("focus"));
+    assert.deepEqual([r.status, r.body.error.code, r.body.error.scope], [403, "scope_off", "focus"], m);
+  }
+  assert.ok(!s.log.some((x) => x.startsWith("focus")));
+  const list = (await call(s, "GET", "/v1")).body.endpoints;
+  assert.ok(list.includes("GET /v1/focus") && list.includes("PUT /v1/focus"));
+});
+ok("GET /v1/focus: the open working tasks in order, the first is the island's; none is null; read needed", async () => {
+  const s = fake({ settings: { ...SETTINGS, workingIds: ["ai1", "gone", "a2"] }, todos: [d("a1", 0), d("a2", 1), d("ai1", 5, { ai: true, aiInbox: true, title: "Inbox one" }), d("dn", 2, { done: true })] });
+  const all = { ...ALL, focus: true };
+  const r = await call(s, "GET", "/v1/focus", undefined, all);
+  assert.equal(r.status, 200);
+  assert.equal(r.body.focus.task.id, "ai1");
+  assert.deepEqual(r.body.focus.tasks.map((t: { id: string }) => t.id), ["ai1", "a2"]);
+  assert.equal(r.body.focus.hidden, 0);
+  // Only the AI Inbox reachable: the list task is counted, never shown.
+  const r2 = await call(s, "GET", "/v1/focus", undefined, FOCUS);
+  assert.deepEqual([r2.body.focus.task.id, r2.body.focus.tasks.length, r2.body.focus.hidden], ["ai1", 1, 1]);
+  assert.deepEqual((await call(s, "GET", "/v1/focus", undefined, { ...FOCUS, read: false })).body.error.scope, "read");
+  // Older data: workingOn alone. A done working task is not shown (the island does not show it either).
+  const old = fake({ settings: { workingOn: "a1" }, todos: [d("a1", 0)] });
+  assert.equal((await call(old, "GET", "/v1/focus", undefined, all)).body.focus.task.id, "a1");
+  const done = fake({ settings: { workingIds: ["dn"] }, todos: [d("dn", 0, { done: true })] });
+  assert.deepEqual((await call(done, "GET", "/v1/focus", undefined, all)).body.focus, { task: null, tasks: [], hidden: 0 });
+  assert.deepEqual((await call(fake(), "GET", "/v1/focus", undefined, all)).body.focus, { task: null, tasks: [], hidden: 0 });
+  assert.equal((await call(fake({ locked: true }), "GET", "/v1/focus", undefined, all)).status, 423);
+});
+ok("PUT /v1/focus: sets one task (only that one), null clears; reach, done and bad ids are refused untouched", async () => {
+  const s = fake({ settings: { ...SETTINGS, workingIds: ["a2"] }, todos: [d("a1", 0), d("a2", 1), d("ai1", 5, { ai: true, aiInbox: true }), d("dn", 2, { done: true })] });
+  const r = await call(s, "PUT", "/v1/focus", { task: "ai1" }, FOCUS);
+  assert.equal(r.status, 200);
+  assert.equal(r.body.focus.task.id, "ai1");
+  // a2 is on a list this AI cannot reach: it stays working (its clock is not stopped), after the AI's task.
+  assert.deepEqual(s.set().workingIds, ["ai1", "a2"]);
+  assert.equal(s.set().workingOn, "ai1");
+  assert.equal(r.body.focus.hidden, 1);
+  // A list task with only the AI Inbox switch: scope_off lists, nothing changes.
+  const off = await call(s, "PUT", "/v1/focus", { task: "a1" }, FOCUS);
+  assert.deepEqual([off.status, off.body.error.scope], [403, "lists"]);
+  assert.deepEqual(s.set().workingIds, ["ai1", "a2"]);
+  const lists = { ...FOCUS, lists: true };
+  assert.equal((await call(s, "PUT", "/v1/focus", { task: "a1" }, lists)).body.focus.task.id, "a1");
+  assert.deepEqual(s.set().workingIds, ["a1"]);
+  for (const [b, st, code] of [[{ task: "dn" }, 409, "task_done"], [{ task: "nope" }, 404, "not_found"], [{ task: "bad id!" }, 400, "bad_field"], [{ task: 5 }, 400, "bad_field"],
+    [{}, 400, "bad_field"], [{ task: "a1", also: 1 }, 400, "unknown_field"], [null, 400, "bad_request"], ["a1", 400, "bad_request"]] as const) {
+    const x = await call(s, "PUT", "/v1/focus", b, lists);
+    assert.deepEqual([x.status, x.body.error.code], [st, code], JSON.stringify(b));
+  }
+  assert.deepEqual(s.set().workingIds, ["a1"]);
+  const clear = await call(s, "PUT", "/v1/focus", { task: null }, lists);
+  assert.deepEqual([clear.status, clear.body.focus], [200, { task: null, tasks: [], hidden: 0 }]);
+  assert.deepEqual(s.set().workingIds, []);
+  for (const m of ["POST", "PATCH", "DELETE"]) assert.equal((await call(s, m, "/v1/focus", { task: "a1" }, lists)).status, 405, m);
+  assert.equal((await call(s, "PUT", "/v1/focus/a1", { task: "a1" }, lists)).status, 404);
+  assert.deepEqual(s.log.filter((x) => x.startsWith("focus")), ["focus ai1,a2", "focus a1", "focus none"]);
+});
+ok("PUT /v1/focus never touches working tasks outside the AI's reach (break-it 1.74): null keeps them, a set keeps them after", async () => {
+  const s = fake({ settings: { ...SETTINGS, workingIds: ["a2", "ai1"], workingOn: "a2" }, todos: [d("a2", 1, { title: "Private list task" }), d("ai1", 5, { ai: true, aiInbox: true }), d("ai2", 6, { ai: true, aiInbox: true })] });
+  const clear = await call(s, "PUT", "/v1/focus", { task: null }, FOCUS);
+  assert.deepEqual([clear.status, clear.body.focus], [200, { task: null, tasks: [], hidden: 1 }]);
+  assert.deepEqual(s.set().workingIds, ["a2"]);
+  assert.ok(!JSON.stringify(clear.body).includes("Private"), "a hidden task's title never shows");
+  await call(s, "PUT", "/v1/focus", { task: "ai2" }, FOCUS);
+  assert.deepEqual(s.set().workingIds, ["ai2", "a2"]);
+  // With every list in reach, the same PUT replaces them all, as a click would.
+  await call(s, "PUT", "/v1/focus", { task: "ai1" }, { ...FOCUS, lists: true });
+  assert.deepEqual(s.set().workingIds, ["ai1"]);
+  // Without the read switch PUT still works, and names the task by id only.
+  const r = await call(s, "PUT", "/v1/focus", { task: "ai2" }, { ...FOCUS, read: false });
+  assert.deepEqual([r.status, r.body.focus.task], [200, { id: "ai2" }]);
+});
+
+const MSG_DONE = { ...DEFAULT_SCOPES, message: true, done: true };
+ok("message with a task: kept and markDone only with the done switch on and an open task it can reach", async () => {
+  const s = world();
+  const r = await call(s, "POST", "/v1/island/message", { from: "Coach", text: "Time for the inbox task", task: "ai1" }, MSG_DONE);
+  assert.deepEqual([r.status, r.body.shown, r.body.markDone, r.body.note], [201, true, true, undefined]);
+  assert.equal(msgs(s)[0].task as unknown, "ai1");
+  // Each reason the button is left off: the message is still shown, the task is not kept, the AI is told why.
+  const t = fake({ settings: SETTINGS, todos: [d("a1", 0), d("ai1", 5, { aiInbox: true }), d("ai2", 6, { aiInbox: true, done: true })] });
+  for (const [task, sc, why] of [["ai1", MSG, /Tick tasks done/], ["zzz", MSG_DONE, /No task with that id/], ["a1", MSG_DONE, /All lists and pages/], ["ai2", MSG_DONE, /already done/]] as const) {
+    const x = await call(t, "POST", "/v1/island/message", { text: `About ${task}`, task }, sc);
+    assert.deepEqual([x.status, x.body.shown, x.body.markDone], [201, true, false], task);
+    assert.match(x.body.note, why, task);
+    assert.equal((msgs(t)[0] as { task?: string }).task, undefined, task);
+  }
+  // No task: the answer is exactly as before 1.74.
+  const plain = await call(world(), "POST", "/v1/island/message", { text: "Done" }, MSG_DONE);
+  assert.deepEqual(Object.keys(plain.body).sort(), ["message", "shown"]);
+});
+ok("message with a task: a bad id is refused (400 task); a retry with the same task is the same message, another task is not", async () => {
+  const s = world();
+  for (const task of [5, true, "bad id", "x".repeat(65), ["ai1"]]) {
+    const r = await call(s, "POST", "/v1/island/message", { text: "a", task }, MSG_DONE);
+    assert.deepEqual([r.status, r.body.error.field], [400, "task"], JSON.stringify(task));
+  }
+  assert.equal((await call(s, "POST", "/v1/island/message", { text: "a", task: null }, MSG_DONE)).status, 201);
+  const a = await call(s, "POST", "/v1/island/message", { text: "Same", task: "ai1" }, MSG_DONE);
+  const b = await call(s, "POST", "/v1/island/message", { text: "Same", task: "ai1" }, MSG_DONE);
+  assert.deepEqual([a.status, b.status, b.body.message.id, b.body.markDone], [201, 200, a.body.message.id, true]);
+  const c = await call(s, "POST", "/v1/island/message", { text: "Same", task: "a1" }, { ...MSG_DONE, lists: true });
+  assert.equal(c.status, 201);
+  assert.notEqual(c.body.message.id, a.body.message.id);
+  // Break-it 1.74: the done switch turned off between two identical sends is still the same message (no second card).
+  const d2 = await call(s, "POST", "/v1/island/message", { text: "Same", task: "ai1" }, MSG);
+  assert.deepEqual([d2.status, d2.body.message.id, d2.body.markDone], [200, a.body.message.id, false]);
+  assert.match(d2.body.note, /already sent a moment ago\. The "Tick tasks done" switch is off/);
+  // Dismissed by the person, then the same message again: not shown, no button, and said so.
+  const st = s.set() as { aiMsgs: { id: string; seen?: boolean }[] };
+  await s.saveSettings({ aiMsgs: st.aiMsgs.map((m) => (m.id === a.body.message.id ? { ...m, seen: true } : m)) } as never);
+  const d3 = await call(s, "POST", "/v1/island/message", { text: "Same", task: "ai1" }, MSG_DONE);
+  assert.deepEqual([d3.status, d3.body.shown, d3.body.markDone], [200, false, false]);
+  assert.match(d3.body.note, /dismissed it/);
+});
+ok("focus: a task listed twice as working counts once and is kept once (break-it 1.74)", async () => {
+  const s = fake({ settings: { ...SETTINGS, workingIds: ["a2", "a2"], workingOn: "a2" }, todos: [d("a2", 1), d("ai1", 5, { ai: true, aiInbox: true })] });
+  assert.equal((await call(s, "GET", "/v1/focus", undefined, FOCUS)).body.focus.hidden, 1);
+  const r = await call(s, "PUT", "/v1/focus", { task: "ai1" }, FOCUS);
+  assert.equal(r.body.focus.hidden, 1);
+  assert.deepEqual(s.set().workingIds, ["ai1", "a2"]);
+});
+
+const SET = { ...DEFAULT_SCOPES, settings: true };
+ok("settings 1.74: autoReset, autoResetAt and dayEnds read as Settings shows them", async () => {
+  const g = async (st: Data, red = false) => { const s = fake({ settings: st }); if (red) s.red = () => true; return (await call(s, "GET", "/v1/settings", undefined, SET)).body.settings; };
+  assert.deepEqual(await g({}), { invertSwipe: false, autoReset: false, autoResetAt: "00:00", dayEnds: "reset" });
+  assert.deepEqual(await g({ autoReset: "midnight", autoResetAt: "04:30", countdown: { mode: "daily", at: "23:00" } }), { invertSwipe: false, autoReset: true, autoResetAt: "04:30", dayEnds: "23:00" });
+  assert.equal((await g({ countdown: { mode: "week", days: ["", "", "", "", "", "", ""] } })).dayEnds, "week");
+  assert.equal((await g({ autoResetAt: "25:00" })).autoResetAt, "00:00", "an unreadable time is midnight, as Settings reads it");
+  assert.equal((await g({ countdown: { at: "18:00" } })).dayEnds, "18:00", "a time saved before 1.72 is Every day at");
+  assert.equal((await g({}, true)).dayEnds, "12:00", "the developer's account keeps its noon (daycount.ts modeOf)");
+});
+ok("settings 1.74: PATCH saves each as Settings does; dayEnds a time or reset", async () => {
+  const s = fake({ settings: { countdown: { font: "mono" } } });
+  const r = await call(s, "PATCH", "/v1/settings", { autoReset: true, autoResetAt: "05:00", dayEnds: "23:30" }, SET);
+  assert.deepEqual([r.status, r.body.settings], [200, { invertSwipe: false, autoReset: true, autoResetAt: "05:00", dayEnds: "23:30" }]);
+  assert.equal(s.set().autoReset, "midnight");
+  assert.equal(s.set().autoResetAt, "05:00");
+  assert.deepEqual(s.set().countdown, { mode: "daily", at: "23:30", font: "mono" }, "the countdown's other picks stay");
+  const back = await call(s, "PATCH", "/v1/settings", { dayEnds: "reset", autoReset: false }, SET);
+  assert.deepEqual([back.body.settings.dayEnds, back.body.settings.autoReset, s.set().autoReset], ["reset", false, "off"]);
+  assert.equal((s.set().countdown as Data).mode, "reset");
+  assert.equal((s.set().countdown as Data).font, "mono");
+  assert.equal((await call(s, "PATCH", "/v1/settings", { dayEnds: "00:00" }, SET)).body.settings.dayEnds, "00:00");
+});
+ok("settings 1.74: bad values are refused and nothing at all is saved", async () => {
+  const s = fake({ settings: { autoReset: "off", autoResetAt: "03:00" } });
+  for (const [b, field] of [[{ autoReset: "on" }, "autoReset"], [{ autoReset: 1 }, "autoReset"], [{ autoResetAt: "24:00" }, "autoResetAt"], [{ autoResetAt: "4:00" }, "autoResetAt"],
+    [{ autoResetAt: 400 }, "autoResetAt"], [{ autoResetAt: null }, "autoResetAt"], [{ dayEnds: "week" }, "dayEnds"], [{ dayEnds: "noon" }, "dayEnds"], [{ dayEnds: null }, "dayEnds"],
+    [{ autoReset: true, autoResetAt: "99:99" }, "autoResetAt"], [{ invertSwipe: true, dayEnds: "7pm" }, "dayEnds"]] as const) {
+    const r = await call(s, "PATCH", "/v1/settings", b, SET);
+    assert.deepEqual([r.status, r.body.error.code, r.body.error.field], [400, "bad_field", field], JSON.stringify(b));
+  }
+  assert.match((await call(s, "PATCH", "/v1/settings", { dayEnds: "week" }, SET)).body.error.message, /Countdown text/);
+  for (const k of ["lastResetDay", "dayEndsHour", "countdown"]) assert.equal((await call(s, "PATCH", "/v1/settings", { [k]: 1 }, SET)).body.error.code, "unknown_field", k);
+  assert.ok(!s.log.some((x) => x.startsWith("settings")));
+  assert.deepEqual([s.set().autoReset, s.set().autoResetAt], ["off", "03:00"]);
+  assert.equal((await call(s, "PATCH", "/v1/settings", { autoReset: true }, DEFAULT_SCOPES)).body.error.scope, "settings");
+});
+ok("Copy for AI 1.74: focus, a message's task and the new settings are explained, with the switch", () => {
+  const g = aiGuide({ scopes: DEFAULT_SCOPES, today: T });
+  assert.ok(g.includes("- focus: OFF.") && aiGuide({ scopes: { ...DEFAULT_SCOPES, focus: true }, today: T }).includes("- focus: ON."));
+  for (const e of ["### GET /v1/focus  and  PUT /v1/focus", "curl -s -X PUT http://127.0.0.1:47836/v1/focus", "{\"task\": null}", "\"markDone\": true",
+    "autoResetAt", "\"dayEnds\"", "task_done"]) assert.ok(g.includes(e), e);
+  assert.ok(!/[–—]/.test(g), "no en or em dashes");
+});
+
+// Break-it 1.74 round 1: Red's 1.74 Clients tasks (core/clientwork.ts) as the API shows them.
+ok("Clients 1.74: a client task waiting for its do date says so, is not counted in the list, and cannot be the working task", async () => {
+  const s = fake({ todos: [d("cw1", 0, { clientId: "cl1", doOn: "2026-11-14" }), d("cl2", 1, { clientId: "cl1", doOn: "2026-11-12" }), d("pl3", 2)], settings: SETTINGS });
+  (s as ApiStore).land = () => T;
+  const all = (await call(s, "GET", "/v1/tasks", undefined, ALL)).body.tasks;
+  const by = (id: string) => all.find((t: { id: string }) => t.id === id);
+  assert.equal(by("cw1").waitsUntil, "2026-11-14");
+  assert.equal(by("cl2").waitsUntil, null);
+  assert.equal(by("pl3").waitsUntil, null);
+  const main = (await call(s, "GET", "/v1/lists", undefined, ALL)).body.lists.find((l: { id: string }) => l.id === "main");
+  assert.equal(main.sections.find((x: { key: string }) => x.key === "prio").openTasks, 2, "as the Tab list shows it: the waiting one is not there yet");
+  const r = await call(s, "PUT", "/v1/focus", { task: "cw1" }, ALL);
+  assert.equal(r.status, 409);
+  assert.equal(r.body.error.code, "not_landed");
+  assert.ok(!s.log.some((x) => x.startsWith("focus")), "nothing saved");
+  assert.equal((await call(s, "PUT", "/v1/focus", { task: "cl2" }, ALL)).status, 200);
+  // A store without the person's day (older callers): as before, nothing waits.
+  const o = fake({ todos: [d("cw1", 0, { clientId: "cl1", doOn: "2026-11-14" })], settings: SETTINGS });
+  assert.equal((await call(o, "GET", "/v1/tasks/cw1", undefined, ALL)).body.task.waitsUntil, null);
+});
+ok("Clients 1.74: a repeating client task with P1 is shown in Priority 1, as the Tab list shows it", async () => {
+  const s = fake({ todos: [d("rp1", 0, { type: "daily", p1: true, clientId: "cl1" }), d("rd2", 1, { type: "daily", p1: true })], settings: SETTINGS });
+  const t1 = (await call(s, "GET", "/v1/tasks/rp1", undefined, ALL)).body.task;
+  assert.equal(t1.section, "p1");
+  assert.equal(t1.p1, true);
+  assert.equal(t1.kind, "daily");
+  const t2 = (await call(s, "GET", "/v1/tasks/rd2", undefined, ALL)).body.task;
+  assert.equal(t2.section, "daily", "not a client task: a stray P1 flag on a daily task stays in Every day, as in the Tab list");
+  assert.equal(t2.p1, false);
+  const p1 = (await call(s, "GET", "/v1/tasks", undefined, ALL, { section: "p1" })).body.tasks.map((t: { id: string }) => t.id);
+  assert.deepEqual(p1, ["rp1"]);
+});
+// Break-it 1.74 round 2: a repeating client task in Priority 1, moved and counted through the API.
+ok("Clients 1.74: moving a repeating client P1 task to Every day takes its P1 off, so it really moves", async () => {
+  const s = fake({ todos: [d("rp1", 0, { type: "daily", p1: true, clientId: "cl1" })], settings: SETTINGS });
+  const r = await call(s, "PATCH", "/v1/tasks/rp1", { section: "daily" }, ALL);
+  assert.equal(r.status, 200);
+  assert.equal(r.body.task.section, "daily", "the answer says where it is now");
+  assert.equal(s.docs.get("rp1")!.data.p1, false, "saved: out of Priority 1");
+  assert.equal(s.docs.get("rp1")!.data.type, "daily", "still repeating");
+  // Already in p1: sending p1 true again is no error and changes nothing that matters.
+  const s2 = fake({ todos: [d("rp2", 0, { type: "daily", p1: true, clientId: "cl1" })], settings: SETTINGS });
+  const r2 = await call(s2, "PATCH", "/v1/tasks/rp2", { p1: true }, ALL);
+  assert.equal(r2.status, 200, "p1 true on a task that reads p1 true");
+  assert.equal(r2.body.task.section, "p1");
+  // A non-client daily task still cannot get P1, and a client daily without P1 is not given it (the Clients screen does that).
+  const s3 = fake({ todos: [d("rd3", 0, { type: "daily" }), d("rd4", 1, { type: "daily", clientId: "cl1" })], settings: SETTINGS });
+  assert.equal((await call(s3, "PATCH", "/v1/tasks/rd3", { p1: true }, ALL)).status, 400);
+  assert.equal((await call(s3, "PATCH", "/v1/tasks/rd4", { p1: true }, ALL)).status, 400);
+});
+ok("Clients 1.74: GET /v1/lists counts open P1 tasks as GET /v1/tasks?section=p1 does (a ticked repeating one is not open)", async () => {
+  const s = fake({ todos: [d("rp1", 0, { type: "daily", p1: true, clientId: "cl1", done: true }), d("rp2", 1, { type: "daily", p1: true, clientId: "cl1" }), d("o3", 2, { p1: true })], settings: SETTINGS });
+  const main = (await call(s, "GET", "/v1/lists", undefined, ALL)).body.lists.find((l: { id: string }) => l.id === "main");
+  const open = (await call(s, "GET", "/v1/tasks", undefined, ALL, { section: "p1" })).body.tasks.map((t: { id: string }) => t.id);
+  assert.deepEqual(open.sort(), ["o3", "rp2"]);
+  assert.equal(main.sections.find((x: { key: string }) => x.key === "p1").openTasks, open.length);
+});
+ok("Copy for AI 1.74: waitsUntil, not_landed and what dayEnds also moves are explained", () => {
+  const g = aiGuide({ scopes: { ...DEFAULT_SCOPES, focus: true, settings: true }, today: T });
+  for (const e of ["\"waitsUntil\"", "409 not_landed", "day turns over for client tasks"]) assert.ok(g.includes(e), e);
+  assert.ok(!/[\u2013\u2014]/.test(g), "no en or em dashes");
 });
 
 for (const [name, fn] of tests) { await fn(); n++; console.log("ok -", name); }

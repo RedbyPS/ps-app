@@ -198,6 +198,10 @@ object Notifier {
             .setDeleteIntent(Receivers.cardAction(c, id, "dismiss"))
             .setGroup("chats")
             .addAction(Notification.Action.Builder(null, "Dismiss", Receivers.cardAction(c, id, "dismiss")).build())
+        // PS 1.74: a message from an AI tied to a task has Mark done too (MarkDone.kt), first.
+        if (MarkDone.shows(id, card.optBoolean("markDone", false)))
+            b.setActions(Notification.Action.Builder(null, MarkDone.LABEL, Receivers.cardAction(c, id, MarkDone.ACTION)).build(),
+                Notification.Action.Builder(null, "Dismiss", Receivers.cardAction(c, id, "dismiss")).build())
         var at = System.currentTimeMillis()
         card.optString("at").takeIf { it.isNotBlank() && it != "null" }?.let { s ->
             runCatching { java.time.Instant.parse(s).toEpochMilli() }.getOrNull()?.let { at = it; b.setWhen(it).setShowWhen(true) }
