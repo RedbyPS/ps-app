@@ -125,6 +125,15 @@ check(TaskApiCore.answerWait(sentryReq) == 40 && TaskApiCore.answerWait(get!) ==
 check(TaskApiCore.scopeDefaults["message"] == false && TaskApiCore.cleanScopes(nil)["message"] == false, "the message switch is off unless switched on")
 check(TaskApiCore.cleanScopes(["message": true])["message"] == true, "the message switch can be switched on, so the page hears it")
 check(TaskApiCore.scopeIds.contains("message") && TaskApiCore.scopeIds.count == TaskApiCore.scopeDefaults.count, "every switch has a default")
+// ---------- the goals Timeline (PS 1.72) ----------
+check(TaskApiCore.scopeDefaults["goals"] == false && TaskApiCore.cleanScopes(nil)["goals"] == false, "the goals switch is off unless switched on")
+check(TaskApiCore.cleanScopes(["goals": true])["goals"] == true, "the goals switch can be switched on, so the page hears it")
+let goalBody = "{\"title\":\"Launch the shop\",\"level\":\"macro\"}"
+let goalNoKey = ok(TaskApiCore.parse(req("POST /v1/goals HTTP/1.1\nHost: 127.0.0.1:47836\nContent-Type: application/json\nContent-Length: \(goalBody.utf8.count)\n\n") + Data(goalBody.utf8)))!
+check(status(TaskApiCore.gate(goalNoKey, key: KEY)) == 401, "a goal with no key: 401")
+let goalOk = ok(TaskApiCore.parse(req("POST /v1/goals HTTP/1.1\nHost: 127.0.0.1:47836\n\(auth)Content-Type: application/json\nContent-Length: \(goalBody.utf8.count)\n\n") + Data(goalBody.utf8)))!
+check(TaskApiCore.gate(goalOk, key: KEY) == .pass && (TaskApiCore.jsonBody(goalOk).0 as? [String: Any])?["title"] as? String == "Launch the shop", "a goal with the key reaches the page with its JSON")
+
 let msgBody = "{\"from\":\"Claude Code\",\"text\":\"Fixed the login bug\"}"
 let msgNoKey = ok(TaskApiCore.parse(req("POST /v1/island/message HTTP/1.1\nHost: 127.0.0.1:47836\nContent-Type: application/json\nContent-Length: \(msgBody.utf8.count)\n\n") + Data(msgBody.utf8)))!
 check(status(TaskApiCore.gate(msgNoKey, key: KEY)) == 401, "a message with no key: 401")

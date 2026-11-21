@@ -32,12 +32,14 @@ ok("the cause: no stylesheet places a top bar button by hand with its own right 
   assert.deepEqual(bad, []);
 });
 
-ok("PS 1.70: the padlock, Second Computer, G Squad and the moon are each one row of the top right menu (nothing can hide another)", () => {
+ok("PS 1.70: the padlock, Second Computer and the moon are each one row of the top right menu; PS 1.72: The G Squad is its own button beside it", () => {
   assert.ok(row.length > 100, "the menu's block is in TaskMap.tsx");
-  for (const c of ["SecurityButton", "SecondButton", "GSquadButton", "DndButton"]) assert.equal((row.match(new RegExp(`<${c}\\b`, "g")) ?? []).length, 1, c);
+  for (const c of ["SecurityButton", "SecondButton", "DndButton"]) assert.equal((row.match(new RegExp(`<${c}\\b`, "g")) ?? []).length, 1, c);
+  assert.equal((row.match(/<GSquadButton\b/g) ?? []).length, 0, "The G Squad is not in the menu (Jan, 21 Nov 2026)");
   assert.equal((map.match(/<GSquadButton\b/g) ?? []).length, 1, "one G Squad button");
   const menu = read("core/topmenu.ts");
-  for (const s of ['sel: ".sec-btn"', 'sel: ".sc-btn[aria-haspopup]"', 'sel: ".gs-btn"', 'sel: ".dnd-btn"']) assert.ok(menu.includes(s), s);
+  for (const s of ['sel: ".sec-btn"', 'sel: ".sc-btn[aria-haspopup]"', 'sel: ".dnd-btn"']) assert.ok(menu.includes(s), s);
+  assert.ok(!menu.includes('sel: ".gs-btn"'), "no G Squad row");
 });
 
 ok("the row is one flex box on the floating list and no box at all elsewhere (the website keeps them in the bar)", () => {
@@ -74,7 +76,7 @@ ok("every account in PS gets the button: gated only on PS and the floating list,
 ok("not in yet: the button says Joining The G Squad (hover card, screen reader) and shows a plus", () => {
   assert.match(gs, /export const NO_SQUAD = "Joining The G Squad";/);   // V1.49: PS joins by itself
   const body = gs.slice(gs.indexOf("export function GSquadButton()"), gs.indexOf("\nfunction SquadLayers"));
-  assert.match(body, /: `G Squad\. \$\{outLine\}`\}/, "aria-label");
+  assert.match(body, /: `The G Squad\. \$\{outLine\}`\}/, "aria-label");
   assert.match(body, /data-tip-line=\{v\.in \? workingLine\(n\) : outLine\}/, "hover card line");
   assert.doesNotMatch(body, /"You left The G Squad"/, "PS 1.68: nobody leaves");
   assert.match(body, /\{!v\.in && <i className="gs-plus" aria-hidden="true" \/>\}/, "the plus");

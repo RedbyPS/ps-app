@@ -8,7 +8,7 @@
         <item name="android:windowLightStatusBar">false</item>
         <item name="android:windowLayoutInDisplayCutoutMode">always</item>
         <item name="android:windowSplashScreenBackground">@color/ps_bg</item>
-        <item name="android:windowSplashScreenAnimatedIcon">@mipmap/ic_launcher_front</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@mipmap/ic_cake_front</item>
     </style>
     <style name="Theme.PS.Ays" parent="Theme.PS">
         <item name="android:windowBackground">@android:color/transparent</item>

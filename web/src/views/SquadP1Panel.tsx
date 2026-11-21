@@ -6,6 +6,9 @@
 // panel: one row per task. Hidden when the feature is off, when you are not in a squad, or when you switched "Show the squad's
 // Priority 1 tasks" off (Squad settings, What you share).
 // The rules and the words are in core/squadp1.ts and core/squadp1board.ts (tests). The rows come from the plain view (no keys).
+// PS 1.72 (Jan, 21 Nov 2026: "there should be a ... button to open the G squad ... or maybe if you just double click"): the
+// two people beside the heading open The G Squad (the same as its button in the top right), and a double click on a person
+// opens it on the leaderboard (G Squad has no screen of one person's own). A single click still shows their Priority 1s.
 import { useEffect, useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
 import { feature } from "../core/features";
 import { P1_FEATURE, P1_MISSED_SHOW_MS, P1_DONE_SHOW_MS, firstName, p1Deadline, p1PanelOn, p1State, stateText, type P1Row } from "../core/squadp1";
@@ -16,6 +19,7 @@ import { useVault } from "../ui/kit";
 import { sfx } from "../ui/sfx";
 import { Avatar } from "./SquadAvatar";
 import { openGSquad } from "./GSquad";
+import { TopIcon } from "./topicons";
 import { useInst, useInstSave } from "./EditMode";
 import "./squadp1.css";
 
@@ -26,6 +30,15 @@ function useNow(every = 30_000): number {
 }
 const tzNow = (st: { tmHomeTz?: string | null }) => (typeof st.tmHomeTz === "string" && st.tmHomeTz) || Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
 const Tick = ({ size = 13 }: { size?: number }) => <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5" /></svg>;
+/** The way into The G Squad from this panel: the top right button's own icon and action. */
+export const OPEN_SQUAD = "Open The G Squad";
+function OpenSquad() {
+  return (
+    <button type="button" className="sqp1-open" aria-label={OPEN_SQUAD} data-tip={OPEN_SQUAD} onClick={() => { sfx.click(); openGSquad(true); }}>
+      <TopIcon id="gsquad" size={14} stroke={2} />
+    </button>
+  );
+}
 const Flame = () => <svg width="10" height="12" viewBox="0 0 20 24" fill="currentColor" aria-hidden="true"><path d="M10 1.5c.9 3.6 5.6 6.1 5.6 11.7A5.6 5.6 0 0 1 10 18.8a5.6 5.6 0 0 1-5.6-5.6c0-2.6 1.3-4.3 2.6-5.5.2 2 1.1 3.2 2.4 3.6-.7-3.4-.4-6.6.6-9.8z" /><path d="M10 22.5a3 3 0 0 1-3-3c0-1.6 1.4-2.6 3-4.6 1.6 2 3 3 3 4.6a3 3 0 0 1-3 3z" opacity=".55" /></svg>;
 
 export function SquadP1Panel() {
@@ -38,7 +51,7 @@ export function SquadP1Panel() {
   const rows = (v.p1 ?? []).filter((r) => names.has(r.member) && (r.x ? !r.xa || now - Date.parse(r.xa) <= P1_DONE_SHOW_MS : now - p1Deadline(r.s) <= P1_MISSED_SHOW_MS));
   return (
     <section className="sqp1" aria-label="Priority 1 in G Squad">
-      <header className="sqp1-h"><span>Squad Priority 1</span></header>
+      <header className="sqp1-h"><span>Squad Priority 1</span><OpenSquad /></header>
       {rows.length === 0
         ? <p className="sqp1-empty">Nobody has a Priority 1 task right now.</p>
         : <ul>
@@ -112,7 +125,7 @@ function Board({ people, since, now, tz }: { people: P1Person[]; since: string |
 
   return (
     <section className="sqp1 sqb" aria-label="Priority 1 in G Squad, ranked">
-      <header className="sqp1-h"><span data-tip="Squad Priority 1" data-tip-line={headTip(log, now, tz)}>Squad Priority 1</span></header>
+      <header className="sqp1-h"><span data-tip="Squad Priority 1" data-tip-line={headTip(log, now, tz)}>Squad Priority 1</span><OpenSquad /></header>
       {people.length === 0
         ? <p className="sqp1-empty">Nobody has a Priority 1 task right now.</p>
         : <ul ref={listRef} className="sqb-list">
@@ -123,7 +136,8 @@ function Board({ people, since, now, tz }: { people: P1Person[]; since: string |
               <li key={p.member} className={isOpen ? "open" : ""}>
                 <button type="button" className={`sqb-row${p.me ? " me" : ""}`} aria-expanded={isOpen}
                   aria-label={`${p.place ? `Place ${p.place}, ` : ""}${firstName(p.name)}. ${leadTip(lead, now)} ${rateTip(p, now, tz)} ${streakTip(p)}`}
-                  onClick={() => { sfx.click(); setOpenId(isOpen ? null : p.member); }}>
+                  onClick={() => { sfx.click(); setOpenId(isOpen ? null : p.member); }}
+                  onDoubleClick={() => { setOpenId(isOpen ? p.member : null); openGSquad(true, "leaderboard"); }}>
                   <span className="sqb-pl num" data-tip={p.place ? `Place ${p.place}` : "Not ranked yet"} data-tip-line={placeTip(p)}>{p.place ?? ""}</span>
                   <Avatar id={p.member} name={p.name} size={18} />
                   <span className="sqb-who">{firstName(p.name)}</span>

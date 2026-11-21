@@ -23,8 +23,9 @@ enum TaskApiCore {
   // "gym" (V1.57): read and change the gym reminder's times (GET and PATCH /v1/gym). Off unless switched on; it can never say Yes.
   // "settings" (V1.57): GET and PATCH /v1/settings (Invert swipe). Off unless switched on.
   // "message" (V1.58): POST /v1/island/message, a message from the AI on the island (AiMessageCard.swift). Off unless switched on.
-  static let scopeIds = ["inbox", "lists", "rename", "read", "add", "edit", "done", "delete", "remind", "sentry", "gym", "settings", "message"]
-  static let scopeDefaults: [String: Bool] = ["inbox": true, "lists": false, "rename": false, "read": true, "add": true, "edit": false, "done": false, "delete": false, "remind": false, "sentry": false, "gym": false, "settings": false, "message": false]
+  // "goals" (PS 1.72): the goals Timeline (GET, POST, PATCH and DELETE /v1/goals; the rules are in the page). Off unless switched on.
+  static let scopeIds = ["inbox", "lists", "goals", "rename", "read", "add", "edit", "done", "delete", "remind", "sentry", "gym", "settings", "message"]
+  static let scopeDefaults: [String: Bool] = ["inbox": true, "lists": false, "goals": false, "rename": false, "read": true, "add": true, "edit": false, "done": false, "delete": false, "remind": false, "sentry": false, "gym": false, "settings": false, "message": false]
   /// Known switches only; a missing one takes its default.
   static func cleanScopes(_ v: Any?) -> [String: Bool] {
     var out = scopeDefaults

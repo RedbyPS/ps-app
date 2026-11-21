@@ -103,12 +103,13 @@ object Island {
             if (next.on) WebHost.activity?.askIsland()
         }
     }
-    /** A reminder rang (Remind.kt): its pill and words pop for a few seconds. */
-    fun reminder(c: Context, id: String, title: String, text: String, task: String?) {
+    /** A reminder rang (Remind.kt): its pill and words pop for a few seconds. A tap opens PS on the island's card with the
+     *  reminder's own buttons (PS 1.72, IslandShow.remOpen); its Open task is there for a reminder on a task. */
+    fun reminder(c: Context, id: String, title: String, text: String) {
         if (!Prefs.island(c)) return
         main.post {
             pops.removeAll { it.id == "rem:$id" || it.until < System.currentTimeMillis() }
-            pops.add(IslandShow.Pop("rem:$id", IslandShow.Tone.AMBER, title.take(80), text.take(200), if (task != null) "task:$task" else "list", System.currentTimeMillis() + IslandShow.REMINDER_MS))
+            pops.add(IslandShow.Pop("rem:$id", IslandShow.Tone.AMBER, title.take(80), text.take(200), IslandShow.remOpen(id), System.currentTimeMillis() + IslandShow.REMINDER_MS))
             LiveService.refresh()
         }
     }

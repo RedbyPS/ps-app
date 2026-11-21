@@ -11,7 +11,7 @@ import { DAY_ENDS_DEFAULT, itemKey, workDayOf } from "../core/daylog";
 import { historyOn, readDay } from "../core/taskhist";
 import { feature } from "../core/features";
 import { saveSettings, setJournal } from "../core/actions";
-import { GoalsTimeline } from "./Goals";
+import { GoalsTimeline, goalsEsc } from "./Goals";
 import { Icon, useVault } from "../ui/kit";
 import "./series.css";
 
@@ -99,11 +99,12 @@ export function SeriesMap({ onClose, embedded, saves = SAVES, escRef }: {
   };
 
   useEffect(() => {
-    if (escRef) escRef.current = () => { if (q) setQ(""); else if (edit) setEdit(null); else onClose(); };
+    // The goals Timeline first steps back by itself (its ghost, then its open goal).
+    if (escRef) escRef.current = () => { if (goalsEsc()) return; if (q) setQ(""); else if (edit) setEdit(null); else onClose(); };
   });
   useEffect(() => {
     if (embedded) return;
-    const key = (e: KeyboardEvent) => { if (e.key === "Escape" && !e.defaultPrevented) { e.preventDefault(); if (edit) setEdit(null); else onClose(); } };
+    const key = (e: KeyboardEvent) => { if (e.key === "Escape" && !e.defaultPrevented) { e.preventDefault(); if (goalsEsc()) return; if (edit) setEdit(null); else onClose(); } };
     document.addEventListener("keydown", key);
     const prev = document.body.style.overflow;
     document.body.style.overflow = "hidden";

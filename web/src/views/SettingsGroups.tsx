@@ -384,7 +384,7 @@ export const CONTROLS: Controls = {
     const mine = cleanSwitches(settingsData(v).squadFeatures);
     return <SetRow e={e} right={<OnOff label={e.name} on={feature("tz-focus")} ready={v.status === "unlocked"} set={(on) => save({ squadFeatures: { ...mine, "tz-focus": on } })} />} />;
   },
-  "auto-reset": function Reset({ e }) { return <SetRow e={e} body={<AutoResetSetting className="gs-reset" st={settingsData(useVault())} save={save} />} open />; },
+  "auto-reset": function Reset({ e }) { return <SetRow e={e} body={<AutoResetSetting className="gs-reset" st={settingsData(useVault())} save={save} onCountdown={() => openSettings("countdown", { jump: "cd-mode" })} />} open />; },
   "day-ends": function DayEnds({ e }) {
     const v = settingsData(useVault()).dayEndsHour ?? DAY_ENDS_DEFAULT;
     return <SetRow e={e} right={

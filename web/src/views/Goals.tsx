@@ -1,28 +1,30 @@
 // Goals timeline: the developer's goals on three lanes that share one time line.
 //   Macro: the big ones, across months (the year).   Meso: month by month.   Micro: week by week.
-// Click an empty spot in a lane to add a goal there; drag a goal to move it, drag its ends to
-// stretch it; click it to rename, recolour or delete. Swipe (or drag the background) to move
-// through time, pinch or use the slider to zoom from a few weeks to whole years.
-// Opens from the map button in the Tab list's Timelines panel, and in the To-do page's Map.
+// Click an empty spot in a lane and a light ghost shows where a goal would go, with a "+ New goal" button: only that
+// button, or Enter, adds it (Jan, PS 1.72: "right now when you just click once it already creates a task"). Drag the
+// ghost's ends to change its days first; Esc or a click anywhere else puts it away. A goal closed with no name and no
+// notes is not kept. Drag a goal to move it, drag its ends to stretch it; click it to rename, recolour or delete.
+// Swipe (or drag the background) to move through time, pinch or use the slider to zoom from a few weeks to whole years.
+// Opens from the map button in the Tab list's Timelines panel, and in the To-do page's Map. An AI can manage the goals
+// too, through the AI task API (core/taskapi.ts, /v1/goals). The rules both share: core/goals.ts.
 // "How it works" opens a pop-up with the video the idea came from (GoalsVideo below).
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { Goal } from "../core/model";
+import { GOAL_COLORS, GOAL_LEVELS, GOAL_NOTE_MAX, GOAL_TITLE_MAX, blankGoal, nextGoalColor, spanAt } from "../core/goals";
 import { GOALS_VIDEO, canEmbedVideo } from "../core/goalsvideo";
 import { sfx } from "../ui/sfx";
 import "./goals.css";
 
+export { GOAL_COLORS };
 const DAY = 86400000;
-export const GOAL_COLORS = ["#EC4E86", "#A855F7", "#38BDF8", "#34D399", "#FBBF24", "#F97316", "#F472B6", "#818CF8"];
-const LANES: { level: Goal["level"]; title: string; sub: string }[] = [
-  { level: "macro", title: "Macro", sub: "the big goals" },
-  { level: "meso", title: "Meso", sub: "month by month" },
-  { level: "micro", title: "Micro", sub: "week by week" },
-];
+const LANES = GOAL_LEVELS;
 const ROW = 38, LANE_PAD = 10, HEAD = 58;
 const iso = (t: number) => { const d = new Date(t); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
 const at = (s: string) => { const [y, m, d] = s.split("-").map(Number); return new Date(y, m - 1, d).getTime(); };
 const days = (a: number, b: number) => Math.round((b - a) / DAY);
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const dayLabel = (s: string) => { const d = new Date(at(s)); return `${d.getDate()} ${MONTHS[d.getMonth()]}`; };
+const GHOST = "ghost";   // the drag id of the ghost
 
 /** Stack goals that overlap into rows, in start order. */
 function stack(list: Goal[]) {
@@ -38,23 +40,83 @@ function stack(list: Goal[]) {
   return { rowOf: out, rows: Math.max(1, rows.length) };
 }
 
+/** A goal not added yet: where it would go. */
+type Ghost = { level: Goal["level"]; start: string; end: string };
+
+/** Esc steps back one thing inside the Timeline: the ghost, then the open goal. The window (or the map) around it asks
+ *  first, and closes itself only when this answers false. */
+let escStep: (() => boolean) | null = null;
+export const goalsEsc = (): boolean => escStep?.() ?? false;
+
 export function GoalsTimeline({ goals, onSave }: { goals: Goal[]; onSave: (list: Goal[]) => void }) {
   const scroller = useRef<HTMLDivElement>(null);
   const now = Date.now();
   const thisYear = new Date().getFullYear();
+  // The goals as last saved from here, so two quick changes never start from the same old copy.
+  const [prevGoals, setPrevGoals] = useState(goals);
+  const [mine, setMine] = useState(goals);
+  if (prevGoals !== goals) { setPrevGoals(goals); setMine(goals); }
+  const mineRef = useRef(mine);
+  mineRef.current = mine;
+  const save = (next: Goal[]) => { mineRef.current = next; setMine(next); onSave(next); };
+  const saveRef = useRef(save);
+  saveRef.current = save;
   // The canvas: from January last year to December the year after next (more if goals reach further).
   const range = useMemo(() => {
     let a = new Date(thisYear - 1, 0, 1).getTime(), b = new Date(thisYear + 2, 11, 31).getTime();
-    for (const g of goals) { a = Math.min(a, at(g.start) - 31 * DAY); b = Math.max(b, at(g.end) + 31 * DAY); }
+    for (const g of mine) { a = Math.min(a, at(g.start) - 31 * DAY); b = Math.max(b, at(g.end) + 31 * DAY); }
     return { a, b };
-  }, [goals, thisYear]);
+  }, [mine, thisYear]);
   const [ppd, setPpd] = useState(12);            // pixels per day: the zoom
-  const [sel, setSel] = useState<string | null>(null);
+  const [sel, setSelState] = useState<string | null>(null);
+  const selRef = useRef<string | null>(null);
+  const [ghost, setGhostState] = useState<Ghost | null>(null);
+  const ghostRef = useRef<Ghost | null>(null);
+  const setGhost = (g: Ghost | null) => { ghostRef.current = g; setGhostState(g); };
   const [live, setLive] = useState<Goal[] | null>(null);   // goals while dragging (saved on release)
   const [video, setVideo] = useState(false);
-  const list = live ?? goals;
+  const newBtn = useRef<HTMLButtonElement>(null);
+  const draft = useRef<{ id: string; title: string; note: string } | null>(null);   // what the editor holds right now
+  const list = live ?? mine;
   const xOf = (t: number) => ((t - range.a) / DAY) * ppd;
   const width = days(range.a, range.b) * ppd;
+
+  /** The goals as they should be once the open goal closes: without it when nothing was typed in it, else with what is
+   *  typed in its name and notes right now (Esc or Close can come before the field saves on its own). */
+  const settle = (all: Goal[]): Goal[] => {
+    const id = selRef.current;
+    const g = id ? all.find((x) => x.id === id) : undefined;
+    if (!g) return all;
+    const d = draft.current?.id === id ? draft.current : { title: g.title, note: g.note ?? "" };
+    if (blankGoal(d.title, d.note)) return all.filter((x) => x.id !== id);
+    const title = d.title.trim().slice(0, GOAL_TITLE_MAX), note = d.note.trim().slice(0, GOAL_NOTE_MAX) || null;
+    return title === g.title && note === (g.note ?? null) ? all : all.map((x) => (x.id === id ? { ...x, title, note } : x));
+  };
+  /** Open another goal (or none). A goal closed with nothing in it is not kept. */
+  const setSel = (next: string | null) => {
+    if (selRef.current && selRef.current !== next) {
+      const kept = settle(mineRef.current);
+      if (kept !== mineRef.current) save(kept);
+      draft.current = null;
+    }
+    selRef.current = next;
+    setSelState(next);
+  };
+  const setSelRef = useRef(setSel);
+  setSelRef.current = setSel;
+  const settleRef = useRef(settle);
+  settleRef.current = settle;
+  // Closing the whole Timeline closes the open goal too.
+  useEffect(() => () => { const all = mineRef.current, kept = settleRef.current(all); if (kept !== all) saveRef.current(kept); }, []);
+  useEffect(() => {
+    const step = () => {
+      if (ghostRef.current) { setGhost(null); return true; }
+      if (selRef.current) { setSelRef.current(null); return true; }
+      return false;
+    };
+    escStep = step;
+    return () => { if (escStep === step) escStep = null; };
+  });
 
   // Open on October this year (or the current month) to the end of the year, filling the width.
   const first = useRef(true);
@@ -110,14 +172,14 @@ export function GoalsTimeline({ goals, onSave }: { goals: Goal[]; onSave: (list:
     for (let t = mon.getTime(); t < range.b; t += 7 * DAY) weeks.push({ t, x: xOf(t) });
   }
 
-  // Drag: move a goal, or stretch it from either end. Snaps to whole days.
-  const drag = useRef<{ id: string; mode: "move" | "start" | "end"; x: number; g: Goal; moved: boolean } | null>(null);
+  // Drag: move a goal (or the ghost), or stretch it from either end. Snaps to whole days.
+  const drag = useRef<{ id: string; mode: "move" | "start" | "end"; x: number; g: { start: string; end: string }; moved: boolean } | null>(null);
   const pan = useRef<{ x: number; left: number } | null>(null);
   const panned = useRef(false);   // the background was dragged: that release is not a click to add
-  const onGoalDown = (e: React.PointerEvent, g: Goal, mode: "move" | "start" | "end") => {
+  const onGoalDown = (e: React.PointerEvent, g: { id: string; start: string; end: string }, mode: "move" | "start" | "end") => {
     e.stopPropagation();
     (e.currentTarget as Element).setPointerCapture(e.pointerId);
-    drag.current = { id: g.id, mode, x: e.clientX, g, moved: false };
+    drag.current = { id: g.id, mode, x: e.clientX, g: { start: g.start, end: g.end }, moved: false };
   };
   const onMove = (e: React.PointerEvent) => {
     const d = drag.current;
@@ -129,7 +191,8 @@ export function GoalsTimeline({ goals, onSave }: { goals: Goal[]; onSave: (list:
       if (d.mode === "move") { s += dd * DAY; en += dd * DAY; }
       else if (d.mode === "start") s = Math.min(en, s + dd * DAY);
       else en = Math.max(s, en + dd * DAY);
-      setLive(goals.map((g) => g.id === d.id ? { ...g, start: iso(s), end: iso(en) } : g));
+      if (d.id === GHOST) { const gh = ghostRef.current; if (gh) setGhost({ ...gh, start: iso(s), end: iso(en) }); return; }
+      setLive(mineRef.current.map((g) => g.id === d.id ? { ...g, start: iso(s), end: iso(en) } : g));
       return;
     }
     if (pan.current && scroller.current) {
@@ -141,24 +204,68 @@ export function GoalsTimeline({ goals, onSave }: { goals: Goal[]; onSave: (list:
     const d = drag.current;
     drag.current = null;
     pan.current = null;
-    if (d && d.moved && live) { onSave(live); sfx.drop(); }
-    else if (d) { setSel(d.id); sfx.click(); }
+    if (d?.id === GHOST) return;
+    if (d && d.moved && live) { save(live); sfx.drop(); }
+    else if (d) { setGhost(null); setSel(d.id); sfx.click(); }
     setLive(null);
   };
-  const addAt = (e: React.MouseEvent, level: Goal["level"]) => {
+  // A click on an empty spot only shows the ghost there; nothing is added yet.
+  const placeAt = (e: React.MouseEvent, level: Goal["level"]) => {
     if (panned.current) return;
     const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
-    const t = range.a + ((e.clientX - r.left) / ppd) * DAY;
-    const d = new Date(t);
-    let s: number, en: number;
-    if (level === "micro") { const m = new Date(d); m.setDate(d.getDate() - ((d.getDay() + 6) % 7)); s = m.getTime(); en = s + 6 * DAY; }
-    else if (level === "meso") { s = new Date(d.getFullYear(), d.getMonth(), 1).getTime(); en = new Date(d.getFullYear(), d.getMonth() + 1, 0).getTime(); }
-    else { s = new Date(d.getFullYear(), d.getMonth(), 1).getTime(); en = new Date(d.getFullYear(), d.getMonth() + 3, 0).getTime(); }
-    const g: Goal = { id: crypto.randomUUID(), title: "", level, start: iso(s), end: iso(en), color: GOAL_COLORS[goals.length % GOAL_COLORS.length], createdAt: new Date().toISOString() };
-    onSave([...goals, g]);
-    setSel(g.id);
+    setSel(null);
+    setGhost({ level, ...spanAt(level, range.a + ((e.clientX - r.left) / ppd) * DAY) });
+    sfx.click();
+  };
+  /** "+ New goal" or Enter: the ghost becomes a goal, and its editor opens to name it. */
+  const create = () => {
+    const gh = ghostRef.current;
+    if (!gh) return;
+    const base = settle(mineRef.current);
+    const g: Goal = { id: crypto.randomUUID(), title: "", level: gh.level, start: gh.start, end: gh.end, color: nextGoalColor(base), createdAt: new Date().toISOString() };
+    save([...base, g]);
+    setGhost(null);
+    draft.current = null;
+    selRef.current = g.id;
+    setSelState(g.id);
     sfx.drop();
   };
+  const createRef = useRef(create);
+  createRef.current = create;
+  // While the ghost shows: the button takes the focus (so Enter adds it), Enter adds it from anywhere but a field, and a
+  // click anywhere but the ghost puts it away (a click on another empty spot moves it there instead).
+  useEffect(() => {
+    if (!ghost) return;
+    newBtn.current?.focus({ preventScroll: true });
+    const key = (e: KeyboardEvent) => {
+      if (e.key !== "Enter" || e.defaultPrevented) return;
+      const t = e.target as HTMLElement | null;
+      if (t && (t.closest("input, textarea, select, button, [contenteditable='true']"))) return;
+      e.preventDefault();
+      createRef.current();
+    };
+    const click = (e: MouseEvent) => {
+      const t = e.target instanceof Element ? e.target : null;
+      if (!t || t.closest(".gt-ghost, .gt-new") || t.classList.contains("gt-lane")) return;
+      if (panned.current && t.closest(".gt-scroll")) return;   // the end of a drag through time
+      setGhost(null);
+    };
+    window.addEventListener("keydown", key);
+    document.addEventListener("click", click, true);
+    return () => { window.removeEventListener("keydown", key); document.removeEventListener("click", click, true); };
+  }, [ghost !== null]);   // eslint-disable-line react-hooks/exhaustive-deps
+
+  /** Each lane's rows, with the first row the ghost fits in (a new one below when none is free). */
+  const lanes = LANES.map((l) => {
+    const goalsHere = list.filter((g) => g.level === l.level);
+    const { rowOf, rows } = stack(goalsHere);
+    let ghostRow = -1;
+    if (ghost && ghost.level === l.level) {
+      ghostRow = 0;
+      while (goalsHere.some((g) => rowOf.get(g.id) === ghostRow && g.start <= ghost.end && g.end >= ghost.start)) ghostRow++;
+    }
+    return { ...l, goalsHere, rowOf, ghostRow, rows: Math.max(rows, ghostRow + 1) };
+  });
 
   const selected = list.find((g) => g.id === sel) || null;
   const zoomPct = Math.round((Math.log(ppd / 1.2) / Math.log(80 / 1.2)) * 100);
@@ -183,10 +290,7 @@ export function GoalsTimeline({ goals, onSave }: { goals: Goal[]; onSave: (list:
       </div>
       <div className="gt-body">
         <div className="gt-lanes-h" style={{ paddingTop: HEAD }}>
-          {LANES.map((l) => {
-            const rows = stack(list.filter((g) => g.level === l.level)).rows;
-            return <div key={l.level} className={`gt-lh ${l.level}`} style={{ height: rows * ROW + LANE_PAD * 2 + 8 }}><b>{l.title}</b><span>{l.sub}</span></div>;
-          })}
+          {lanes.map((l) => <div key={l.level} className={`gt-lh ${l.level}`} style={{ height: l.rows * ROW + LANE_PAD * 2 + 8 }}><b>{l.title}</b><span>{l.sub}</span></div>)}
         </div>
         <div className="gt-scroll" ref={scroller}
           onPointerDown={(e) => { panned.current = false; if (!drag.current) pan.current = { x: e.clientX, left: scroller.current!.scrollLeft }; }}
@@ -198,49 +302,69 @@ export function GoalsTimeline({ goals, onSave }: { goals: Goal[]; onSave: (list:
             </div>
             {months.map((m) => <div key={"g" + m.t} className="gt-mline" style={{ left: m.x }} />)}
             <div className="gt-today" style={{ left: xOf(now) }}><span>Today</span></div>
-            {LANES.map((l) => {
-              const mine = list.filter((g) => g.level === l.level);
-              const { rowOf, rows } = stack(mine);
-              return (
-                <div key={l.level} className={`gt-lane ${l.level}`} style={{ height: rows * ROW + LANE_PAD * 2 + 8 }}
-                  onClick={(e) => { if (e.target === e.currentTarget) addAt(e, l.level); }} title="Click to add a goal here">
-                  {mine.map((g) => {
-                    const x0 = xOf(at(g.start)), x1 = xOf(at(g.end) + DAY), w = Math.max(10, x1 - x0);
-                    return (
-                      <div key={g.id} className={`gt-goal${sel === g.id ? " sel" : ""}${g.done ? " done" : ""}${live ? " dragging" : ""}`}
-                        style={{ left: x0, width: w, top: LANE_PAD + (rowOf.get(g.id) || 0) * ROW, ["--c" as string]: g.color }}
-                        onPointerDown={(e) => onGoalDown(e, g, "move")} title={`${g.title || "Untitled"}: ${g.start} to ${g.end}`}>
-                        <span className="gt-h gt-h-l" onPointerDown={(e) => onGoalDown(e, g, "start")} />
-                        <span className="gt-t">{g.done ? "✓ " : ""}{g.title || "Untitled goal"}</span>
-                        <span className="gt-h gt-h-r" onPointerDown={(e) => onGoalDown(e, g, "end")} />
-                      </div>
-                    );
-                  })}
-                </div>
-              );
-            })}
+            {lanes.map((l) => (
+              <div key={l.level} className={`gt-lane ${l.level}`} style={{ height: l.rows * ROW + LANE_PAD * 2 + 8 }}
+                onClick={(e) => { if (e.target === e.currentTarget) placeAt(e, l.level); }} title="Click to place a new goal here">
+                {l.goalsHere.map((g) => {
+                  const x0 = xOf(at(g.start)), x1 = xOf(at(g.end) + DAY), w = Math.max(10, x1 - x0);
+                  return (
+                    <div key={g.id} className={`gt-goal${sel === g.id ? " sel" : ""}${g.done ? " done" : ""}${live ? " dragging" : ""}`}
+                      style={{ left: x0, width: w, top: LANE_PAD + (l.rowOf.get(g.id) || 0) * ROW, ["--c" as string]: g.color }}
+                      onPointerDown={(e) => onGoalDown(e, g, "move")} title={`${g.title || "Untitled"}: ${g.start} to ${g.end}`}>
+                      <span className="gt-h gt-h-l" onPointerDown={(e) => onGoalDown(e, g, "start")} />
+                      <span className="gt-t">{g.done ? "✓ " : ""}{g.title || "Untitled goal"}</span>
+                      <span className="gt-h gt-h-r" onPointerDown={(e) => onGoalDown(e, g, "end")} />
+                    </div>
+                  );
+                })}
+                {ghost && ghost.level === l.level ? (() => {
+                  const x0 = xOf(at(ghost.start)), x1 = xOf(at(ghost.end) + DAY), w = Math.max(10, x1 - x0);
+                  const top = LANE_PAD + Math.max(0, l.ghostRow) * ROW;
+                  const inside = w >= 150;
+                  const btn = (
+                    <button ref={newBtn} type="button" className={`gt-new${inside ? "" : " out"}`} style={inside ? undefined : { left: x1 + 6, top: top + 2, ["--c" as string]: nextGoalColor(mine) }}
+                      onPointerDown={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); create(); }}>+ New goal</button>
+                  );
+                  return <>
+                    <div className="gt-ghost" style={{ left: x0, width: w, top, ["--c" as string]: nextGoalColor(mine) }} aria-label={`New goal here: ${ghost.start} to ${ghost.end}`}
+                      onPointerDown={(e) => onGoalDown(e, { id: GHOST, ...ghost }, "move")}>
+                      <span className="gt-h gt-h-l" onPointerDown={(e) => onGoalDown(e, { id: GHOST, ...ghost }, "start")} />
+                      {inside ? btn : null}
+                      <span className="gt-ghost-t">{dayLabel(ghost.start)} to {dayLabel(ghost.end)}</span>
+                      <span className="gt-h gt-h-r" onPointerDown={(e) => onGoalDown(e, { id: GHOST, ...ghost }, "end")} />
+                    </div>
+                    {inside ? null : btn}
+                  </>;
+                })() : null}
+              </div>
+            ))}
           </div>
         </div>
       </div>
       {selected ? (
-        <GoalEditor key={selected.id} g={selected} onChange={(p) => onSave(goals.map((g) => g.id === selected.id ? { ...g, ...p } : g))}
-          onDelete={() => { onSave(goals.filter((g) => g.id !== selected.id)); setSel(null); }} onClose={() => setSel(null)} />
+        <GoalEditor key={selected.id} g={selected} onDraft={(title, note) => { draft.current = { id: selected.id, title, note }; }}
+          onChange={(p) => save(mineRef.current.map((g) => g.id === selected.id ? { ...g, ...p } : g))}
+          onDelete={() => { save(mineRef.current.filter((g) => g.id !== selected.id)); selRef.current = null; draft.current = null; setSelState(null); }}
+          onClose={() => setSel(null)} />
+      ) : ghost ? (
+        <p className="gt-hint">Drag its ends to change the days. <b>+ New goal</b> or Enter adds it; Esc or a click anywhere else puts it away.</p>
       ) : (
-        <p className="gt-hint">Click an empty spot in a lane to add a goal. Drag a goal to move it, drag its ends to stretch it, click it to edit. Swipe or drag the background to move through time, pinch or use the slider to zoom.</p>
+        <p className="gt-hint">Click an empty spot in a lane, then <b>+ New goal</b> to add a goal there. Drag a goal to move it, drag its ends to stretch it, click it to edit. Swipe or drag the background to move through time, pinch or use the slider to zoom.</p>
       )}
       {video && <GoalsVideo onClose={() => setVideo(false)} />}
     </div>
   );
 }
 
-function GoalEditor({ g, onChange, onDelete, onClose }: { g: Goal; onChange: (p: Partial<Goal>) => void; onDelete: () => void; onClose: () => void }) {
+function GoalEditor({ g, onChange, onDraft, onDelete, onClose }: { g: Goal; onChange: (p: Partial<Goal>) => void; onDraft: (title: string, note: string) => void; onDelete: () => void; onClose: () => void }) {
   const [title, setTitle] = useState(g.title);
   const [note, setNote] = useState(g.note || "");
   const [sure, setSure] = useState(false);
+  useEffect(() => { onDraft(title, note); });
   return (
     <div className="gt-edit" style={{ ["--c" as string]: g.color }} onKeyDown={(e) => { if (e.key === "Escape") { e.stopPropagation(); onClose(); } }}>
       <input className="gt-in gt-title" value={title} autoFocus={!g.title} placeholder="Name this goal" onChange={(e) => setTitle(e.target.value)}
-        onBlur={() => { if (title.trim() !== g.title) onChange({ title: title.trim().slice(0, 120) }); }}
+        onBlur={() => { if (title.trim() !== g.title) onChange({ title: title.trim().slice(0, GOAL_TITLE_MAX) }); }}
         onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }} />
       <div className="gt-row">
         <div className="gt-levels" role="radiogroup" aria-label="Lane">
@@ -253,7 +377,7 @@ function GoalEditor({ g, onChange, onDelete, onClose }: { g: Goal; onChange: (p:
         <label className="gt-date">To <input type="date" value={g.end} onChange={(e) => { if (e.target.value) onChange({ end: e.target.value < g.start ? g.start : e.target.value }); }} /></label>
       </div>
       <textarea className="gt-in" rows={2} value={note} placeholder="Notes: what done looks like" onChange={(e) => setNote(e.target.value)}
-        onBlur={() => { if (note.trim() !== (g.note || "")) onChange({ note: note.trim().slice(0, 1000) || null }); }} />
+        onBlur={() => { if (note.trim() !== (g.note || "")) onChange({ note: note.trim().slice(0, GOAL_NOTE_MAX) || null }); }} />
       <div className="gt-row">
         <button type="button" className={`gt-btn${g.done ? " on" : ""}`} onClick={() => { sfx.done(); onChange({ done: !g.done }); }}>{g.done ? "Done ✓" : "Mark done"}</button>
         <span style={{ flex: 1 }} />
@@ -310,7 +434,8 @@ function GoalsVideo({ onClose }: { onClose: () => void }) {
 export function GoalsWindow({ goals, onSave, onClose }: { goals: Goal[]; onSave: (list: Goal[]) => void; onClose: () => void }) {
   useEffect(() => {
     // While the video pop-up is open, Esc closes only the pop-up (its own key handler).
-    const key = (e: KeyboardEvent) => { if (e.key === "Escape" && !e.defaultPrevented && !videoOpen) { e.stopPropagation(); onClose(); } };
+    // Inside the Timeline Esc steps back one at a time (the ghost, then the open goal); then it closes the window.
+    const key = (e: KeyboardEvent) => { if (e.key === "Escape" && !e.defaultPrevented && !videoOpen) { e.stopPropagation(); if (!goalsEsc()) onClose(); } };
     window.addEventListener("keydown", key, true);
     return () => window.removeEventListener("keydown", key, true);
   }, [onClose]);

@@ -1,13 +1,14 @@
-// Launching a screen from the wheel (PS 1.67): it zooms out of the spot the item sat on, like opening an app on an iPhone, and
+// Launching a screen from the phone menu (the wheel in PS 1.67, the top left menu since 1.72, gos/navitems.ts): it zooms out
+// of the spot the item sat on, like opening an app on an iPhone, and
 // when it closes (its X, Back or Esc) a card in its colour zooms back into that spot. Only transform and opacity animate, on the
 // compositor, so it holds 60 fps; reduced motion turns both into a short fade.
 //
 // It works on any screen without touching it: it notes which panel layers are open, runs the item's action, and the first new
 // layer that shows is the screen (core/phonepanels.ts lists them). Pages (Plan, Inbox, Time zones) zoom the home itself.
 import { PANEL_SELECTOR } from "../core/phonepanels";
-import type { Pt } from "./wheel";
+import type { Pt } from "./navitems";
 
-/** Every layer a wheel item can open. Goals and the screen time card are not in the panel list (they never blocked swipes). */
+/** Every layer a menu item can open. Goals and the screen time card are not in the panel list (they never blocked swipes). */
 export const LAUNCH_SELECTOR = `${PANEL_SELECTOR}, .gt-scrim, .gos-home .tm-st.open .tm-st-pop`;
 
 const reduced = () => { try { return matchMedia("(prefers-reduced-motion: reduce)").matches; } catch { return false; } };
@@ -19,7 +20,7 @@ const shownEl = (el: Element) => {
 };
 
 // ---------- windows that open with morph() (views/DimensionX.tsx): Settings, Dimension X, Numerology, Series map, Brief... ----------
-// They animate themselves, so the wheel hands morph() the spot instead of animating on top of it: the window zooms out of the
+// They animate themselves, so the menu hands morph() the spot instead of animating on top of it: the window zooms out of the
 // item's spot and, when it closes, zooms back into it (no card needed, it is the real window).
 const MORPH_LAYERS = ".dx-layer, .nu-layer, .sp-layer, .sb-layer, .nt-layer, .pm-layer";
 let pending: { at: Pt; size: number; until: number } | null = null;
@@ -29,10 +30,10 @@ const zoomFrames = (r: DOMRect, at: Pt, size: number) => {
   return { small: { transform: `translate3d(${at.x - (r.left + r.width / 2)}px, ${at.y - (r.top + r.height / 2)}px, 0) scale(${s})`, transformOrigin: "50% 50%" },
     full: { transform: "translate3d(0, 0, 0) scale(1)", transformOrigin: "50% 50%" } };
 };
-/** Called by morph() first. Returns its animation when the wheel launched this window (or is closing one it launched), else null
- *  and morph() does what it always did. Only on the phone with the wheel on. */
-export function wheelMorph(win: HTMLElement, dir: "in" | "out"): Promise<void> | null {
-  if (typeof document === "undefined" || !document.documentElement.hasAttribute("data-gos-wheel")) return null;
+/** Called by morph() first. Returns its animation when the menu launched this window (or is closing one it launched), else null
+ *  and morph() does what it always did. Only on the phone (html[data-gos-launch], set by gos/GosLayer.tsx). */
+export function launchMorph(win: HTMLElement, dir: "in" | "out"): Promise<void> | null {
+  if (typeof document === "undefined" || !document.documentElement.hasAttribute("data-gos-launch")) return null;
   const r = win.getBoundingClientRect();
   if (dir === "in") {
     if (!pending || performance.now() > pending.until) return null;
@@ -124,10 +125,10 @@ function track(el: HTMLElement, at: Pt, size: number) {
   live = l;
 }
 
-/** Is a screen the wheel launched still open. */
+/** Is a screen the menu launched still open. */
 export const launchedOpen = () => !!live && live.el.isConnected;
 
-/** Close the screen the wheel launched last (a new launch replaces it, the way an iPhone leaves one app for another). */
+/** Close the screen the menu launched last (a new launch replaces it, the way an iPhone leaves one app for another). */
 export function closeLaunched(): boolean {
   if (!launchedOpen()) return false;
   live!.quiet = true;
@@ -153,7 +154,7 @@ export function launch(at: Pt, size: number, act: () => void, how: "layer" | "ho
     const el = Array.from(document.querySelectorAll<HTMLElement>(LAUNCH_SELECTOR)).find((e) => !before.has(e) && shownEl(e));
     if (el) {
       mo?.disconnect();
-      if (el.matches(MORPH_LAYERS)) return true;   // morph() zooms it (wheelMorph above)
+      if (el.matches(MORPH_LAYERS)) return true;   // morph() zooms it (launchMorph above)
       pending = null;
       zoomIn(el, at, size); track(el, at, size);
       return true;

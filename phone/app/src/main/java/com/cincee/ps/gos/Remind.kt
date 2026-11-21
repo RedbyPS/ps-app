@@ -171,6 +171,7 @@ object Remind {
         sp(c).edit().putString("ringId", r.id).putLong("ringStart", now).apply()
         Plog.i("rem: ${r.id} rings ($from)")
         startRingService(c)
+        RingScreen.bring(c, RemRingActivity::class.java, RING_CH, "rem")   // 1.72: the card at once, over other apps and the lock screen
     }
     private fun startRingService(c: Context) {
         runCatching { c.startForegroundService(Intent(c, RemRingService::class.java)) }.onFailure {
@@ -244,7 +245,7 @@ object Remind {
             .addRemoteInput(RemoteInput.Builder("word").setLabel("Type ${r.word}").build())
             .setAllowGeneratedReplies(false).build())
         nm(c).notify(tag(r.id), NID, b.build())
-        Island.reminder(c, r.id, r.pill, r.text, r.task.takeIf { RemClock.okTask(it) })   // V1.59: the island pops it too
+        Island.reminder(c, r.id, r.pill, r.text)   // V1.59: the island pops it too (1.72: a tap opens the card in PS)
         return true
     }
     private fun away(c: Context, id: String) {

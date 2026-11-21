@@ -135,6 +135,19 @@ ok("the log read back is checked, and kept under its cap", () => {
   assert.equal(Object.keys(B.observeP1(null, many, NOW).log.e).length, B.LOG_MAX);
 });
 
+ok("PS 1.72 (Jan): the panel opens The G Squad from its heading and from a double click on a person", () => {
+  const v = src("views/SquadP1Panel.tsx");
+  assert.match(v, /export const OPEN_SQUAD = "Open The G Squad";/);
+  const open = v.slice(v.indexOf("function OpenSquad()"), v.indexOf("const Flame"));
+  assert.match(open, /openGSquad\(true\)/, "the same action as the top right button");
+  assert.match(open, /<TopIcon id="gsquad"/, "the top right button's own icon");
+  assert.equal((v.match(/<span>Squad Priority 1<\/span><OpenSquad \/><\/header>/g) ?? []).length, 1, "the plain panel's heading");
+  assert.equal((v.match(/>Squad Priority 1<\/span><OpenSquad \/><\/header>/g) ?? []).length, 2, "both headings");
+  const row = v.slice(v.indexOf('className={`sqb-row'), v.indexOf('<span className="sqb-pl'));
+  assert.match(row, /onClick=\{\(\) => \{ sfx\.click\(\); setOpenId\(isOpen \? null : p\.member\); \}\}/, "a single click still shows their Priority 1s");
+  assert.match(row, /onDoubleClick=\{\(\) => \{ setOpenId\(isOpen \? p\.member : null\); openGSquad\(true, "leaderboard"\); \}\}/, "a double click opens it, the row as it was");
+  assert.doesNotMatch(v.slice(v.indexOf('<section className="sqp1 sqb"'), v.indexOf("<ul ref={listRef}")), /<section[^>]*on(Double)?Click/, "nothing on the panel's empty space");
+});
 ok("wiring: the board is gated, keeps its log on this device only, the Tasks screen opens on All", () => {
   const eng = src("squad/engine.ts");
   assert.match(eng, /feature\(P1_FEATURE\) && feature\(BOARD_FEATURE\)/);

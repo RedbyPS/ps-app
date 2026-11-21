@@ -16,7 +16,6 @@
 // Everything runs on its own queue; only the card itself is drawn on the main thread.
 import AppKit
 import ApplicationServices
-import CoreAudio
 import WebKit
 
 final class AysPanel: NSPanel {
@@ -59,7 +58,7 @@ final class AreYouSure: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
     return (a?.bundleIdentifier, a?.processIdentifier ?? 0)
   }
   var titleNow: (pid_t) -> String? = { AreYouSure.focusedTitle($0) }
-  var micNow: () -> Bool = { AreYouSure.micInUse() }
+  var micNow: () -> Bool = { Mic.inUse }   // the audio queue's last known state (AudioQueue.swift), never waits
   var clock: () -> Date = { Date() }
   /// A calendar meeting is on right now (from the main window). Read and written on q.
   private var meeting = false
@@ -132,19 +131,6 @@ final class AreYouSure: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
     guard AXUIElementCopyAttributeValue(w as! AXUIElement, kAXTitleAttribute as CFString, &t) == .success else { return nil }
     return t as? String
   }
-  /// Is any app using the microphone right now (a call)? Only whether the input device runs, never any sound.
-  static func micInUse() -> Bool {
-    var dev = AudioObjectID(0)
-    var size = UInt32(MemoryLayout<AudioObjectID>.size)
-    var addr = AudioObjectPropertyAddress(mSelector: kAudioHardwarePropertyDefaultInputDevice, mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
-    guard AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &addr, 0, nil, &size, &dev) == noErr, dev != 0 else { return false }
-    var running = UInt32(0)
-    size = UInt32(MemoryLayout<UInt32>.size)
-    addr.mSelector = kAudioDevicePropertyDeviceIsRunningSomewhere
-    guard AudioObjectGetPropertyData(dev, &addr, 0, nil, &size, &running) == noErr else { return false }
-    return running != 0
-  }
-
   // ---------- start ----------
   func start(testDir: String? = nil) {
     self.testDir = testDir
@@ -296,7 +282,8 @@ final class AreYouSure: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
     let c = WKWebViewConfiguration()
     c.websiteDataStore = .nonPersistent()
     c.userContentController.add(self, name: "ays")
-    let w = WKWebView(frame: NSRect(origin: .zero, size: AreYouSure.size), configuration: c)
+    // The first click counts (a plain WKWebView dropped it). The countdown gate on Continue and the phrase rules stay in the page.
+    let w = ClickThroughWebView(frame: NSRect(origin: .zero, size: AreYouSure.size), configuration: c)
     w.setValue(false, forKey: "drawsBackground")
     w.navigationDelegate = self
     let p = AysPanel(contentRect: NSRect(origin: .zero, size: AreYouSure.size), styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)

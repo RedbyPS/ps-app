@@ -9,7 +9,7 @@ let n = 0;
 const ok = (name: string, fn: () => unknown) => { fn(); n++; console.log("ok -", name); };
 const TZ = "Asia/Dubai";                       // UTC+4, no daylight saving
 const at = (hm: string, day = "2026-11-03") => Date.parse(`${day}T${hm}:00+04:00`);
-const P = G.gymPrefs(undefined);
+const P = G.gymPrefs({});   // a saved record with nothing in it: the defaults (1.72: no record at all is off)
 
 const OLD = { end: "", nag: false, nagStart: "10:00", nagEvery: 15, ringAt: "" };
 ok("defaults: on, every day, 08:00, nag mode off, no end or ring time of its own", () => {
@@ -266,7 +266,20 @@ ok("a gym saved for the night gives a plan with night times only, the default on
   assert.ok(night.items.length > 0);
   assert.ok(night.items.every((i) => new Date(i.ring + 4 * 3_600_000).getUTCHours() === 22), "every ring is at 22:55 Dubai, none in the morning");
   assert.equal(night.time, "23:00");
-  assert.equal(G.gymPlan(G.gymPrefs(undefined, true), now, tz, []).time, "08:00", "an unsaved gym is the default, which is why it must not be handed over before the settings load");
+  assert.equal(G.gymPlan(G.gymPrefs({}, true), now, tz, []).time, "08:00", "a saved record with no time is the default, which is why it must not be handed over before the settings load");
+});
+ok("1.72: a gym reminder never saved is off, the developer's too: no 07:44 morning ring, no morning cards", () => {
+  const tz = "Asia/Dubai", now = Date.parse("2026-11-21T05:00:00+04:00");
+  for (const raw of [undefined, null, "x", 5]) {
+    const p = G.gymPrefs(raw, true);
+    assert.equal(p.on, false);
+    const plan = G.gymPlan(p, now, tz, []);
+    assert.equal(plan.on, false);
+    assert.equal(plan.items.length, 0, "the phone gets nothing to ring");
+    assert.equal(G.gymSteps(p, now, tz).length, 0, "the Mac gets no cards");
+  }
+  assert.equal(G.gymPrefs({ on: true, time: "08:00" }, true).on, true, "a morning gym that was saved still rings");
+  assert.equal(G.gymPrefs({ time: "23:00" }, true).on, true, "a saved record without on keeps the account's default");
 });
 
 ok("PS 1.68 Fitness loads faster: a pull opens its sealed rows at once and a pull asked for during a pull runs right after", async () => {

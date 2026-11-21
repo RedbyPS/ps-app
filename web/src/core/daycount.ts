@@ -2,10 +2,15 @@
 // no DOM, no clock of its own, so tests/daycount.test.ts checks every one.
 //
 // What it is:
-//  - A countdown in the Tab list between the headline and the list's name, to the end of the day. Default: on, the day ends at
-//    12:00 every day. The zone: the developer's account Asia/Dubai, everyone else the device's own (cdZone). All of it is in Settings,
-//    Countdown text (settings.countdown, synced like other settings, change only).
-//  - At zero it asks "End day now?" with Yes and "Give me 15 more mins". Yes only starts the next day's countdown: it never
+//  - A countdown in the Tab list between the headline and the list's name, to the end of the day. Default: on, and (PS 1.72, Jan
+//    via the developer 21 Nov 2026: "I think it should probably be setting both") the day ends at your reset time, Settings "Reset
+//    automatically at" (settings.autoResetAt, core/resetday.ts), in the reset's own zone (Your time zone), so one time sets both.
+//    Anyone who picked their own day end before 1.72 keeps it ("Every day at" or "A time for each day", 12:00 by default there),
+//    and so does the developer's account (his noon of 19 Nov, modeOf) until he picks another.
+//    The 1.70 zone rule stays for those: the developer's account Asia/Dubai, everyone else the device's own (cdZone). All of it is in
+//    Settings, Countdown text (settings.countdown, synced like other settings, change only).
+//  - At zero it asks "End day now?" with Yes and "Give me 15 more mins". With Reset automatically on (1.72): a day end at the reset
+//    itself never asks (the Reset ends the day), and a zero nobody answered lets go at the next automatic Reset (see cdNow). Yes only starts the next day's countdown: it never
 //    resets or changes the task list (the developer's answer). 15 more mins (and Esc) snoozes it and asks again. The answer is saved in the
 //    vault (settings.cdAns), so an answer on one device clears the card on the others (like the gym reminder).
 //  - Island reminders: every 3 hours by default, "You have 4h 12m left" with one button, Acknowledged (also in cdAns).
@@ -24,14 +29,15 @@ export const STALE_MS = 12 * H;
 export const EVERY_CHOICES = [1, 2, 3, 4, 6] as const;
 export const SIZE_MIN = 60, SIZE_MAX = 200;
 
-export type CdMode = "daily" | "week";
+export type CdMode = "reset" | "daily" | "week";
 export type CdFont = "rounded" | "system" | "mono" | "serif";
 export type CdAnim = "slide" | "flip" | "blur" | "pop" | "none";
 export type CdWeight = 400 | 500 | 600 | 700 | 800;
 
 export interface CdPrefs {
   on: boolean;
-  /** "daily": the same time every day. "week": a time for each day, Monday first ("" = that day has no end). */
+  /** "reset" (PS 1.72, the default): your reset time, Settings "Reset automatically at". "daily": the same time every day.
+   *  "week": a time for each day, Monday first ("" = that day has no end). */
   mode: CdMode;
   at: string;
   days: string[];
@@ -56,7 +62,7 @@ export interface CdPrefs {
 }
 
 export const CD_DEFAULTS: CdPrefs = {
-  on: true, mode: "daily", at: "12:00", days: ["12:00", "12:00", "12:00", "12:00", "12:00", "12:00", "12:00"], tz: "",
+  on: true, mode: "reset", at: "12:00", days: ["12:00", "12:00", "12:00", "12:00", "12:00", "12:00", "12:00"], tz: "",
   font: "rounded", color: "", weight: 700, size: 100, anim: "slide", lively: true, island: true, remind: true, every: 3, p1: true,
 };
 export const FONTS: { id: CdFont; label: string }[] = [
@@ -79,8 +85,16 @@ export const okHm = (v: unknown): v is string => typeof v === "string" && HM.tes
 const HEX = /^#[0-9a-f]{6}$/;
 const ZONE = /^[A-Za-z_]+(\/[A-Za-z0-9_+-]+){0,2}$|^UTC$/;
 
-/** Saved prefs (anything) to whole prefs: every unknown or broken value takes its default. */
-export function cleanCd(v: unknown): CdPrefs {
+/** The Day ends choice. Saved by 1.72 and later: as saved. Saved before 1.72 (no mode, as "daily" was the default then and only
+ *  changes were saved): a time of your own ("at") keeps "Every day at" with it; nothing set means you never picked a day end, so
+ *  it follows the reset time. The developer's account (`red`) keeps the 1.70 noon he chose on 19 Nov until he picks another Day ends: his
+ *  noon was the default then, so it was never saved and cannot be told apart from never picked. */
+function modeOf(o: Record<string, unknown>, red: boolean): CdMode {
+  if (o.mode === "week" || o.mode === "daily" || o.mode === "reset") return o.mode;
+  return okHm(o.at) || red ? "daily" : "reset";
+}
+/** Saved prefs (anything) to whole prefs: every unknown or broken value takes its default. `red`: the developer's account (modeOf). */
+export function cleanCd(v: unknown, red = false): CdPrefs {
   const o = v && typeof v === "object" ? (v as Record<string, unknown>) : {};
   const d = CD_DEFAULTS;
   const days = Array.isArray(o.days) && o.days.length === 7 ? o.days.map((x) => (x === "" || okHm(x) ? (x as string) : d.at)) : [...d.days];
@@ -89,7 +103,7 @@ export function cleanCd(v: unknown): CdPrefs {
   const color = typeof o.color === "string" && (o.color === "" || o.color === "accent" || HEX.test(o.color.toLowerCase())) ? o.color.toLowerCase() : d.color;
   return {
     on: o.on !== false,
-    mode: o.mode === "week" ? "week" : "daily",
+    mode: modeOf(o, red),
     at: okHm(o.at) ? o.at : d.at,
     days,
     tz: typeof o.tz === "string" && o.tz.length <= 64 && ZONE.test(o.tz) ? o.tz : "",
@@ -112,12 +126,23 @@ export function cdPatch(cur: CdPrefs, change: Partial<CdPrefs>): Partial<CdPrefs
   for (const k of Object.keys(CD_DEFAULTS) as (keyof CdPrefs)[]) {
     if (JSON.stringify(next[k]) !== JSON.stringify(CD_DEFAULTS[k])) (out as Record<string, unknown>)[k] = next[k];
   }
+  // A saved time with no mode reads as "Every day at" (a pick from before 1.72, modeOf), so a time kept while following the reset
+  // time saves its mode too; so does a Day ends picked now (on the developer's account no mode reads as Every day at).
+  if ((out.at !== undefined || "mode" in change) && out.mode === undefined) out.mode = next.mode;
   return out;
 }
 
-/** The zone the day ends in: the one picked, else the developer's Dubai on the developer's account, else the device's own. */
-export function cdZone(p: Pick<CdPrefs, "tz">, red: boolean, deviceTz: string): string {
-  return p.tz || (red ? RED_TZ : deviceTz || "UTC");
+/** The zone the day ends in: the one picked, else (following the reset time) the reset's own zone, Settings "Your time zone"
+ *  (`resetTz`, core/overdue.ts overdueZone), else the developer's Dubai on the developer's account, else the device's own. */
+export function cdZone(p: Pick<CdPrefs, "tz"> & { mode?: CdMode }, red: boolean, deviceTz: string, resetTz?: string): string {
+  if (p.tz) return p.tz;
+  if (p.mode === "reset" && resetTz) return resetTz;
+  return red ? RED_TZ : deviceTz || "UTC";
+}
+/** The prefs the clock maths reads: following the reset time is "the same time every day" at the reset time ("HH:MM",
+ *  core/resetday.ts resetAtOf: midnight when never set). */
+export function cdEffective(p: CdPrefs, resetAt: string): CdPrefs {
+  return p.mode === "reset" ? { ...p, mode: "daily", at: okHm(resetAt) ? resetAt : "00:00" } : p;
 }
 
 // ---------- time in a zone (Intl, so daylight saving is always right) ----------
@@ -208,13 +233,16 @@ export interface CdNow {
 const OFF: CdNow = { target: null, asking: false, endKey: null, snoozed: false };
 
 /** Where the countdown is now. `since`: when this device first ran it (ms); an end before that never asks (an update never fires an
- *  old one at once). */
-export function cdNow(p: CdPrefs, ans: CdAns, tz: string, now: number, since: number): CdNow {
+ *  old one at once). `firstReset` (PS 1.72, only while Reset automatically is on): the first automatic Reset at or after a moment.
+ *  The automatic Reset ends the day, so a day end right at it never asks "End day now?" and never sits at 0:00, and a zero nobody
+ *  answered lets go at the next Reset (Jan, 21 Nov 2026: 0:00 sat under his headline from noon). */
+export function cdNow(p: CdPrefs, ans: CdAns, tz: string, now: number, since: number, firstReset?: ((t: number) => number | null) | null): CdNow {
   if (!p.on) return OFF;
   const b = prevEnd(p, tz, now);
-  if (b !== null && b > since) {
+  const r = b !== null && firstReset ? firstReset(b) : null;
+  if (b !== null && b > since && r !== b) {
     const after = nextEnd(p, tz, b);
-    const stale = Math.min(STALE_MS, after ? (after - b) / 2 : STALE_MS);
+    const stale = Math.min(STALE_MS, after ? (after - b) / 2 : STALE_MS, r !== null && r > b ? r - b : STALE_MS);
     const key = iso(b);
     const mine = ans.end === key;
     if (now - b < stale && !(mine && ans.yes)) {
@@ -282,6 +310,8 @@ export const WORDS = {
   settings: "Settings",
   missed: "Missed",
   tip: (hm: string) => `Time left until your day ends at ${hm}. Right click for Settings.`,
+  /** Settings, Countdown text, Day ends (PS 1.72): the choice that follows the reset time, with that time. */
+  sameAsReset: (hm: string) => `Same as reset time (${hm})`,
 };
 /** How alive the numbers are near zero: 0 calm, 1 a soft glow (an hour out), 2 warmer (15 minutes), 3 a small rumble (3 minutes). */
 export function livelyStage(leftMs: number, asking: boolean): 0 | 1 | 2 | 3 {

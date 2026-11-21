@@ -76,7 +76,10 @@ cp "$HERE/ui/supabase.html" "$APP/Contents/Resources/supabase.html"
 cp "$HERE/ui/guide.html" "$APP/Contents/Resources/guide.html"
 # PS 1.67: the Hatch update and start scenes (Sources/Hatch.swift) and the icon they build (512 px is plenty on screen).
 cp "$HERE/ui/hatch.html" "$APP/Contents/Resources/hatch.html"
-sips -Z 512 "$HERE/icon/icon-1024.png" --out "$APP/Contents/Resources/hatch-icon.png" >/dev/null
+# PS 1.72: from icon/hatch-1024.png, the app icon without Apple's margin (icon/make-icons.py), so the scene builds it
+# as big as before; a tree without it uses the app icon itself.
+HATCH_ICON="$HERE/icon/hatch-1024.png"; [ -f "$HATCH_ICON" ] || HATCH_ICON="$HERE/icon/icon-1024.png"
+sips -Z 512 "$HATCH_ICON" --out "$APP/Contents/Resources/hatch-icon.png" >/dev/null
 node "$WEB/scripts/ps-kit.mjs" "$APP/Contents/Resources/project-kit"
 
 # V1.58 layers (core tools/assemble.mjs): an assembled tree has ps-build.json at its top (flavour, commits, the
@@ -107,14 +110,19 @@ else
   fi
 fi
 
-# Icon: to swap the logo, replace icon/icon-1024.png (or rerun icon/make-icon.swift on a new logo).
+# Icon: to swap the logo, replace icon/source.png and run icon/make-icons.py (it writes icon/icon-1024.png).
+# PS 1.72 (the developer: a new icon must show at once after the update): the icns is named after its own content,
+# AppIcon-<first 10 of its SHA-256>, and Info.plist's CFBundleIconFile names it, so a new picture is a new file
+# that Finder, the Dock and Launch Services have never cached. The same picture gives the same name every build.
+ICON_NAME="AppIcon-$(shasum -a 256 "$HERE/icon/icon-1024.png" | cut -c1-10)"
 ICONSET="$(dirname "$APP")/AppIcon.iconset"
 rm -rf "$ICONSET"; mkdir -p "$ICONSET"
 for s in 16 32 128 256 512; do
   sips -z $s $s "$HERE/icon/icon-1024.png" --out "$ICONSET/icon_${s}x${s}.png" >/dev/null
   d=$((s * 2)); sips -z $d $d "$HERE/icon/icon-1024.png" --out "$ICONSET/icon_${s}x${s}@2x.png" >/dev/null
 done
-iconutil -c icns "$ICONSET" -o "$APP/Contents/Resources/AppIcon.icns"
+iconutil -c icns "$ICONSET" -o "$APP/Contents/Resources/$ICON_NAME.icns"
+/usr/libexec/PlistBuddy -c "Set :CFBundleIconFile $ICON_NAME" "$APP/Contents/Info.plist"
 
 ditto "$WEB/dist-ps" "$APP/Contents/Resources/web"
 # Offline IP to country file for the network monitor (geo/README.md).

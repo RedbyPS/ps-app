@@ -104,3 +104,15 @@
 .gv-link { justify-self: start; font-size: calc(13.5px * var(--k-fs, 1)); font-weight: 800; color: var(--k-acc-t, #F9A8D4); text-decoration: none; }
 .gv-link:hover { text-decoration: underline; }
 @media (prefers-reduced-motion: reduce) { .gv-scrim, .gv-card { animation: none; } }
+/* PS 1.72: a click on an empty spot shows a ghost of the new goal with "+ New goal"; nothing is added until that (or Enter). */
+.gt-ghost { position: absolute; height: 30px; border-radius: calc(10px * var(--k-rd, 1)); display: flex; align-items: center; gap: calc(6px * var(--k-dn, 1)); cursor: grab; user-select: none; -webkit-user-select: none; z-index: 1;
+  border: 1.5px dashed color-mix(in srgb, var(--c) 85%, transparent); background: color-mix(in srgb, var(--c) 16%, transparent); box-sizing: border-box; animation: gt-ghost-in .16s cubic-bezier(.2,1,.3,1); }
+@keyframes gt-ghost-in { from { opacity: 0; transform: scale(.96); } }
+.gt-ghost-t { flex: 1; min-width: 0; font-size: calc(12px * var(--k-fs, 1)); font-weight: 750; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: color-mix(in srgb, var(--k-fg, #FFFFFF) min(100%, calc(72% * var(--k-ia, 1))), transparent); }
+.gt-new { flex: none; font: inherit; font-size: calc(12px * var(--k-fs, 1)); font-weight: 850; white-space: nowrap; cursor: pointer; padding: calc(4px * var(--k-dn, 1)) calc(11px * var(--k-dn, 1)); border-radius: 999px; border: 0;
+  background: var(--c, var(--k-acc, #EC4E86)); color: var(--k-on-acc, #FFFFFF); box-shadow: 0 6px 16px -8px var(--c, #EC4E86); transition: transform .15s ease, filter .15s ease; }
+.gt-new.out { position: absolute; z-index: 2; height: 26px; }
+.gt-new:hover { transform: translateY(-1px); filter: brightness(1.08); }
+.gt-new:focus-visible { outline: 2px solid var(--k-fg, #FFFFFF); outline-offset: 2px; }
+.gt-hint b { color: var(--k-fg, #FFFFFF); font-weight: 800; }
+@media (prefers-reduced-motion: reduce) { .gt-ghost { animation: none; } }

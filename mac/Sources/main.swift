@@ -289,7 +289,7 @@ final class App: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMess
     buildMenu()
     if INSTALL_MODE { Installer.shared.start(); if selfTest { UpdaterSelfTest.install() }; return }
     _ = Sfx.shared   // make the sounds now, so the first hover plays at once
-    Mic.watch { [weak self] in self?.sendMic() }
+    Mic.watch { [weak self] j in self?.sendMicJSON(j) }   // on the audio queue (AudioQueue.swift), never main; news comes async
 
     main = WKWebView(frame: .zero, configuration: config(main: true))
     main.uiDelegate = self
@@ -672,7 +672,9 @@ final class App: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMess
     Popup.shared.update { $0.tabOn = w.enabled; $0.trusted = AXIsProcessTrusted(); $0.keyName = first }
   }
   func sendTapState() { sendTabState(force: true) }
-  func sendMic() { let j = Mic.stateJSON(); sendToMain(j); sendToOverlay(j) }
+  /// The page asks for the microphones: the answer comes from the audio queue (sendMicJSON). Never waits on Core Audio.
+  func sendMic() { if let j = Mic.ask() { sendMicJSON(j) } }
+  func sendMicJSON(_ j: String) { sendToMain(j); sendToOverlay(j) }
 
   func logTabStatus(_ why: String) {
     let w = TabWatch.shared
@@ -1666,8 +1668,8 @@ final class App: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMess
     case "mic:get" where fromOverlay || fromMain:   // the microphone picker in Settings
       sendMic()
     case "mic:set" where fromOverlay || fromMain:   // The developer picked a microphone: make it the Mac's default
-      if let uid = msg["uid"] as? String { AudioPriority.shared.notePick(.mics, uid); let ok = Mic.setDefault(uid: uid); psLog("PS mic: set default input ok=\(ok)") }
-      sendMic()
+      if let uid = msg["uid"] as? String { AudioPriority.shared.notePick(.mics, uid); Mic.setDefault(uid: uid) { ok in psLog("PS mic: set default input ok=\(ok)") } }
+      else { sendMic() }                         // setDefault reads the microphones again and answers the page itself
     case "thunder" where fromOverlay:           // the lightning backgrounds' thunder: only while the list is showing
       if shown, let name = msg["name"] as? String { Sfx.shared.thunder(name, volume: msg["vol"] as? Double ?? 0) }
     case "sfx" where fromOverlay || fromMain:   // the Tab list's hover and click sounds

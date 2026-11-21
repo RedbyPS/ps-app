@@ -1,11 +1,11 @@
-// Switches for this phone only (PS 1.66): the island drawn inside PS and the round Add task button. PS 1.67: the wheel menu
-// (gos/PhoneWheel.tsx; off brings back the hamburger at the top left). All on by default.
+// Switches for this phone only (PS 1.66): the island drawn inside PS and the round Add task button. On by default.
+// (PS 1.67 to 1.71 had a third, the wheel menu; it went in 1.72 with the wheel, and the menu is always top left now.)
 // Kept on this device (each phone and each iPhone web app chooses for itself), so no shell change and nothing synced.
 import { useSyncExternalStore } from "react";
 import { phoneIslandOnce } from "../core/islandon";
 
-export type PhonePrefKey = "island" | "addButton" | "wheel";
-const KEY: Record<PhonePrefKey, string> = { island: "ps.phone.inAppIsland", addButton: "ps.phone.addButton", wheel: "ps.phone.wheel" };
+export type PhonePrefKey = "island" | "addButton";
+const KEY: Record<PhonePrefKey, string> = { island: "ps.phone.inAppIsland", addButton: "ps.phone.addButton" };
 const subs = new Set<() => void>();
 const cache: Partial<Record<PhonePrefKey, boolean>> = {};
 

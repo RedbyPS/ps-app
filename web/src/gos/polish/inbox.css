@@ -70,6 +70,9 @@ html.gos #root > main.page { padding-bottom: calc(28px * var(--k-dn, 1)); }
    that scrolls sideways. On the phone it is the only way between the vault pages. */
 html.gos header.top .wrap { height: auto; min-height: 56px; flex-wrap: wrap; row-gap: 0; column-gap: calc(4px * var(--k-dn, 1)); padding-inline: calc(12px * var(--k-dn, 1)); }
 html.gos header.top .brand { min-height: 44px; display: inline-flex; align-items: center; }
+/* PS 1.72: the menu stays top left on the Vault pages too (gos/GosLayer.tsx GosMenu, 46 px from 12 px). The brand steps right
+   of it, and the first row is as tall as the button, so nothing on the next row slides under it. */
+html.gos header.top .brand { margin-left: calc(46px + 8px); min-height: 56px; }
 html.gos header.top .nav {
   order: 9; display: flex !important; flex: 0 0 100%; width: 100%; gap: calc(6px * var(--k-dn, 1)); padding: calc(2px * var(--k-dn, 1)) 0 calc(10px * var(--k-dn, 1));
   overflow-x: auto; scrollbar-width: none; scroll-snap-type: x proximity; overscroll-behavior-x: contain;

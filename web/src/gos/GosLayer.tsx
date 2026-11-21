@@ -24,7 +24,7 @@ import { startTouch } from "./touch";
 import { MobileLockExtras } from "../mobile/MobileSettings";
 import { openSettings, useSettingsWanted } from "../views/SettingsScreen";
 import { openGSquad } from "../views/GSquad";
-import { MENU, menuItems, type MenuId, type MenuItem } from "./menu";
+import { MENU, type MenuItem } from "./menu";
 import { NoteIcon, SoundboardHost, openSoundboard } from "../soundboard/SoundboardButton";
 import { useSb } from "../soundboard/store";
 import { BgProblemCard } from "./GosBackgrounds";
@@ -47,12 +47,12 @@ import { PhoneEditMount } from "./PhoneEditMode";
 import { useFlip } from "./flip";
 import { noteGymScreen } from "../squad/presence";
 import { panelOpen } from "../core/phonepanels";
-import { PhoneIsland } from "./PhoneIsland";
+import { PhoneIsland, openIslandCard } from "./PhoneIsland";
 import { usePhonePref } from "./phoneprefs";
 import type { MomentOpen } from "../core/phoneisland";
-// PS 1.67 the wheel menu (bottom left; replaces the hamburger while Settings, This phone, Wheel menu is on).
-import { PhoneWheel } from "./PhoneWheel";
-import { wheelItems, type Pt, type WheelId } from "./wheel";
+// PS 1.72 the menu top left again (the developer, 21 Nov 2026: the 1.67 wheel bottom left is gone), with every screen the wheel had.
+import { navItems, type NavId, type NavItem, type Pt } from "./navitems";
+import "./launch.css";
 import { closeLaunched, launch } from "./launch";
 import { goToSleep } from "../sleepmode/engine";
 import { sleepModeOf } from "../core/sleepmode";
@@ -105,6 +105,14 @@ export function GosLayer() {
     openSettings(null);
     if (m.what === "gsquad") { openGSquad(true, "chat"); return; }   // a G Squad message notification (ps-gos Notifier.kt, core/squadnotify.ts)
     if (m.what === "fitness") { fitPop.open(); return; }   // the rest timer's notification (ps-gos Fitness.kt)
+    // PS 1.72 a tap on a reminder on the GrapheneOS island (ps-gos Island.kt): the list, with the island's card open on that
+    // reminder and its buttons (gos/PhoneIsland.tsx).
+    if (typeof m.what === "string" && m.what.startsWith("rem:")) {
+      const id = m.what.slice(4, 40);
+      setView("list");
+      window.setTimeout(() => openIslandCard(id), 200);
+      return;
+    }
     // V1.55 Open task on a reminder's notification (ps-gos Remind.kt): the list, with that task glowing (views/TaskMap.tsx).
     if (typeof m.what === "string" && m.what.startsWith("task:")) {
       const id = m.what.slice(5);
@@ -222,13 +230,13 @@ export function GosLayer() {
   // PS 1.66 the round Add task button (bottom right on every page and panel) and the island inside PS. Each has its own switch
   // in Settings, This phone (gos/phoneprefs.ts); both on by default.
   const fabOn = usePhonePref("addButton");
-  const wheelOn = usePhonePref("wheel");
+  // The menu's screens zoom out of the item tapped and open full screen (gos/launch.ts, gos/launch.css).
   useEffect(() => {
     const r = document.documentElement;
-    if (wheelOn) r.dataset.gosWheel = ""; else delete r.dataset.gosWheel;
-    return () => { delete r.dataset.gosWheel; };
-  }, [wheelOn]);
-  // Which hidden buttons the home had last time it was drawn: the wheel on the Vault pages (no home under them) offers the same.
+    r.dataset.gosLaunch = "";
+    return () => { delete r.dataset.gosLaunch; };
+  }, []);
+  // Which hidden buttons the home had last time it was drawn: the menu on the Vault pages (no home under them) offers the same.
   const seen = useRef(new Map<string, boolean>());
   useEffect(() => {
     const r = document.documentElement;
@@ -245,7 +253,7 @@ export function GosLayer() {
   const red = isRedAccount(s);
   // The navbar's buttons (Rules only on the developer's account), and which one glows.
   const dockItems = pl.nav.items.filter((it) => it !== "rules" || red);
-  const glowAt = dockItems.findIndex((it) => it === "settings" ? settingsOpen : it === "gym" ? fit !== "closed" && !settingsOpen : it === "sounds" ? sbOpen && !settingsOpen && fit === "closed" : it === "rules" ? !!book && !settingsOpen : !settingsOpen && it === view);
+  const glowAt = dockItems.findIndex((it) => it === "settings" ? settingsOpen : it === "gym" ? fit !== "closed" && !settingsOpen : it === "soundboard" ? sbOpen && !settingsOpen && fit === "closed" : it === "rules" ? !!book && !settingsOpen : !settingsOpen && it === view);
   // The book draws inside the list, so from the Vault pages it first goes back to the list.
   // Do Not Disturb (views/Dnd.tsx): a tap turns it on, a tap while on opens its sheet. In the thumb row on every pane.
   const dnd = <DndButton st={settingsData(s)} s={s} act={(o) => setDnd(o)} homeTz={settingsData(s).tmHomeTz || undefined} size={24} />;
@@ -280,27 +288,16 @@ export function GosLayer() {
     }
     go(o as View);
   };
-  // ---------- the wheel (PS 1.67) ----------
+  // ---------- the menu, top left (PS 1.72; the wheel's items and launches, gos/navitems.ts) ----------
   const has = (sel: string) => {
     if (!document.querySelector(".gos-home")) return seen.current.get(sel) ?? true;   // the Vault pages: as the home last had it
     const v = !!document.querySelector(`.gos-home ${sel}`);
     seen.current.set(sel, v);
     return v;
   };
-  const wheelList = () => wheelItems({ red, has, show: (id) => (id === "sleep" ? sleepModeOf(settingsData(s)).show : true) });
-  const wheelLive = () => {
-    const text = (sel: string) => document.querySelector(`.gos-home ${sel}`)?.textContent?.replace(/\s+/g, " ").trim() || "";
-    const out: Partial<Record<WheelId, string>> = {};
-    const st = text(".tm-st-v"), tl = text(".tm-tl-pill").replace(/^Timelines\s*/, ""), nu = text(".nu-pill").match(/\d+/)?.[0];
-    if (st) out.screentime = `${st} today, on this phone and your Macs.`;
-    if (tl) out.timelines = `Next: ${tl}`;
-    if (nu) out.numerology = `Today's number is ${nu}.`;
-    const dndOn = !!document.querySelector(".gos-wh-dnd .dnd-btn.on");
-    out.dnd = dndOn ? "On now. Lift here to see what it mutes or turn it off." : "Off. Lift here to turn it on.";
-    return out;
-  };
-  // Launch an item full screen out of its spot (gos/launch.ts). A screen the wheel opened before steps aside first.
-  const wheelLaunch = (id: WheelId, at: Pt, size: number) => {
+  const navList = () => navItems({ red, has, show: (id) => (id === "sleep" ? sleepModeOf(settingsData(s)).show : true) });
+  // Launch an item full screen out of its spot (gos/launch.ts). A screen the menu opened before steps aside first.
+  const navLaunch = (id: NavId, at: Pt, size: number) => {
     primeSfx();
     const from = { getBoundingClientRect: () => new DOMRect(at.x - size / 2, at.y - size / 2, size, size) } as unknown as Element;
     const run = () => {
@@ -308,8 +305,8 @@ export function GosLayer() {
       if (id !== "gym" && fitPop.get() === "open") fitPop.min();   // a workout steps aside to its bubble, like an app to the background
       if (id === "sleep") { launch(at, size, () => { void goToSleep(); }, "none"); return; }
       if (id === "dnd") {
-        const btn = () => document.querySelector<HTMLElement>(".gos-wh-dnd .dnd-btn");
-        const wasOn = !!document.querySelector(".gos-wh-dnd .dnd-btn.on");
+        const btn = () => document.querySelector<HTMLElement>(".gos-menu-dnd .dnd-btn");
+        const wasOn = !!document.querySelector(".gos-menu-dnd .dnd-btn.on");
         // Off: on at once, then its sheet (what it mutes, how long, off) so there is something to see. On: the sheet.
         launch(at, size, () => { btn()?.click(); if (!wasOn) window.setTimeout(() => btn()?.click(), 160); }, "none");
         return;
@@ -342,12 +339,11 @@ export function GosLayer() {
         // Shown by gos.css only while the Plan pane has no Meetings panel (an account with no calendar yet).
         <div className="gos-plan-empty" role="status">
           <b>No meetings coming up</b>
-          <span>{wheelOn ? "Time zones, Timelines, Goals and the rest are on the wheel: hold the round button at the bottom left." : "Time zones, Timelines, Goals and the rest are in the menu, top left."}</span>
+          <span>Time zones, Timelines, Goals and the rest are in the menu, top left.</span>
         </div>
       )}
-      {view !== "vault" && !wheelOn && <GosMenu open={menu} onOpen={setMenu} red={red} onPick={pick} />}
-      {wheelOn && <PhoneWheel items={wheelList} live={wheelLive} onLaunch={wheelLaunch} />}
-      {wheelOn && <span className="gos-wh-dnd" aria-hidden="true">{dnd}</span>}
+      <GosMenu open={menu} onOpen={setMenu} items={navList} onLaunch={navLaunch} />
+      <span className="gos-menu-dnd" aria-hidden="true">{dnd}</span>
       {view === "plan" && show && (
         <button type="button" className="gos-show-back" onClick={() => { haptic("press"); setShow(null); }} aria-label="Back to Meetings">
           <svg {...sv} width={18} height={18} strokeWidth={2.4}><path d="M15 6l-6 6 6 6" /></svg>
@@ -372,7 +368,7 @@ export function GosLayer() {
           if (it === "inbox") return <DockBtn key={it} flip={it} on={view === "inbox"} onClick={() => go("inbox")} label="Inbox" icon={<InboxIcon />} />;
           if (it === "gym") return <DockBtn key={it} flip={it} on={fit !== "closed"} onClick={(el) => { haptic("press"); primeSfx(); fitPop.open(el); }} label="Gym" icon={<DumbbellIcon size={24} />} />;
           // The Soundboard (V1.47, src/soundboard/), next to Gym: audio and video, the player, the queue, timed plays.
-          if (it === "sounds") return <DockBtn key={it} flip={it} on={sbOpen} onClick={(el) => { haptic("press"); primeSfx(); openSoundboard(el); }} label="Sounds" icon={<NoteIcon size={24} />} />;
+          if (it === "soundboard") return <DockBtn key={it} flip={it} on={sbOpen} onClick={(el) => { haptic("press"); primeSfx(); openSoundboard(el); }} label="Sounds" icon={<NoteIcon size={24} />} />;
           if (it === "vault") return <DockBtn key={it} flip={it} on={view === "vault"} onClick={() => go("vault")} label="Vault" icon={<VaultIcon />} />;
           if (it === "rules") return <Fragment key={it}>{red && <DockBtn flip={it} on={!!book} onClick={rules} label="Rules" icon={<span className="gos-dock-rb">PS</span>} />}</Fragment>;
           if (it === "settings") return <DockBtn key={it} flip={it} on={settingsOpen} onClick={() => { haptic("press"); primeSfx(); if (settingsOpen) openSettings(null); else settings(); }} label={MWEB ? "Settings" : "PS"} icon={<GearIcon />} badge={g.update.state === "available" || g.update.state === "ready"} />;
@@ -440,38 +436,50 @@ function ThumbRow({ dnd }: { dnd: ReactNode }) {
   );
 }
 
-// Top left: the menu (V1.47). A panel from the left with everything that used to sit on the Plan pane and in the top row,
-// each with its icon and one line, a live value where it has one (today's screen time, the next timeline, today's
-// number). Items show only when their real button is there (the developer only ones, a feature switched off), checked as it opens.
-function GosMenu({ open, onOpen, red, onPick }: { open: boolean; onOpen: (v: boolean) => void; red: boolean; onPick: (it: MenuItem) => void }) {
-  const [items, setItems] = useState<MenuItem[]>([]);
-  const [live, setLive] = useState<Partial<Record<MenuId, string>>>({});
+// Top left: the menu (V1.47, back for good in PS 1.72 in place of the wheel). Always there, on every page, Vault included.
+// A panel from the left with every screen PS has (gos/navitems.ts): each with its icon and one line, a live value where it
+// has one (today's screen time, the next timeline, today's number). Items show only when their real button is there (the developer only
+// ones, a feature switched off), checked as it opens. A tap closes the menu and the screen zooms out of the item's icon
+// (gos/launch.ts). Closes on a tap beside it, the X, Back (GosLayer's back handler) and Esc. Reduced motion: no slide.
+function GosMenu({ open, onOpen, items: itemsNow, onLaunch }: { open: boolean; onOpen: (v: boolean) => void; items: () => NavItem[]; onLaunch: (id: NavId, at: Pt, size: number) => void }) {
+  const [items, setItems] = useState<NavItem[]>([]);
+  const [live, setLive] = useState<Partial<Record<NavId, string>>>({});
   const [cleared, setCleared] = useState(false);
   const toggle = () => {
     haptic("press");
     if (!open) {
-      const has = (sel: string) => !!document.querySelector(`.gos-home ${sel}`);
-      setItems(menuItems({ red, has }));
+      setItems(itemsNow());
       const text = (sel: string) => document.querySelector(`.gos-home ${sel}`)?.textContent?.replace(/\s+/g, " ").trim() || "";
       setLive({ screentime: text(".tm-st-v"), timelines: text(".tm-tl-pill").replace(/^Timelines\s*/, ""), numerology: text(".nu-pill").match(/\d+/)?.[0] ?? "" });
       setCleared(false);
     }
     onOpen(!open);
   };
-  const tap = (it: MenuItem) => {
+  // Esc (a keyboard) closes it too; Back is GosLayer's back handler (the menu first).
+  useEffect(() => {
+    if (!open) return;
+    const key = (e: KeyboardEvent) => { if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); onOpen(false); } };
+    window.addEventListener("keydown", key, true);
+    return () => window.removeEventListener("keydown", key, true);
+  }, [open, onOpen]);
+  const tap = (it: NavItem, btn: HTMLElement) => {
     if (it.id === "clipboard") {   // a quick action: it stays in the menu and says it is done
       haptic("press"); primeSfx();
-      document.querySelector<HTMLElement>(`.gos-home ${it.sel}`)?.click();
+      const m = MENU.find((x) => x.id === "clipboard");
+      if (m?.sel) document.querySelector<HTMLElement>(`.gos-home ${m.sel}`)?.click();
       setCleared(true);
       window.setTimeout(() => setCleared(false), 1800);
       return;
     }
-    onPick(it);
+    haptic("press");
+    const r = (btn.querySelector(".gos-menu-ic") ?? btn).getBoundingClientRect();
+    onOpen(false);
+    onLaunch(it.id, { x: r.left + r.width / 2, y: r.top + r.height / 2 }, Math.max(r.width, r.height));
   };
   let head = "";
   return (
     <div className={`gos-menu${open ? " open" : ""}`}>
-      {open && <div className="gos-menu-dim" onClick={() => onOpen(false)} aria-hidden="true" />}
+      {open && <div className="gos-menu-dim" onClick={() => { haptic("press"); onOpen(false); }} aria-hidden="true" />}
       <button type="button" className="gos-menu-btn" onClick={toggle} aria-expanded={open} aria-label="Menu">
         <svg {...sv} width={22} height={22}>{open ? <path d="M6 6l12 12M18 6L6 18" /> : <path d="M4.5 7h15M4.5 12h15M4.5 17h15" />}</svg>
       </button>
@@ -479,13 +487,14 @@ function GosMenu({ open, onOpen, red, onPick }: { open: boolean; onOpen: (v: boo
         <nav className="gos-menu-list" aria-label="Menu">
           {items.map((it, i) => {
             const sec = it.section !== head ? (head = it.section) : null;
+            const kind = MENU.find((m) => m.id === it.id)?.live;
             const got = live[it.id];
-            const value = it.id === "clipboard" && cleared ? "Cleared" : it.live === "value" ? got : undefined;
-            const line = it.id === "clipboard" && cleared ? "Nothing is on the clipboard now." : it.live === "line" && got ? `Next: ${got}` : it.line;
+            const value = it.id === "clipboard" && cleared ? "Cleared" : kind === "value" ? got : undefined;
+            const line = it.id === "clipboard" && cleared ? "Nothing is on the clipboard now." : kind === "line" && got ? `Next: ${got}` : it.line;
             return (
               <div key={it.id} className="gos-menu-it" style={{ ["--i" as string]: i }}>
-                {sec && it.section && <h3 className="gos-menu-sec">{sec}</h3>}
-                <button type="button" className={`gos-menu-i${it.id === "settings" ? " gos-menu-set" : ""}`} data-menu={it.id} onClick={() => tap(it)}>
+                {sec && <h3 className="gos-menu-sec">{sec}</h3>}
+                <button type="button" className="gos-menu-i" data-menu={it.id} onClick={(e) => tap(it, e.currentTarget)}>
                   <span className={`gos-menu-ic${it.id === "rules" ? " gos-menu-ic-rb" : ""}`}>{it.id === "rules" ? <span className="gos-dock-rb">PS</span> : <svg {...sv} width={20} height={20}><path d={it.icon} /></svg>}</span>
                   <span className="gos-menu-t"><b>{it.label}</b><em>{line}</em></span>
                   {value ? <span className={`gos-menu-v${it.id === "clipboard" ? " ok" : ""}`}>{value}</span>

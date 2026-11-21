@@ -1115,8 +1115,8 @@ final class Island {
     NSWorkspace.shared.accessibilityDisplayShouldReduceMotion ? .easeInOut(duration: 0.18) : .spring(response: 0.38, dampingFraction: 0.74)
   }
 
-  private func setUp() {
-    guard panel == nil else { return }
+  /// The island's window: also made again when macOS no longer keeps the old one on every desktop (rebuildPanel).
+  private func makePanel() -> IslandPanel {
     let p = IslandPanel(contentRect: NSRect(x: 0, y: 0, width: IslandModel.panelW, height: IslandModel.panelH), styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
     p.isOpaque = false
     p.backgroundColor = .clear
@@ -1130,6 +1130,13 @@ final class Island {
     host.frame = NSRect(x: 0, y: 0, width: IslandModel.panelW, height: IslandModel.panelH)
     p.contentView = host
     if test { p.alphaValue = 0 }
+    p.dragHook = { [weak self] e in self?.dragEvent(e) ?? false }
+    return p
+  }
+
+  private func setUp() {
+    guard panel == nil else { return }
+    let p = makePanel()
     panel = p
     model.tick = { [weak self] t in self?.tick(t) }
     model.untick = { [weak self] in self?.untick() }
@@ -1138,7 +1145,6 @@ final class Island {
     model.privateOff = { [weak self] in self?.onAction?("privateOff", "") }
     model.lowPowerWake = { [weak self] in self?.onAction?("lowPowerWake", "") }   // PS 1.65 (web src/island.ts)
     model.hide = { [weak self] in self?.hideForAWhile() }
-    p.dragHook = { [weak self] e in self?.dragEvent(e) ?? false }
     // V1.56 hang fix: many model changes in a row now make one check, not one each (a spring, a glow and a swell
     // together used to queue a check apiece, and each check re-placed every card window).
     shapeWatch = model.objectWillChange.sink { [weak self] _ in
@@ -1158,6 +1164,14 @@ final class Island {
     ws.addObserver(forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main) { [weak self] n in self?.appActivated(n) }
     // V1.58 the island away: a Mac asleep counts no seconds, so the clock is looked at again on wake.
     ws.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in self?.checkAway("wake") }
+    // After PS 1.71 (IslandRejoinCore.swift): the lock screen is not a desktop, so the every desktop check rests while it is up,
+    // and looks again a moment after the unlock and after the screens wake (where the island used to go missing).
+    let dn = DistributedNotificationCenter.default()
+    dn.addObserver(forName: .init("com.apple.screenIsLocked"), object: nil, queue: .main) { [weak self] _ in self?.screenLocked = true }
+    dn.addObserver(forName: .init("com.apple.screenIsUnlocked"), object: nil, queue: .main) { [weak self] _ in
+      self?.screenLocked = false; self?.followSpaceSoon("unlock")
+    }
+    ws.addObserver(forName: NSWorkspace.screensDidWakeNotification, object: nil, queue: .main) { [weak self] _ in self?.followSpaceSoon("screens woke") }
     NotificationCenter.default.addObserver(forName: .NSSystemClockDidChange, object: nil, queue: .main) { [weak self] _ in self?.checkAway("clock change") }
   }
 
@@ -1296,6 +1310,12 @@ final class Island {
   }
 
   private var shown: Bool { panel?.isVisible == true }
+  /// Meant to be on screen: switched on, over 1Password or Signal only where the build allows it, something to show, not
+  /// away or hidden by its grab line, not held off by the Hatch scene.
+  private var wantShown: Bool {
+    model.st.mode != "off" && IslandRules.show(protectedFront: Protected.front, rules: BuildRules.now)
+      && model.hasContent && hiddenUntil == nil && !hatchHeld
+  }
   /// On screen only when switched on and with something to show. Over 1Password or Signal it follows the build's
   /// rule (BuildRules.now, PS 1.71): shown in the G Squad build for every account, hidden in the developer's own build.
   private func place() {
@@ -1304,9 +1324,7 @@ final class Island {
     screen = s
     if g != model.geo { model.geo = g }
     syncAnchor()
-    let want = model.st.mode != "off" && IslandRules.show(protectedFront: Protected.front, rules: BuildRules.now)
-      && model.hasContent && hiddenUntil == nil && !hatchHeld
-    if !want {
+    if !wantShown {
       if p.isVisible { p.orderOut(nil) }
       setPresence(.dock, "the island is not showing")   // out of the Dock only while the island shows over full screen
       stopWatching()
@@ -1318,6 +1336,7 @@ final class Island {
     if p.frame != f, Date() >= glideEnds { p.setFrame(f, display: true) }   // mid glide the glide lands it
     if !p.isVisible {
       p.orderFrontRegardless()
+      rejoin.shown(now: Date().timeIntervalSince1970)   // macOS gets its moment before the every desktop check judges it
       // Back on screen (switched on, news, back from hiding, 1Password or Signal gone): the full screen check only
       // runs while it shows, so whatever came to the front meanwhile is looked at now (it glides to its place).
       if !test { DispatchQueue.main.async { [weak self] in self?.fullScreenSoon() } }
@@ -1341,15 +1360,41 @@ final class Island {
   /// This puts it back on every desktop: the behaviour is cleared and set again, so AppKit really tells macOS (setting
   /// the same value again does nothing). Then, if it shows but is not on the desktop in front, it is ordered out and
   /// straight back in there. Same window, same size and level; it never becomes key and PS never activates.
-  private func joinAllSpaces(_ why: String) {
-    guard let p = panel else { return }
+  /// After PS 1.71: only the put back itself. Whether to do it, when to make a new window instead, and what to write is
+  /// IslandRejoinCore (before it, this ran and wrote a line on every check and never looked whether it had worked).
+  private func joinAllSpaces(_ p: IslandPanel) {
     p.collectionBehavior = []
     p.collectionBehavior = IslandPlace.spaces
     guard IslandPlace.rejoin(visible: p.isVisible, onActiveSpace: p.isOnActiveSpace, dragging: drag?.moving == true) else { return }
     p.orderOut(nil)
     p.orderFrontRegardless()
-    psLog("PS island: was missing from this desktop (\(why)), back on every desktop")
   }
+  /// After PS 1.71 (the developer, 21 Nov 2026: the island kept disappearing until PS was relaunched): macOS had stopped keeping the
+  /// island's window on every desktop, and putting the same window back never mended that. A new window does, as the
+  /// relaunch did: same model, same place, size and level, never key, PS never activates. IslandRejoinCore keeps it to
+  /// a few an hour.
+  private func rebuildPanel() {
+    guard let old = panel, !test else { return }
+    let p = makePanel()
+    p.setFrame(old.frame, display: false)
+    p.alphaValue = old.alphaValue
+    p.ignoresMouseEvents = old.ignoresMouseEvents
+    old.dragHook = nil
+    old.orderOut(nil)
+    old.contentView = nil
+    old.close()
+    panel = p
+    rejoin.shown(now: Date().timeIntervalSince1970)
+    p.orderFrontRegardless()
+    lastShape = ""                                   // the cards, bubble and clearance hear the new window's place
+    place()
+    refreshMouse()
+  }
+  private var rejoin = IslandRejoinCore()
+  private var rejoinCheck: DispatchWorkItem?
+  private var screenLocked = false
+  /// Sleep mode, Sentry mode or the lock screen is over everything: the island is under it, nothing to put back.
+  private var rejoinPaused: Bool { screenLocked || SleepScreen.shared.isUp || Sentry.shared.engaged }
   // ---------- PS 1.67 Hatch (Hatch.swift): the island is born by the update and start scenes ----------
   /// While the scene plays the island is off screen: the scene draws its own, takes it away, and gives birth to it at its
   /// place. Let go, it fades in where the scene's own island settled (never over 1Password or Signal: place() decides).
@@ -1434,18 +1479,39 @@ final class Island {
     let r = IslandPlace.movedShape(anchor: l.anchor, w: model.pillW, h: model.pillH, pillW: model.pillW, pillH: model.pillH, up: IslandPlace.opensUp(p))
     return NSRect(x: l.frame.minX + r.minX, y: l.frame.maxY - r.maxY, width: r.width, height: r.height)
   }
-  /// Cheap check (one property read): only when it shows but is missing from the desktop in front does it rejoin.
+  /// Cheap check (a few property reads, IslandRejoinCore): only when it shows but is missing from the desktop in front
+  /// is it put back, once; still missing a moment later, it gets a new window. It looks again by itself until it is
+  /// back, so it needs no stream of calls, and a stream of calls (a sync burst after a wake) does nothing extra.
   private func followSpace(_ why: String) {
-    guard let p = panel, IslandPlace.rejoin(visible: p.isVisible, onActiveSpace: p.isOnActiveSpace, dragging: drag?.moving == true) else { return }
-    joinAllSpaces(why)
+    guard let p = panel else { return }
+    let i = IslandRejoinCore.Input(visible: p.isVisible && wantShown, onActiveSpace: p.isOnActiveSpace, dragging: drag?.moving == true,
+                                   paused: rejoinPaused, now: Date().timeIntervalSince1970)
+    let d = rejoin.step(i, why: why)
+    d.logs.forEach { psLog($0) }
+    switch d.action {
+    case .none, .wait: break
+    case .rejoin: joinAllSpaces(p)
+    case .rebuild: rebuildPanel()
+    }
+    rejoinCheck?.cancel(); rejoinCheck = nil
+    guard let wait = d.recheckIn else { return }
+    let w = DispatchWorkItem { [weak self] in self?.rejoinCheck = nil; self?.followSpace("check") }
+    rejoinCheck = w
+    DispatchQueue.main.asyncAfter(deadline: .now() + wait, execute: w)
+  }
+  /// A moment after an unlock or the screens waking: macOS puts its desktops back first.
+  private func followSpaceSoon(_ why: String) {
+    DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in self?.followSpace(why) }
   }
   /// After a drag, a put back or Edit mode: on every desktop again now, and once more when macOS has finished with
   /// the drag (it can settle the window's desktop a moment after the button is let go).
   private func rejoinAfterMove(_ why: String) {
-    joinAllSpaces(why)
+    if let p = panel { p.collectionBehavior = []; p.collectionBehavior = IslandPlace.spaces }
+    followSpace(why)
     DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in
       guard let self, self.drag?.moving != true else { return }
-      self.joinAllSpaces(why)
+      if let p = self.panel { p.collectionBehavior = []; p.collectionBehavior = IslandPlace.spaces }
+      self.followSpace(why)
     }
   }
 

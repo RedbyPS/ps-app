@@ -1,5 +1,5 @@
 {
- "version": "1.71",
+ "version": "1.72",
  "names": {
   "1.07": "Wisdom",
   "1.08": "Abundance",
@@ -65,7 +65,8 @@
   "1.68": "Freedom",
   "1.69": "Comet",
   "1.70": "Vice City",
-  "1.71": "Prism"
+  "1.71": "Prism",
+  "1.72": "Lightning"
  },
  "note": "One PS version for the Mac and the phone (the developer, 27 Oct 2026), shown as V1.07 plus its keyword. The manager bumps it once per release with `node scripts/ps-version.mjs bump` and commits this file; release scripts only read it. names: every keyword ever given, so none repeats.",
  "made": {
@@ -122,6 +123,10 @@
    "shared": true
   },
   "1.71": {
+   "by": "red",
+   "shared": true
+  },
+  "1.72": {
    "by": "red",
    "shared": true
   }

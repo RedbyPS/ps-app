@@ -2,9 +2,11 @@ package com.cincee.ps.gos
 
 import android.app.PendingIntent
 import android.content.BroadcastReceiver
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageInstaller
+import android.service.quicksettings.TileService
 import androidx.work.ExistingWorkPolicy
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
@@ -112,6 +114,11 @@ object Receivers {
             Pulse.schedule(c); Quiet.sync(c); WatchService.sync(c); LiveService.sync(c); Reminds.restore(c); Fitness.restore(c); Gym.restore(c); Sleep.restore(c); Remind.restore(c); Soundboard.restore(c); DayEnd.restore(c)
             if (updated) {
                 Notifier.updated(c, BuildConfig.VERSION_NAME)
+                // PS 1.72 (the developer: a new icon must show everywhere at once): the notifications still showing, the Quick
+                // Settings tile and the home screen widget are all drawn again by this build (RepostCore.kt).
+                Notifier.repostAfterUpdate(app)
+                runCatching { TileService.requestListeningState(c, ComponentName(c, PsTileService::class.java)) }
+                if (Prefs.widget(c)) PsWidget.render(c)
                 // Back on screen by itself where GrapheneOS allows it (it does with Display over other apps).
                 runCatching { c.startActivity(Intent(c, MainActivity::class.java).putExtra("open", "settings").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
             }

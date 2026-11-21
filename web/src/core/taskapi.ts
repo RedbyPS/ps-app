@@ -10,12 +10,13 @@
 // This file is the rules: the switches (scopes), every endpoint, what it checks, what it answers. Pure: the vault is
 // behind the ApiStore interface, so the unit tests (tests/taskapi.test.ts) run every endpoint against a fake one.
 // Never log a task's text (the shell logs the method, the path and the status only).
-import type { Doc, Settings, Todo } from "./model";
+import type { Doc, Goal, Settings, Todo } from "./model";
 import { GROUP_NAME_MAX, cleanGroups, groupKey, groupOf, tabLists, type TabLists } from "./groups.ts";
 import { DEFAULT_NAMES, LIST_NAME_MAX, MAIN, SEC_NAME_MAX, allPages, cleanNames, listMoveTarget, pageOfSec, pageOrder, renamePage, shownName, tidyName } from "./lists.ts";
 import { INBOX, INBOX_MAX, INBOX_NAME, inInbox, intoSection, listsCtx, sectionTakes } from "./aiinbox.ts";
 import { API_GYM_FIELDS, API_GYM_YES, API_NO_YES, apiGym, apiGymPatch, gymPrefs } from "./gym.ts";
 import { AI_MSG, AI_MSG_FIELDS, addAiMsg, aiMsgWait, aiNotesMode, checkAiMsg, newAiMsgId, sameAiMsg } from "./aimessage.ts";
+import { GOALS_MAX, GOAL_COLORS, GOAL_NOTE_MAX, GOAL_TITLE_MAX, endFor, goalLevel, levelName, nextGoalColor } from "./goals.ts";
 import { REM_TEXT_MAX, okTz, addTaskReminder, freshId, minutesOf, newTaskReminder, oneLine, patchReminder, reminderOfTask, remindOrDefault, removeReminder, type RemindRec } from "./remind.ts";
 
 export const API_PORT = 47836;
@@ -25,12 +26,15 @@ export const TITLE_MAX = 500, NOTES_MAX = 2000;
 export const LIST_LIMIT_DEF = 200, LIST_LIMIT_MAX = 500;
 
 // ---------- the switches ----------
-export type ScopeId = "inbox" | "lists" | "rename" | "read" | "add" | "edit" | "done" | "delete" | "remind" | "sentry" | "gym" | "settings" | "message";
+export type ScopeId = "inbox" | "lists" | "goals" | "rename" | "read" | "add" | "edit" | "done" | "delete" | "remind" | "sentry" | "gym" | "settings" | "message";
 export interface ScopeDef { id: ScopeId; group: "where" | "what"; label: string; line: string; def: boolean }
 /** One switch per thing an AI may do (Settings, AI task API). Off unless switched on, except add, read and the inbox. */
 export const SCOPES: ScopeDef[] = [
   { id: "inbox", group: "where", label: "AI Inbox", line: "Tasks in the AI Inbox, its own section in Dimension X.", def: true },
   { id: "lists", group: "where", label: "All lists and pages", line: "Every list, page and section you have, not just the AI Inbox.", def: false },
+  // PS 1.72 (Jan, 21 Nov 2026: "make sure that you can edit this with API as well, add and delete"). Off unless switched
+  // on; Read, Add, Edit, Tick done and Delete below then say what it may do there, as they do for tasks.
+  { id: "goals", group: "where", label: "Goals timeline", line: "Your goals on the Timeline. The What switches below say what it may do there.", def: false },
   { id: "rename", group: "where", label: "Rename lists and sections", line: "Change the names of your lists and sections.", def: false },
   { id: "read", group: "what", label: "Read tasks", line: "See tasks, lists and sections it can reach.", def: true },
   { id: "add", group: "what", label: "Add tasks", line: "Add new tasks (into the AI Inbox unless All lists is on).", def: true },
@@ -213,6 +217,7 @@ const ENDPOINTS = [
   "GET /v1/gym", "PATCH /v1/gym",
   "GET /v1/settings", "PATCH /v1/settings",
   "POST /v1/island/message",
+  "GET /v1/goals", "POST /v1/goals", "GET /v1/goals/{id}", "PATCH /v1/goals/{id}", "DELETE /v1/goals/{id}",
 ];
 /** The settings an AI may read and change (GET and PATCH /v1/settings): the API name, the settings record's field. */
 export const API_SETTINGS = { invertSwipe: "swipeInvert" } as const;
@@ -373,6 +378,28 @@ async function route(req: ApiReq, sc: Scopes, store: ApiStore): Promise<ApiRes> 
     const no = allow("POST"); if (no) return no;
     if (!sc.message) return scopeOff("message");
     return islandMessage(body, store);
+  }
+
+  // /v1/goals (PS 1.72): the goals timeline, kept in the encrypted settings record like everything else.
+  if (seg[1] === "goals") {
+    if (seg.length > 3) return fail(404, "not_found", "The goals endpoints are /v1/goals and /v1/goals/{id}.");
+    if (!sc.goals) return scopeOff("goals");
+    if (seg.length === 2) {
+      const no = allow("GET", "POST"); if (no) return no;
+      return method === "GET" ? listGoals(q, sc, store) : addGoals(body, sc, store);
+    }
+    const no = allow("GET", "PATCH", "DELETE"); if (no) return no;
+    const gid = seg[2];
+    const goals = store.settings().goals ?? [];
+    const g = ID_RE.test(gid) ? goals.find((x) => x.id === gid) : undefined;
+    if (!g) return fail(404, "not_found", "No goal with that id (it may have been deleted). GET /v1/goals shows them.");
+    if (method === "GET") { if (!sc.read) return scopeOff("read"); return ok({ goal: goalView(g) }); }
+    if (method === "DELETE") {
+      if (!sc.delete) return scopeOff("delete");
+      await store.saveSettings({ goals: goals.filter((x) => x.id !== gid) });
+      return ok({ deleted: gid });
+    }
+    return editGoal(g, goals, body, sc, store);
   }
 
   if (seg[1] !== "tasks" || seg.length > 4) return fail(404, "not_found", "No such endpoint. GET /v1 lists them.");
@@ -627,3 +654,106 @@ async function reminder(d: Doc<Todo>, method: string, body: unknown, store: ApiS
   return ok({ task: fresh(d.id, store, d, {}) });
 }
 const hm = (m: number) => `${String(Math.floor(m / 60) % 24).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
+
+// ---------- the goals timeline (PS 1.72) ----------
+/** A goal as the API shows it (the words the Timeline's editor uses: name, level, colour, From, To, notes, done). */
+export interface ApiGoal { id: string; title: string; level: Goal["level"]; levelName: string; color: string; from: string; to: string; notes: string | null; done: boolean; createdAt: string | null }
+const goalView = (g: Goal): ApiGoal => ({ id: g.id, title: g.title, level: g.level, levelName: levelName(g.level), color: g.color, from: g.start, to: g.end, notes: g.note ?? null, done: g.done === true, createdAt: g.createdAt ?? null });
+const LEVEL_IX: Record<Goal["level"], number> = { macro: 0, meso: 1, micro: 2 };
+const COLOR_RE = /^#[0-9A-Fa-f]{6}$/;
+const GOAL_FIELDS = ["title", "level", "color", "from", "to", "notes", "done"];
+
+// GET /v1/goals
+function listGoals(q: Record<string, string>, sc: Scopes, store: ApiStore): ApiRes {
+  if (!sc.read) return scopeOff("read");
+  const known = ["level", "status", "from", "to", "q"];
+  const bad = Object.keys(q).find((k) => !known.includes(k));
+  if (bad) return fail(400, "unknown_field", `Unknown query "${bad}". Allowed: ${known.join(", ")}.`, { field: bad });
+  const level = q.level ? goalLevel(q.level) : null;
+  if (q.level && !level) return badField("level", "level is macro, meso or micro.");
+  const status = q.status || "all";
+  if (!["open", "done", "all"].includes(status)) return badField("status", "status is all (default), open or done.");
+  for (const k of ["from", "to"] as const) if (q[k] && !okDay(q[k])) return badField(k, `${k} is a date like 2026-11-20.`);
+  const words = (q.q || "").toLowerCase().trim();
+  const rows = (store.settings().goals ?? []).filter((g) => {
+    if (level && g.level !== level) return false;
+    if (status === "open" ? g.done === true : status === "done" ? g.done !== true : false) return false;
+    if (q.from && g.end < q.from) return false;      // from and to: goals that reach into those days
+    if (q.to && g.start > q.to) return false;
+    if (words && !`${g.title} ${g.note ?? ""}`.toLowerCase().includes(words)) return false;
+    return true;
+  }).sort((a, b) => LEVEL_IX[a.level] - LEVEL_IX[b.level] || a.start.localeCompare(b.start) || a.title.localeCompare(b.title)).map(goalView);
+  return ok({ goals: rows, count: rows.length, levels: ["macro", "meso", "micro"], colors: GOAL_COLORS });
+}
+
+/** The fields sent for a goal, checked. `was` is the goal being changed (PATCH), or null for a new one. */
+function checkGoal(b: unknown, was: Goal | null, at: string): { patch: Partial<Goal> } | ApiRes {
+  if (!isObj(b)) return fail(400, "bad_request", `${at}: send a JSON object, like {"title": "Launch the shop", "level": "macro"}.`);
+  const u = unknownField(b, GOAL_FIELDS); if (u) return u;
+  const patch: Partial<Goal> = {};
+  if ("title" in b || !was) {
+    const t = text(b.title, GOAL_TITLE_MAX);
+    if (!t) return badField("title", `${at}: title is the goal's name, 1 to ${GOAL_TITLE_MAX} characters.`);
+    patch.title = t;
+  }
+  if ("level" in b) { const l = goalLevel(b.level); if (!l) return badField("level", `${at}: level is macro (the big goals), meso (month by month) or micro (week by week).`); patch.level = l; }
+  if ("color" in b) { if (typeof b.color !== "string" || !COLOR_RE.test(b.color)) return badField("color", `${at}: color is a colour like "#EC4E86". The Timeline's own: ${GOAL_COLORS.join(", ")}.`); patch.color = b.color.toUpperCase(); }
+  for (const k of ["from", "to"] as const) {
+    if (!(k in b)) continue;
+    if (typeof b[k] !== "string" || !okDay(b[k] as string)) return badField(k, `${at}: ${k} is a date like 2026-11-20.`);
+    patch[k === "from" ? "start" : "end"] = b[k] as string;
+  }
+  if ("notes" in b) {
+    if (b.notes !== null && typeof b.notes !== "string") return badField("notes", `${at}: notes is text, or null to clear.`);
+    patch.note = typeof b.notes === "string" && b.notes.trim() ? b.notes.trim().slice(0, GOAL_NOTE_MAX) : null;
+  }
+  if ("done" in b) { if (typeof b.done !== "boolean") return badField("done", `${at}: done is true or false.`); patch.done = b.done; }
+  const start = patch.start ?? was?.start, end = patch.end ?? was?.end;
+  if (start && end && end < start) return badField("to", `${at}: to (${end}) is before from (${start}).`);
+  return { patch };
+}
+
+// POST /v1/goals: one goal, or {"goals": [...]} for up to BATCH_MAX at once
+async function addGoals(body: unknown, sc: Scopes, store: ApiStore): Promise<ApiRes> {
+  if (!sc.add) return scopeOff("add");
+  if (!isObj(body)) return fail(400, "bad_request", "Send a JSON object as the body: {\"title\": \"...\"}, or {\"goals\": [{...}, ...]} for several.");
+  const batch = Array.isArray(body.goals);
+  if (batch) { const u = unknownField(body, ["goals"]); if (u) return u; }
+  const items = batch ? body.goals as unknown[] : [body];
+  if (!items.length) return badField("goals", "goals is empty.");
+  if (items.length > BATCH_MAX) return fail(400, "too_many", `At most ${BATCH_MAX} goals in one request.`);
+  const have = store.settings().goals ?? [];
+  if (have.length + items.length > GOALS_MAX) return fail(409, "too_many", `The Timeline holds at most ${GOALS_MAX} goals (${have.length} now). Ask the person which to delete first.`);
+  // Everything is checked before anything is saved, and all of them are saved at once: never half a batch.
+  const made: Goal[] = [];
+  const nowIso = new Date(store.now()).toISOString();
+  for (let i = 0; i < items.length; i++) {
+    const r = checkGoal(items[i], null, batch ? `goals[${i}]` : "goal");
+    if ("status" in r) return r;
+    if (r.patch.done !== undefined && !sc.done) return scopeOff("done");
+    const level = r.patch.level ?? "macro";
+    const start = r.patch.start ?? store.today();
+    const end = r.patch.end ?? endFor(level, start);
+    if (end < start) return badField("to", `${batch ? `goals[${i}]` : "goal"}: to (${end}) is before from (${start}).`);
+    made.push({ id: newGoalId(), title: r.patch.title!, level, start, end, color: r.patch.color ?? nextGoalColor([...have, ...made]),
+      note: r.patch.note ?? null, done: r.patch.done === true, createdAt: nowIso });
+  }
+  await store.saveSettings({ goals: [...have, ...made] });
+  const out = made.map(goalView);
+  return batch ? ok({ goals: out, count: out.length }, 201) : ok({ goal: out[0] }, 201);
+}
+const newGoalId = () => (typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `g${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`);
+
+// PATCH /v1/goals/{id}
+async function editGoal(g: Goal, goals: Goal[], body: unknown, sc: Scopes, store: ApiStore): Promise<ApiRes> {
+  if (!isObj(body)) return fail(400, "bad_request", "Send a JSON object with the fields to change.");
+  if (!Object.keys(body).length) return fail(400, "bad_request", `Nothing to change. Fields: ${GOAL_FIELDS.join(", ")}.`);
+  const u = unknownField(body, GOAL_FIELDS); if (u) return u;
+  if (GOAL_FIELDS.some((k) => k !== "done" && k in body) && !sc.edit) return scopeOff("edit");
+  if ("done" in body && !sc.done) return scopeOff("done");
+  const r = checkGoal(body, g, "goal");
+  if ("status" in r) return r;
+  const next = { ...g, ...r.patch };   // fields this build does not know stay as they were
+  await store.saveSettings({ goals: goals.map((x) => (x.id === g.id ? next : x)) });
+  return ok({ goal: goalView(next) });
+}

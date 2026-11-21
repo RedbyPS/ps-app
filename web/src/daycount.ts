@@ -15,11 +15,13 @@ import { saveSettings } from "./core/actions";
 import { feature } from "./core/features";
 import { isRedAccount } from "./core/account";
 import { DEVICE_TZ } from "./core/tz";
+import { overdueZone } from "./core/overdue";
+import { nextResetAt, resetAtOf, resetMinOf } from "./core/resetday";
 import { dndMutes } from "./core/dnd";
 import { sleepState } from "./sleepmode/engine";
 import type { Doc, Todo } from "./core/model";
 import {
-  CD_FEATURE, WORDS, answer, cdNow, cdZone, cleanAns, cleanCd, nextRemind, p1Deadline, remAck, remindDue,
+  CD_FEATURE, WORDS, answer, cdEffective, cdNow, cdZone, cleanAns, cleanCd, nextRemind, p1Deadline, remAck, remindDue,
   type CdAns, type CdNow, type CdPrefs,
 } from "./core/daycount";
 
@@ -42,7 +44,10 @@ function since(now: number): number {
 export interface DayView {
   /** The feature and the switch are on, and the vault is open for its owner. */
   on: boolean;
+  /** The prefs the clock runs on: when the day end follows the reset time, "every day at" the reset time (cdEffective). */
   prefs: CdPrefs;
+  /** PS 1.72: the day end follows Settings "Reset automatically at" (Day ends: Same as reset time). */
+  followsReset: boolean;
   tz: string;
   st: CdNow;
   ans: CdAns;
@@ -56,7 +61,12 @@ export interface DayView {
 export function dayOn(s: Snapshot): boolean {
   return s.status === "unlocked" && s.role === "owner" && feature(CD_FEATURE) && cleanCd(settingsData(s).countdown).on;
 }
-export function dayPrefs(s: Snapshot): CdPrefs { return cleanCd(settingsData(s).countdown); }
+export function dayPrefs(s: Snapshot): CdPrefs { return cleanCd(settingsData(s).countdown, isRedAccount(s)); }
+/** The zone the day ends in for this vault: the countdown's own pick, else the reset's zone when following the reset time
+ *  (Settings, Your time zone, the same zone the automatic Reset uses), else the 1.70 rule (the developer Dubai, else this device). */
+export function dayZone(s: Snapshot, p: CdPrefs = dayPrefs(s)): string {
+  return cdZone(p, isRedAccount(s), DEVICE_TZ, overdueZone(settingsData(s).tmHomeTz));
+}
 
 const hmFmt = new Map<string, Intl.DateTimeFormat>();
 function hmIn(ts: number, tz: string): string {
@@ -66,16 +76,22 @@ function hmIn(ts: number, tz: string): string {
 }
 
 export function dayView(s: Snapshot, now: number, where: Where = "web"): DayView {
-  const prefs = dayPrefs(s);
+  const saved = dayPrefs(s);
   const st0 = settingsData(s);
-  const tz = cdZone(prefs, isRedAccount(s), DEVICE_TZ);
+  const tz = dayZone(s, saved);
+  const followsReset = saved.mode === "reset";
+  const prefs = cdEffective(saved, resetAtOf(st0));
+  // Reset automatically on (and no rule book, which ends the day itself, views/RuleBook.tsx): the automatic Reset ends the day, so
+  // a day end at the Reset never asks, and an unanswered zero lets go at the next Reset (core/daycount.ts cdNow).
+  const rTz = overdueZone(st0.tmHomeTz), rMin = resetMinOf(st0);
+  const firstReset = st0.autoReset === "midnight" && !st0.rules?.length ? (t: number) => nextResetAt(t - 1, rTz, rMin) : null;
   const ans = cleanAns(st0.cdAns);
   const on = dayOn(s);
   const sn = since(now);
-  const st = on ? cdNow(prefs, ans, tz, now, sn) : { target: null, asking: false, endKey: null, snoozed: false };
+  const st = on ? cdNow(prefs, ans, tz, now, sn, firstReset) : { target: null, asking: false, endKey: null, snoozed: false };
   const held = dndMutes(st0.dnd, "island", now, where) || sleepState().here;
   const rem = on && !held ? remindDue(prefs, st, ans, tz, now, sn) : null;
-  return { on, prefs, tz, st, ans, rem, endHm: st.target ? hmIn(st.endKey ? Date.parse(st.endKey) : st.target, tz) : prefs.at };
+  return { on, prefs, followsReset, tz, st, ans, rem, endHm: st.target ? hmIn(st.endKey ? Date.parse(st.endKey) : st.target, tz) : prefs.at };
 }
 
 // ---------- answers (from any device, any page) ----------

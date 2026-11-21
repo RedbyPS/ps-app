@@ -64,7 +64,7 @@ const world = () => fake({
 
 // ---------- switches ----------
 ok("defaults: add, read and the AI Inbox on, everything else off", () => {
-  assert.deepEqual(DEFAULT_SCOPES, { inbox: true, lists: false, rename: false, read: true, add: true, edit: false, done: false, delete: false, remind: false, sentry: false, gym: false, settings: false, message: false });
+  assert.deepEqual(DEFAULT_SCOPES, { inbox: true, lists: false, goals: false, rename: false, read: true, add: true, edit: false, done: false, delete: false, remind: false, sentry: false, gym: false, settings: false, message: false });
   assert.deepEqual(cleanScopes({ lists: true, delete: "yes", bogus: true }), { ...DEFAULT_SCOPES, lists: true });
   assert.deepEqual(cleanScopes(null), DEFAULT_SCOPES);
 });
@@ -657,6 +657,152 @@ ok("Copy for AI: self explaining, every endpoint, the switches as they are, the 
   assert.ok(g.includes("- message: OFF.") && g.includes("### POST /v1/island/message") && g.includes("curl -s -X POST http://127.0.0.1:47836/v1/island/message"), "the message switch, endpoint and example");
   assert.ok(aiGuide({ scopes: { ...DEFAULT_SCOPES, message: true }, today: T }).includes("- message: ON."));
 });
+// ---------- the goals timeline (PS 1.72, Jan: "make sure that you can edit this with API as well, add and delete") ----------
+const GOALS = [
+  { id: "goal-big", title: "Launch the shop", level: "macro", start: "2026-10-01", end: "2026-12-31", color: "#EC4E86", note: "First 100 orders", done: false, createdAt: "2026-10-01T09:00:00.000Z", extra: "kept" },
+  { id: "goal-month", title: "Finish the redesign", level: "meso", start: "2026-11-01", end: "2026-11-30", color: "#A855F7", note: null, done: true, createdAt: "2026-11-01T09:00:00.000Z" },
+  { id: "goal-week", title: "Write the copy", level: "micro", start: "2026-11-09", end: "2026-11-15", color: "#38BDF8", createdAt: "2026-11-09T09:00:00.000Z" },
+];
+const goalWorld = () => fake({ settings: { ...SETTINGS, goals: GOALS.map((g) => ({ ...g })) } });
+const G = { ...DEFAULT_SCOPES, goals: true };
+const goalsOf = (s: ReturnType<typeof fake>) => (s.set().goals ?? []) as Data[];
+
+ok("goals: the switch is off by default, and with it off every goals endpoint says scope_off and nothing is saved", async () => {
+  const s = goalWorld();
+  for (const [m, p, b] of [["GET", "/v1/goals"], ["POST", "/v1/goals", { title: "x" }], ["GET", "/v1/goals/goal-big"], ["PATCH", "/v1/goals/goal-big", { title: "y" }], ["DELETE", "/v1/goals/goal-big"]] as const) {
+    const r = await call(s, m, p, b);
+    assert.equal(r.status, 403, `${m} ${p}`);
+    assert.equal(r.body.error.scope, "goals");
+  }
+  assert.deepEqual(s.log, []);
+  assert.ok((await call(s, "GET", "/v1")).body.endpoints.includes("PATCH /v1/goals/{id}"));
+  assert.equal((await call(fake({ locked: true }), "GET", "/v1/goals", undefined, G)).status, 423, "locked: 423 like everything else");
+});
+ok("goals: GET lists them in level order with the editor's words, and filters by level, status, days and words", async () => {
+  const s = goalWorld();
+  const r = await call(s, "GET", "/v1/goals", undefined, G);
+  assert.equal(r.status, 200);
+  assert.deepEqual(r.body.goals.map((g: Data) => g.id), ["goal-big", "goal-month", "goal-week"]);
+  assert.deepEqual(r.body.goals[0], { id: "goal-big", title: "Launch the shop", level: "macro", levelName: "Macro", color: "#EC4E86", from: "2026-10-01", to: "2026-12-31", notes: "First 100 orders", done: false, createdAt: "2026-10-01T09:00:00.000Z" });
+  assert.equal(r.body.goals[0].extra, undefined, "only the API's own fields");
+  assert.equal(r.body.colors.length, 8);
+  const ids = async (query: Record<string, string>) => (await call(s, "GET", "/v1/goals", undefined, G, query)).body.goals.map((g: Data) => g.id);
+  assert.deepEqual(await ids({ level: "Micro" }), ["goal-week"]);
+  assert.deepEqual(await ids({ status: "done" }), ["goal-month"]);
+  assert.deepEqual(await ids({ status: "open" }), ["goal-big", "goal-week"]);
+  assert.deepEqual(await ids({ from: "2026-11-20", to: "2026-11-25" }), ["goal-big", "goal-month"]);
+  assert.deepEqual(await ids({ q: "copy" }), ["goal-week"]);
+  assert.equal((await call(s, "GET", "/v1/goals", undefined, G, { level: "huge" })).body.error.field, "level");
+  assert.equal((await call(s, "GET", "/v1/goals", undefined, G, { limit: "3" })).body.error.code, "unknown_field");
+  assert.equal((await call(s, "GET", "/v1/goals", undefined, { ...G, read: false })).body.error.scope, "read");
+  const one = await call(s, "GET", "/v1/goals/goal-week", undefined, G);
+  assert.equal(one.body.goal.title, "Write the copy");
+  assert.equal(one.body.goal.notes, null);
+  assert.equal(one.body.goal.done, false);
+  assert.equal((await call(s, "GET", "/v1/goals/nope", undefined, G)).status, 404);
+  assert.equal((await call(s, "GET", "/v1/goals/goal-big/x", undefined, G)).status, 404);
+  assert.equal((await call(s, "PUT", "/v1/goals/goal-big", {}, G)).status, 405);
+  assert.deepEqual(s.log, [], "reading saves nothing");
+});
+ok("goals: POST adds one with defaults that match a click on the Timeline, saved in the settings record", async () => {
+  const s = goalWorld();
+  const r = await call(s, "POST", "/v1/goals", { title: "  Run a half marathon  " }, G);
+  assert.equal(r.status, 201);
+  assert.equal(r.body.goal.title, "Run a half marathon");
+  assert.equal(r.body.goal.level, "macro");
+  assert.equal(r.body.goal.from, T, "from: today");
+  assert.equal(r.body.goal.to, "2027-01-31", "macro: to the end of the month two after");
+  assert.equal(r.body.goal.color, "#34D399", "the next colour in turn, as the Timeline does");
+  assert.deepEqual(s.log, ["settings goals"], "one save, through the encrypted settings");
+  assert.equal(goalsOf(s).length, 4);
+  assert.equal(goalsOf(s)[0].extra, "kept", "the other goals stay as they were, unknown fields too");
+  const m = await call(s, "POST", "/v1/goals", { title: "Ship v2", level: "Meso", from: "2026-12-10", color: "#fbbf24", notes: "Beta first" }, G);
+  assert.equal(m.body.goal.to, "2026-12-31", "meso: to the end of that month");
+  assert.equal(m.body.goal.color, "#FBBF24");
+  assert.equal(m.body.goal.notes, "Beta first");
+  const w = await call(s, "POST", "/v1/goals", { title: "Plan the week", level: "micro", from: "2026-12-28" }, G);
+  assert.equal(w.body.goal.to, "2027-01-03", "micro: a week, across the new year");
+  const stored = goalsOf(s).find((g) => g.id === w.body.goal.id)!;
+  assert.deepEqual(Object.keys(stored).sort(), ["color", "createdAt", "done", "end", "id", "level", "note", "start", "title"], "stored as the Timeline stores it");
+  assert.equal(stored.createdAt, "2026-11-12T10:00:00.000Z");
+});
+ok("goals: POST checks every field, and a batch is all or nothing", async () => {
+  const s = goalWorld();
+  const bad = async (b: unknown, field: string, sc: unknown = G) => { const r = await call(s, "POST", "/v1/goals", b, sc); assert.equal(r.status, 400, JSON.stringify(b)); assert.equal(r.body.error.field, field, JSON.stringify(b)); };
+  await bad({}, "title");
+  await bad({ title: "   " }, "title");
+  await bad({ title: "x", level: "mega" }, "level");
+  await bad({ title: "x", color: "pink" }, "color");
+  await bad({ title: "x", from: "2026-02-30" }, "from");
+  await bad({ title: "x", from: "2026-12-10", to: "2026-12-01" }, "to");
+  await bad({ title: "x", notes: 5 }, "notes");
+  await bad({ title: "x", start: "2026-12-01" }, "start");
+  await bad({ title: "x", done: "yes" }, "done");
+  assert.equal((await call(s, "POST", "/v1/goals", { title: "x", done: true }, G)).body.error.scope, "done", "adding a goal as done needs Tick done");
+  assert.equal((await call(s, "POST", "/v1/goals", { title: "x" }, { ...G, add: false })).body.error.scope, "add");
+  assert.equal((await call(s, "POST", "/v1/goals", { goals: [{ title: "ok" }, { title: "bad", level: "x" }] }, G)).status, 400);
+  assert.equal((await call(s, "POST", "/v1/goals", { goals: [] }, G)).status, 400);
+  assert.equal((await call(s, "POST", "/v1/goals", { goals: Array.from({ length: 51 }, () => ({ title: "x" })) }, G)).body.error.code, "too_many");
+  assert.deepEqual(s.log, [], "nothing saved by any of them");
+  const long = await call(s, "POST", "/v1/goals", { title: "y".repeat(300) }, G);
+  assert.equal(long.body.goal.title.length, 120, "names are cut to the Timeline's 120");
+  const b = await call(s, "POST", "/v1/goals", { goals: [{ title: "One", level: "micro" }, { title: "Two", level: "meso", done: true }] }, { ...G, done: true });
+  assert.equal(b.status, 201);
+  assert.equal(b.body.count, 2);
+  assert.deepEqual(b.body.goals.map((g: Data) => g.title), ["One", "Two"]);
+  assert.equal(b.body.goals[1].done, true);
+  assert.notEqual(b.body.goals[0].color, b.body.goals[1].color, "each its own colour");
+  assert.equal(s.log.filter((x) => x === "settings goals").length, 2, "the batch is one save");
+  const full = fake({ settings: { goals: Array.from({ length: 499 }, (_, i) => ({ ...GOALS[2], id: `g${i}` })) } });
+  assert.equal((await call(full, "POST", "/v1/goals", { goals: [{ title: "a" }, { title: "b" }] }, G)).status, 409, "the Timeline holds 500");
+});
+ok("goals: PATCH changes only what is sent; edit and done have their own switches", async () => {
+  const s = goalWorld();
+  assert.equal((await call(s, "PATCH", "/v1/goals/goal-big", { title: "Grow the shop" }, G)).body.error.scope, "edit");
+  assert.equal((await call(s, "PATCH", "/v1/goals/goal-big", { done: true }, { ...G, edit: true })).body.error.scope, "done");
+  assert.deepEqual(s.log, []);
+  const E = { ...G, edit: true, done: true };
+  const r = await call(s, "PATCH", "/v1/goals/goal-big", { title: "Grow the shop", level: "meso", color: "#34d399", from: "2026-11-01", to: "2026-11-30", notes: null }, E);
+  assert.equal(r.status, 200);
+  assert.deepEqual({ ...r.body.goal, createdAt: undefined }, { id: "goal-big", title: "Grow the shop", level: "meso", levelName: "Meso", color: "#34D399", from: "2026-11-01", to: "2026-11-30", notes: null, done: false, createdAt: undefined });
+  const saved = goalsOf(s).find((g) => g.id === "goal-big")!;
+  assert.equal(saved.extra, "kept", "fields this build does not know stay");
+  assert.equal(saved.note, null);
+  assert.equal(goalsOf(s).length, 3);
+  assert.equal(goalsOf(s)[1].title, "Finish the redesign", "the others untouched");
+  const d = await call(s, "PATCH", "/v1/goals/goal-big", { done: true }, { ...G, done: true });
+  assert.equal(d.body.goal.done, true, "done alone needs only Tick done");
+  assert.equal((await call(s, "PATCH", "/v1/goals/goal-big", { to: "2026-10-01" }, E)).body.error.field, "to", "to before the goal's from");
+  assert.equal((await call(s, "PATCH", "/v1/goals/goal-big", { title: "" }, E)).body.error.field, "title", "a goal keeps a name");
+  assert.equal((await call(s, "PATCH", "/v1/goals/goal-big", {}, E)).status, 400);
+  assert.equal((await call(s, "PATCH", "/v1/goals/goal-big", { id: "other" }, E)).body.error.code, "unknown_field", "the id never changes");
+  assert.equal((await call(s, "PATCH", "/v1/goals/missing", { title: "x" }, E)).status, 404);
+});
+ok("goals: DELETE needs its switch and removes only that goal", async () => {
+  const s = goalWorld();
+  assert.equal((await call(s, "DELETE", "/v1/goals/goal-week", undefined, G)).body.error.scope, "delete");
+  assert.equal(goalsOf(s).length, 3);
+  const r = await call(s, "DELETE", "/v1/goals/goal-week", undefined, { ...G, delete: true });
+  assert.deepEqual(r.body, { deleted: "goal-week" });
+  assert.deepEqual(goalsOf(s).map((g) => g.id), ["goal-big", "goal-month"]);
+  assert.equal((await call(s, "DELETE", "/v1/goals/goal-week", undefined, { ...G, delete: true })).status, 404, "gone");
+  assert.equal((await call(s, "DELETE", "/v1/tasks/goal-big", undefined, ALL)).status, 404, "a goal is never a task");
+});
+ok("goals: the task switches alone never reach goals, and the goals switch alone never reaches tasks", async () => {
+  const s = goalWorld();
+  assert.equal((await call(s, "GET", "/v1/goals", undefined, { ...ALL, goals: false })).body.error.scope, "goals");
+  const onlyGoals = { ...cleanScopes({}), inbox: false, goals: true };
+  assert.equal((await call(s, "GET", "/v1/tasks", undefined, onlyGoals)).status, 403);
+  assert.equal((await call(s, "GET", "/v1/goals", undefined, onlyGoals)).status, 200);
+});
+ok("goals: Copy for AI explains the switch, the goal object and every endpoint with an example", () => {
+  const g = aiGuide({ scopes: DEFAULT_SCOPES, today: T });
+  assert.ok(g.includes("- goals: OFF."));
+  assert.ok(aiGuide({ scopes: { ...DEFAULT_SCOPES, goals: true }, today: T }).includes("- goals: ON."));
+  for (const e of ["### GET /v1/goals", "### POST /v1/goals", "### PATCH /v1/goals/{id}", "### DELETE /v1/goals/{id}", "curl -s -X POST http://127.0.0.1:47836/v1/goals", "\"levelName\": \"Macro\""]) assert.ok(g.includes(e), e);
+  assert.ok(!/[\u2013\u2014]/.test(g), "no en or em dashes");
+});
+
 ok("Connect your AI: a short rule with the key slot (never a key), the curl, the chat id, where to save it, no dashes", () => {
   const c = aiConnect({});
   assert.equal(c.split(KEY_SLOT).length - 1, 1, "the key slot once, in the curl");

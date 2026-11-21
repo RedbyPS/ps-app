@@ -4,7 +4,9 @@
 import type { ReactNode } from "react";
 import type { TopMenuId } from "../core/topmenu";
 
-const P: Record<TopMenuId, ReactNode> = {
+/** PS 1.72: The G Squad left the menu (its own button beside it, Jan) and keeps the icon its row had. */
+type IconId = TopMenuId | "gsquad";
+const P: Record<IconId, ReactNode> = {
   // A stopwatch: the AFK timer counting.
   afk: <><circle cx="12" cy="13.5" r="7.5" /><path d="M12 9.5v4l2.6 1.6M10 2.8h4M12 2.8V6M18.4 6.4l1.3-1.3" /></>,
   // A folded newspaper: the Morning brief.
@@ -37,7 +39,7 @@ const P: Record<TopMenuId, ReactNode> = {
   lock: <><rect x="4.5" y="10.5" width="15" height="10.5" rx="2.2" /><path d="M8 10.5V7.8a4 4 0 0 1 8 0v2.7M12 14.6v2.4" /></>,
 };
 
-export function TopIcon({ id, size = 18, stroke = 1.8, className }: { id: TopMenuId; size?: number; stroke?: number; className?: string }) {
+export function TopIcon({ id, size = 18, stroke = 1.8, className }: { id: IconId; size?: number; stroke?: number; className?: string }) {
   return (
     <svg className={className} width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={stroke} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       {P[id]}

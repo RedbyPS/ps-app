@@ -180,7 +180,9 @@ ok("manifest and icons: PS app, standalone, scoped to /todolist-mobile/, real PN
   assert.ok(m.icons.some((i: { purpose: string }) => i.purpose === "maskable"));
   const size = (f: string) => { const b = readFileSync(new URL(`../todolist-mobile/static/${f}`, import.meta.url)); assert.equal(b.toString("latin1", 1, 4), "PNG", f); return [b.readUInt32BE(16), b.readUInt32BE(20)]; };
   for (const i of m.icons as { src: string; sizes: string }[]) assert.deepEqual(size(i.src.replace("/todolist-mobile/", "")).join("x"), i.sizes);
-  assert.deepEqual(size("apple-touch-icon.png"), [180, 180]);
+  assert.deepEqual(size("icon-cake-180.png"), [180, 180]);
+  // PS 1.72: the Cake icon under new names (no cache keeps the old picture), the old files gone
+  for (const old of ["apple-touch-icon.png", "icon-192.png", "icon-512.png", "icon-maskable-512.png"]) assert.ok(!existsSync(new URL(`../todolist-mobile/static/${old}`, import.meta.url)), old);
   assert.match(read("src/core/appname.ts"), /export const MOBILE_APP_NAME = "PS app";/);
 });
 

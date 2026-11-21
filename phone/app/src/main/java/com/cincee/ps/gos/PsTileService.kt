@@ -4,6 +4,7 @@ import android.appwidget.AppWidgetManager
 import android.appwidget.AppWidgetProvider
 import android.content.ComponentName
 import android.content.Context
+import android.graphics.drawable.Icon
 import android.service.quicksettings.Tile
 import android.service.quicksettings.TileService
 import android.widget.RemoteViews
@@ -13,6 +14,8 @@ import org.json.JSONObject
 class PsTileService : TileService() {
     override fun onStartListening() {
         qsTile?.apply {
+            // PS 1.72: the icon given each time, from this build, so a tile Android kept from before an update never shows an old one.
+            icon = Icon.createWithResource(this@PsTileService, R.drawable.ic_ps_tile)
             state = Tile.STATE_INACTIVE
             label = "PS list"
             subtitle = PsWidget.count?.let { if (it == 0) "All clear" else "$it open" } ?: "Your tasks"

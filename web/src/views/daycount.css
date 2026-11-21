@@ -136,6 +136,10 @@
 .cds-week { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px 14px; align-items: center; }
 .cds-day { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 13px; font-weight: 600; }
 .cds-hint { grid-column: 1 / -1; font-size: 12px; opacity: .65; }
+/* PS 1.72: the links between Day ends and Reset automatically (one time sets both). */
+.cds-link { all: unset; cursor: pointer; font-size: 12px; font-weight: 600; color: var(--k-acc, #EC4E86); text-decoration: underline; text-underline-offset: 2px; }
+.cds-link:hover { opacity: .85; }
+.cds-link:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; border-radius: 3px; }
 .cds-select { max-width: 230px; font: 600 13px/1.2 -apple-system, BlinkMacSystemFont, "Inter Variable", system-ui, sans-serif; padding: 7px 10px; border-radius: 10px;
   border: 1px solid rgba(255, 255, 255, .16); background: rgba(255, 255, 255, .06); color: inherit; color-scheme: dark; }
 .cds-sw { display: inline-flex; flex-wrap: wrap; gap: 7px; }

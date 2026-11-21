@@ -783,7 +783,8 @@ final class Soundboard: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
     let c = WKWebViewConfiguration()
     c.websiteDataStore = .nonPersistent()
     c.userContentController.add(self, name: "sbcard")
-    let w = WKWebView(frame: NSRect(x: 0, y: 0, width: Soundboard.cardW, height: Soundboard.cardH), configuration: c)
+    // The panel never becomes key: a plain WKWebView dropped the first click on the card (main.swift).
+    let w = ClickThroughWebView(frame: NSRect(x: 0, y: 0, width: Soundboard.cardW, height: Soundboard.cardH), configuration: c)
     w.setValue(false, forKey: "drawsBackground")
     w.navigationDelegate = self
     let p = SbCardPanel(contentRect: w.frame, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
