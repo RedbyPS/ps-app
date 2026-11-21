@@ -22,7 +22,7 @@ const shownEl = (el: Element) => {
 // ---------- windows that open with morph() (views/DimensionX.tsx): Settings, Dimension X, Numerology, Series map, Brief... ----------
 // They animate themselves, so the menu hands morph() the spot instead of animating on top of it: the window zooms out of the
 // item's spot and, when it closes, zooms back into it (no card needed, it is the real window).
-const MORPH_LAYERS = ".dx-layer, .nu-layer, .sp-layer, .sb-layer, .nt-layer, .pm-layer";
+const MORPH_LAYERS = ".dx-layer, .nu-layer, .sp-layer, .sb-layer, .clw-layer, .nt-layer, .pm-layer";
 let pending: { at: Pt; size: number; until: number } | null = null;
 const spots = new WeakMap<HTMLElement, { at: Pt; size: number }>();
 const zoomFrames = (r: DOMRect, at: Pt, size: number) => {

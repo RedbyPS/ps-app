@@ -60,4 +60,34 @@ ok("the row is a button that asks the Mac to replay: no restart, no download, no
   assert.match(g, /"replay-update": function ReplayUpdate[\s\S]*?psPost\(\{ type: "psSettings:replayHatch" \}\)/);
   assert.ok(!/replayHatch[\s\S]{0,200}(macUpdate|updater)/i.test(g.slice(g.indexOf('"replay-update"'), g.indexOf('"replay-update"') + 600)));
 });
+// ---------- PS Cake: the boot animation takes the switch; Replay the logo reveal (Settings, About and updates) ----------
+ok("the switch's line says what the Cake boot animation does", () => {
+  const e = X.SETTINGS.find((x) => x.id === "start-animation");
+  assert.equal(e!.line, "Each time the app opens, one of three Cake scenes plays and builds the island. Esc skips it.");
+  assert.match(src("src/views/PsSettings.tsx"), /One of three Cake scenes plays and builds the Dynamic Island\. It takes about six seconds; Esc or a click skips it\./);
+});
+ok("the logo reveal replay sits right under the update animation replay, Mac only", () => {
+  const i = X.SETTINGS.findIndex((x) => x.id === "replay-update");
+  const e = X.SETTINGS[i + 1];
+  assert.equal(e.id, "replay-reveal");
+  assert.equal(e.group, "about");
+  assert.deepEqual(e.on, ["mac"]);
+  assert.equal(e.name, "Replay the logo reveal");
+  assert.equal(e.line, "Plays the logo reveal again: the old PS icon turns into the new one. Esc skips it.");
+});
+ok("not hidden from anyone: the public build has the logo reveal replay too", () => {
+  const e = X.SETTINGS.find((x) => x.id === "replay-reveal") as Record<string, unknown>;
+  assert.equal(e.red, undefined);
+  assert.equal(e.private, undefined);
+});
+ok("search finds the logo reveal by the words people use, and not on the website", () => {
+  const ctx = { red: false, where: "mac", pf: true, ck: true } as const;
+  for (const q of ["logo reveal", "new icon", "replay logo", "knight"]) assert.ok(X.searchSettings(q, ctx as never).slice(0, 3).some((h: { e: { id: string } }) => h.e.id === "replay-reveal"), q);
+  const web = { red: false, where: "web", pf: true, ck: true } as const;
+  assert.ok(!X.searchSettings("replay the logo reveal", web as never).some((h: { e: { id: string } }) => h.e.id === "replay-reveal"));
+});
+ok("the row is a button that asks the Mac to replay the reveal, nothing else", () => {
+  const g = src("src/views/SettingsGroups.tsx");
+  assert.match(g, /"replay-reveal": function ReplayReveal[\s\S]*?psPost\(\{ type: "psSettings:replayReveal" \}\)/);
+});
 console.log(`\n${n} passed`);

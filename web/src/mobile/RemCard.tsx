@@ -30,7 +30,7 @@ export function RemCard() {
           onChange={(e) => { setTyped(e.target.value); setWrong(false); }} onKeyDown={(e) => { if (e.key === "Enter") done(); }} />}
         {wrong && <p className="remcard-wrong">{`Only ${wordOf(r)} clears this`}</p>}
         <button type="button" className="remcard-yes" onClick={done}>{yesOf(r)}</button>
-        <button type="button" className="remcard-later" onClick={() => answerCard("snooze")}>{laterOf(r)}</button>
+        {!c.one && <button type="button" className="remcard-later" onClick={() => answerCard("snooze")}>{laterOf(r)}</button>}   {/* PS 1.73: the P1 alarm has one button */}
         <button type="button" className="remcard-x" onClick={closeCard} aria-label="Close">Close</button>
       </div>
     </div>

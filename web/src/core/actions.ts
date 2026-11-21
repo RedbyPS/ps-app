@@ -1,7 +1,7 @@
 // Everything that changes data goes through here, so views stay simple.
 import type { Approval, AwareItem, ClientRec, CTask, DimxZone, Doc, Draft, Meeting, Payment, Reply, Pipeline, Preview, Project, ProjectPrivate, ProjectType, Settings, Suggestion, Tick, Todo, Update, WsMeta , ProjectDoc, Agenda, JournalEntry, Quote, Note, ScreenTimeApp, ScreenTimeDay, ScreenTimeDevice, StLine, TaskGroup } from "./model";
 import { DEFAULT_SETTINGS, newProject, stagesFor, uid, workingIdsOf } from "./model";
-import { OLD_SCENES, movedId, sortPrio, unrankedAfterMove } from "./prio";
+import { OLD_SCENES, movedId, newTaskRank, sortPrio, unrankedAfterMove } from "./prio";
 import { islandOnPatch } from "./islandon";
 import { cleanGroups, cleanSecOrder, groupKey, planMove, planUngroup, tabLists, type TaskMove } from "./groups";
 import { addPage, cleanPages, moveSec } from "./lists";
@@ -12,7 +12,7 @@ import { agendas, dayLogs, extraSettingsIds, tzZonesDoc, journal, notes, project
 import { addDays, todayISO } from "../ui/kit";
 import { typedOrder } from "./typedprio";
 import { tickPatch } from "./repeat";
-import { applySubOp, tickParentSubs, type SubOp } from "./subtasks";
+import { tickParentSubs, withSubOp, type SubOp } from "./subtasks";
 import { nextApps, planSplit } from "./screentime";
 import { planLines, toHours, type Timeline } from "./stline";
 import { isUnseen, mergeReply, remindPatch } from "./mailcards";
@@ -525,9 +525,14 @@ export async function approveStage(projectId: string, ws: string, stageKey: stri
 // ---------- to-do list ----------
 /** id (PS 1.68): an idea card that becomes a task gives the task its own id (core/dimxmove.ts). */
 export async function addTodo(t: Partial<Todo> & { title: string }, opts: { id?: string } = {}) {
-  // New tasks join the bottom of the priority list (drag them up to raise their priority).
+  // New tasks join the bottom of the list (drag them up to raise their priority).
   const list = todos(vaultStore.get());
   const order = t.order ?? (list.length ? Math.max(...list.map((x) => x.data.order ?? 0)) + 1 : 0);
+  // PS 1.73 (the developer, 21 Nov 2026: "stop adding in priorities at random ... Just have them at the bottom"): a one-off task
+  // added with no place and no priority picked has NO priority: no P number, at the bottom (core/prio.ts unranked).
+  // Only Priority 1, an explicit place (a drag to a spot, a typed P2, a picked place) or the caller's own "unranked"
+  // gives it one.
+  t = { ...t, ...newTaskRank(t) };
   // Time estimates (PS 1.65, core/timeest.ts): a name used before gets the usual time, marked as learned ("Usually takes about").
   const usual = !t.example && t.est == null ? learnedEst(t.title) : null;
   const id = await put<Todo>("todo", {
@@ -538,7 +543,7 @@ export async function addTodo(t: Partial<Todo> & { title: string }, opts: { id?:
 }
 /** Drag to reorder: the list's new order, top first. `p1` also sets the moved task's Priority 1
  *  flag in the same write (one write per task, so the order and the flag never race). */
-export async function setTodoOrder(ids: string[], p1?: { id: string; on: boolean }) {
+export async function setTodoOrder(ids: string[], p1?: { id: string; on: boolean }, level?: { id: string; prioGroup: string | null }) {
   // A task with no priority yet gets one when it is dragged among the numbered tasks (and loses it
   // when dragged below one with none), see core/prio.ts.
   const docsNow = ids.map((id) => doc<Todo>(id)).filter((d): d is Doc<Todo> => !!d && d.data.type !== "daily");
@@ -551,8 +556,11 @@ export async function setTodoOrder(ids: string[], p1?: { id: string; on: boolean
     if (!d) continue;
     const flag = p1 && p1.id === d.id && !!d.data.p1 !== p1.on;
     const rank = moved === d.id && nowUnranked !== null && !!d.data.unranked !== nowUnranked;
-    if (d.data.order !== i || flag || rank)
-      await put<Todo>("todo", { ...d.data, order: i, ...(flag ? { p1: p1!.on } : {}), ...(rank ? { unranked: nowUnranked! } : {}) }, { id: d.id, ws: null });
+    // PS 1.73: the moved task's priority level (core/prio.ts levelAfterMove); none once it is P1 or has no priority.
+    const lvFor = level && level.id === d.id ? ((p1?.id === d.id && p1.on) || (moved === d.id && nowUnranked) ? null : level.prioGroup) : undefined;
+    const lv = lvFor !== undefined && (d.data.prioGroup ?? null) !== lvFor;
+    if (d.data.order !== i || flag || rank || lv)
+      await put<Todo>("todo", { ...d.data, order: i, ...(flag ? { p1: p1!.on } : {}), ...(rank ? { unranked: nowUnranked! } : {}), ...(lv ? { prioGroup: lvFor } : {}) }, { id: d.id, ws: null });
   }
 }
 /** Tab list (core/groups.ts): tasks dragged into a section, or out into a new group (made first,
@@ -584,7 +592,7 @@ export async function ungroupTasks(id: string) {
 function tabListsNow() {
   const s = vaultStore.get();
   const st = settings(s)?.data;
-  return tabLists(todos(s), cleanGroups(st?.tmGroups), todayISO(), { now: Date.now(), tz: overdueZone(st?.tmHomeTz) });   // the list as shown (overdue tasks are on their own card)
+  return tabLists(todos(s), cleanGroups(st?.tmGroups), todayISO(), { now: Date.now(), tz: overdueZone(st?.tmHomeTz) }, landDay?.(s));   // the list as shown (overdue tasks are on their own card)
 }
 async function writeMoves(list: { id: string; patch: Partial<Todo> }[]) {
   for (const w of list) {
@@ -609,6 +617,10 @@ export async function migrateIslandOn() {
   await saveSettings(patch).finally(() => { islandOnBusy = false; });
 }
 let migratingP1 = false;
+/** Clients (PS 1.73): the person's day by their day end (src/clients/clientsday.ts sets it), so the list as shown lands client tasks
+ *  at the day end. Set from outside: that file reads the countdown, which reads this one. */
+let landDay: ((s: ReturnType<typeof vaultStore.get>) => string) | null = null;
+export function setLandDay(f: typeof landDay) { landDay = f; }
 export async function migrateP1() {
   const st = settings(vaultStore.get())?.data;
   if (!st || st.p1Migrated || migratingP1) return;
@@ -616,6 +628,11 @@ export async function migrateP1() {
   const open = todos(vaultStore.get()).filter((d) => d.data.type !== "daily" && !d.data.done).sort((a, b) => (a.data.order ?? 0) - (b.data.order ?? 0));
   if (open[0] && !open.some((d) => d.data.p1)) await put<Todo>("todo", { ...open[0].data, p1: true }, { id: open[0].id, ws: null });
   await saveSettings({ p1Migrated: true }).finally(() => { migratingP1 = false; });
+}
+/** PS 1.73: one task's level tag only (the other half of a level that just became a group of two). */
+export async function setLevelTag(id: string, prioGroup: string | null) {
+  const d = doc<Todo>(id);
+  if (d && (d.data.prioGroup ?? null) !== prioGroup) await put<Todo>("todo", { ...d.data, prioGroup }, { id, ws: null });
 }
 export async function updateTodo(id: string, patch: Partial<Todo>) {
   const d = doc<Todo>(id);
@@ -690,7 +707,7 @@ export function subtaskOp(id: string, op: SubOp): Promise<void> {
   const run = async () => {
     const d = doc<Todo>(id);
     if (!d) return;
-    await put<Todo>("todo", { ...d.data, subtasks: applySubOp(d.data.subtasks, op, now(), d.data.type === "daily") }, { id, ws: null });
+    await put<Todo>("todo", withSubOp(d.data, op, now()), { id, ws: null });   // only its mini tasks change (core/subtasks.ts)
   };
   const p = subLane.then(run, run);
   subLane = p.catch(() => {});
@@ -838,8 +855,9 @@ export function addBotTasks(list: BotAdd[]): Promise<BotRef[]> {
       const order = at ? at.order : all.length ? Math.max(...all.map((x) => x.data.order ?? 0)) + 1 : 0;
       await put<Todo>("todo", {
         title, type: "once", done: false, source: "manual", due, order, createdAt: now(),
-        ...(at?.p1 ? { p1: true } : {}), ...(at ? {} : { unranked: true }),
+        ...(at?.p1 ? { p1: true } : {}), ...(at ? {} : { unranked: true }), ...(at?.prioGroup ? { prioGroup: at.prioGroup } : {}),
       } as Todo, { id: t.id, ws: null });
+      if (at?.pair) await setLevelTag(at.pair.id, at.pair.prioGroup);
       out.push({ k: "todo", id: t.id, title });
     }
     if (touched) await saveSettings({ aware, dimx });

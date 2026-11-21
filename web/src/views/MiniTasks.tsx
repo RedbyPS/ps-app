@@ -16,6 +16,8 @@ import { Chevron, Collapse } from "./Accordion";
 import { StreakBadge } from "../ui/RepeatPicker";
 import { dimxIsOpen } from "./DimensionX";
 import { pushUndoAction, taskMapActions } from "./TaskMap";
+import { openMiniMenu } from "./TaskMenu";
+import { vaultStore } from "../core/vault";
 import "./minitasks.css";
 
 // ---------- what shows: the saved list, or the one just changed until the save comes back ----------
@@ -77,6 +79,7 @@ function onKey(e: KeyboardEvent) {
   const a = document.activeElement as HTMLElement | null;
   if (a && (a.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName))) return;
   if (dimxIsOpen()) return;
+  if (document.querySelector(".tm-ctx")) return;   // a right click menu is open: its own Backspace decides (PS 1.73)
   const p = keys.sel ?? keys.hover;
   if (!p || !document.querySelector(`[data-mini="${p.d.id}/${p.s.id}"]`)) return;
   e.preventDefault(); e.stopPropagation();
@@ -93,13 +96,40 @@ function useKeys() {
 }
 
 let focusNext: string | null = null;   // the task just opened with the chevron: its add box takes the keys
+/** The newest copy of the task (an Undo can come long after the change it undoes). */
+const fresh = (d: Doc<Todo>) => (vaultStore.get().docs.get(d.id) as Doc<Todo> | undefined) ?? d;
+/** Deletes ONE mini task: only its own entry leaves the task's list (core/subtasks.ts "remove"). The task, its other
+ *  mini tasks, its priority, timers and Priority 1 clock stay. Undo puts back just that mini task, in its place. */
 function removeMini({ d, s, index, undo }: Pick) {
   sfx.drop();
   if (keys.sel?.s.id === s.id) keys.sel = null;
   if (keys.hover?.s.id === s.id) keys.hover = null;
   miniAct(d, { op: "remove", id: s.id });
-  undo(`mini-rm:${d.id}/${s.id}`, s.title, () => miniAct(d, { op: "restore", item: s, index }));
+  undo(`mini-rm:${d.id}/${s.id}`, s.title, () => miniAct(fresh(d), { op: "restore", item: s, index }));
 }
+
+// ---------- a mini task's own right click menu (PS 1.73, views/TaskMenu.tsx MiniMenu) ----------
+// The developer, 21 Nov 2026: "when you have a mini task under a task and you delete the mini task, I don't want you to delete the
+// whole task. I want you to delete just the mini task." A right click on a mini task used to open its TASK's menu (the
+// mini task sits inside the task's row), so Delete there took the whole task. Now it opens the mini task's own menu.
+const findMini = (d: Doc<Todo>, subId: string) => { const l = miniList(d), index = l.findIndex((x) => x.id === subId); return index < 0 ? null : { s: l[index], index }; };
+/** The menu's Delete (and Backspace in it): just this mini task, with Undo. */
+export function deleteMini(d: Doc<Todo>, subId: string, undo: UndoFn = pushUndoAction) {
+  const f = findMini(d, subId);
+  if (f) removeMini({ d, s: f.s, index: f.index, undo });
+}
+/** The menu's Mark done or Untick: the same as its tick. */
+export function tickMini(d: Doc<Todo>, subId: string, undo: UndoFn = pushUndoAction) {
+  const f = findMini(d, subId);
+  if (!f) return;
+  if (!f.s.done) { sfx.done(); undo(`mini:${d.id}/${subId}`, f.s.title, () => miniAct(fresh(d), { op: "tick", id: subId })); }
+  miniAct(d, { op: "tick", id: subId });
+}
+/** The mini task as it shows now (for the menu's title, Mark done or Untick, Copy text). */
+export const miniOf = (d: Doc<Todo>, subId: string): Subtask | null => findMini(d, subId)?.s ?? null;
+/** The menu's Edit: that mini task's name opens for typing, as a double click does. */
+let editReq: string | null = null;
+export function editMini(taskId: string, subId: string) { editReq = `${taskId}/${subId}`; emit(); }
 
 // ---------- the pieces ----------
 /** The chevron and the quiet count ("2/5"). With no mini tasks it shows only on hover of the row. */
@@ -133,7 +163,9 @@ export function MiniList({ d, open, onUndo }: { d: Doc<Todo>; open: boolean; onU
   const byId = new Map(list.map((s) => [s.id, s]));
   return (
     <Collapse open={open} lazy className="mt-panel">
-      <div className="mt-box" onPointerDown={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()} onClick={(e) => e.stopPropagation()}>
+      {/* PS 1.73: a right click anywhere in the mini list never opens the task's menu (its Delete takes the whole task). */}
+      <div className="mt-box" onPointerDown={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()} onClick={(e) => e.stopPropagation()}
+        onContextMenu={(e) => { e.stopPropagation(); if (!(e.target as Element).closest("input, textarea")) e.preventDefault(); }}>
         {order.length > 0 && (
           <ul className="mt-list">
             {order.map((id, i) => {
@@ -154,6 +186,7 @@ function MiniItem({ d, s, index, drag, undo }: { d: Doc<Todo>; s: Subtask; index
   useEffect(() => { if (!edit) setTitle(s.title); }, [s.title, edit]);
   const claude = !!s.claudeDoneAt && !s.done;
   const sel = keys.sel?.s.id === s.id && keys.sel.d.id === d.id;
+  useEffect(() => { if (editReq === `${d.id}/${s.id}`) { editReq = null; setEdit(true); } });
   const tick = () => {
     if (!s.done) { sfx.done(); undo(`mini:${d.id}/${s.id}`, s.title, () => miniAct(d, { op: "tick", id: s.id })); }
     miniAct(d, { op: "tick", id: s.id });
@@ -169,7 +202,9 @@ function MiniItem({ d, s, index, drag, undo }: { d: Doc<Todo>; s: Subtask; index
       ref={drag.ref} style={drag.style} data-dragging={drag["data-dragging"]}
       onPointerDown={(e) => { if (!edit) drag.onPointerDown(e); }}
       onClick={() => { keys.sel = { d, s, index, undo }; emit(); }}
-      onMouseEnter={() => { keys.hover = { d, s, index, undo }; }} onMouseLeave={() => { if (keys.hover?.s.id === s.id) keys.hover = null; }}>
+      onMouseEnter={() => { keys.hover = { d, s, index, undo }; }} onMouseLeave={() => { if (keys.hover?.s.id === s.id) keys.hover = null; }}
+      // PS 1.73: its own menu, never its task's (whose Delete took the whole task).
+      onContextMenu={(e) => { if (edit) e.stopPropagation(); else openMiniMenu(e, d.id, s.id); }}>
       <button type="button" className="mt-tick no-drag" onClick={(e) => { e.stopPropagation(); tick(); }} aria-pressed={s.done}
         aria-label={`${s.done ? "Untick" : "Tick off"}: ${s.title}`} title={claude ? `Claude did this: ${s.claudeNote || "done"}. Click to confirm` : undefined}>
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M5 12l5 5L20 7" /></svg>

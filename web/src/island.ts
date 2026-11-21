@@ -37,6 +37,7 @@ import type { FitWorkout } from "./core/fitness";
 import { workoutPatch } from "./fitness/store";
 import { asleepNames, lowPower } from "./core/lowpower.ts";
 import { dayIsland, dayIslandAction } from "./daycount";
+import { landDayNow } from "./clients/clientsday";
 
 type Post = (m: object) => void;
 let post: Post = () => {};
@@ -93,7 +94,7 @@ function sync(force = false) {
     eventTimer = window.setTimeout(() => { event = null; sync(); }, ISLAND_EVENT_MS);
   }
   const st = settingsData(s);
-  shown = islandState({ todos: todos(s) as Doc<Todo>[], settings: st, today: todayISO(), mail, leads, event, now });
+  shown = islandState({ todos: todos(s) as Doc<Todo>[], settings: st, today: todayISO(), land: landDayNow(s, now), mail, leads, event, now });
   // V1.58: the meetings for "Disappear for this meeting" (core/islandaway.ts): the Meetings panel's own calendar copy,
   // the meetings taken off the panel left out. Only ids and times.
   const cal = calendarSnap(s);

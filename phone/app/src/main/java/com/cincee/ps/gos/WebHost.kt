@@ -361,6 +361,7 @@ object WebHost {
             "update:every" -> Updater.setEvery(c, m.optInt("min", 5))
             "update:install" -> Updater.install(c)
             "back:none" -> activity?.moveTaskToBack(true)
+            "edgeGuard" -> activity?.setEdgeGuard(m.optDouble("top", 0.0), m.optDouble("bottom", 0.0))   // PS 1.73 swipe leak (EdgeGuard.kt)
             "lock" -> { Quiet.locked(c); if (m.optBoolean("byHand")) Prefs.setHandLocked(c, true) }
             "nuke" -> {   // the rule book (Nuke.kt): the flag, the keys and the files here, the Gone screen on the main thread
                 Nuke.run(c); post(JSONObject().put("type", "rememberStatus").put("exists", false))

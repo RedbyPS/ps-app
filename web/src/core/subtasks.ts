@@ -174,3 +174,9 @@ export function titleMatches(title: string, match: string) {
   const words = match.toLowerCase().split(/\s+/).filter(Boolean);
   return words.length > 0 && words.every((w) => t.includes(w));
 }
+
+/** A task after one mini task change (PS 1.73): only `subtasks` changes. Everything else the task has (its priority, level,
+ *  Priority 1 clock, timers, order, done) is kept as it is, so deleting a mini task never touches its task. */
+export function withSubOp<T extends { subtasks?: Subtask[]; type?: string }>(task: T, op: SubOp, at: string): T {
+  return { ...task, subtasks: applySubOp(task.subtasks, op, at, task.type === "daily") };
+}

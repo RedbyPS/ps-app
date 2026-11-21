@@ -8,20 +8,108 @@ import { isColourBg } from "./bgcolour.ts";
 
 export const isP1 = (t: Todo) => t.p1 === true;
 
-/** The list in display order: P1 tasks first, then by order. */
+/** The priority level a task shares with its neighbours (PS 1.73, the developer 21 Nov 2026: "if you have more than one priority
+ *  two tasks, then I want it to group together in the same way as the priority one tasks"). Tasks next to each other in
+ *  the numbered list with the same `prioGroup` are one level: they show the same P number and sit in one box. Only a
+ *  numbered task (not P1, not "no priority") has one; anything else is null. */
+export const levelTag = (t: { p1?: boolean; unranked?: boolean; prioGroup?: string | null }): string | null =>
+  !t.p1 && !t.unranked && typeof t.prioGroup === "string" && t.prioGroup ? t.prioGroup : null;
+
+/** The list in display order: P1 tasks first, then by order. The tasks of one priority level stay together
+ *  (each level sorts by its first task's order), so a level is never split by a stray order number. */
 export function sortPrio(list: Doc<Todo>[]): Doc<Todo>[] {
   // The P1 group first, then the numbered tasks, then the ones with no priority yet; each by order.
   const rank = (t: Todo) => (isP1(t) ? 0 : t.unranked ? 2 : 1);
-  return [...list].sort((a, b) => rank(a.data) - rank(b.data) || (a.data.order ?? 0) - (b.data.order ?? 0));
+  const head = new Map<string, number>();
+  for (const d of list) { const g = levelTag(d.data); if (g) head.set(g, Math.min(head.get(g) ?? Infinity, d.data.order ?? 0)); }
+  const key = (t: Todo) => { const g = levelTag(t); return g ? head.get(g)! : t.order ?? 0; };
+  const tag = (t: Todo) => levelTag(t) ?? "";
+  return [...list].sort((a, b) => rank(a.data) - rank(b.data) || key(a.data) - key(b.data)
+    || (tag(a.data) < tag(b.data) ? -1 : tag(a.data) > tag(b.data) ? 1 : 0) || (a.data.order ?? 0) - (b.data.order ?? 0));
 }
 
+export type PrioItem = { id: string; p1: boolean; unranked?: boolean; prioGroup?: string | null };
 /** The P number each task shows: 1 for the P1 group, then 2, 3, ... A task with no priority yet
- *  (unranked) gets no number and does not use one up. */
-export function prioNumbers(list: { id: string; p1: boolean; unranked?: boolean }[]): Map<string, number> {
+ *  (unranked) gets no number and does not use one up. Neighbours on the same level (prioGroup) share a number. */
+export function prioNumbers(list: PrioItem[]): Map<string, number> {
   const out = new Map<string, number>();
-  let n = 2;
-  for (const t of list) { if (t.p1) out.set(t.id, 1); else if (!t.unranked) out.set(t.id, n++); }
+  let n = 1, last: string | null = null;
+  for (const t of list) {
+    if (t.p1) { out.set(t.id, 1); continue; }
+    if (t.unranked) continue;
+    const g = levelTag(t);
+    if (!(g && g === last)) n++;
+    out.set(t.id, n);
+    last = g;
+  }
   return out;
+}
+
+/** The numbered tasks cut into their levels, top to bottom: P2 first. Each run is the ids that share a P number. */
+export function prioRuns(list: PrioItem[]): { level: number; ids: string[] }[] {
+  const nums = prioNumbers(list), out: { level: number; ids: string[] }[] = [];
+  for (const t of list) {
+    const n = nums.get(t.id);
+    if (n == null || n === 1) continue;
+    const last = out[out.length - 1];
+    if (last && last.level === n) last.ids.push(t.id); else out.push({ level: n, ids: [t.id] });
+  }
+  return out;
+}
+/** A priority level gets its own box (like Priority 1) once two or more tasks share it. One task alone stays a plain
+ *  row with its P badge, as before: a box round a single row would only add noise. */
+export const LEVEL_GROUP_MIN = 2;
+
+/** A new level tag (a short random id). */
+export function newLevelTag(): string {
+  const b = crypto.getRandomValues(new Uint8Array(6));
+  return "l" + Array.from(b, (x) => (x % 36).toString(36)).join("");
+}
+
+/**
+ * After a drag inside Priorities (next = the new order of the numbered tasks and the ones below them): the level tag
+ * the moved task has now. `into`: the box the pointer was let go over (its tag), null when it was let go outside
+ * every box, undefined when there is no pointer to go by. Let go inside a box: that level. Between two tasks of one
+ * level: that level. Otherwise it keeps its own level only while it still sits next to it (no pointer), else it is a
+ * level of its own.
+ */
+export function levelAfterMove(next: string[], moved: string, tags: Map<string, string | null>, into?: string | null): string | null {
+  if (into) return into;
+  const at = next.indexOf(moved);
+  if (at < 0) return null;
+  const a = tags.get(next[at - 1]) ?? null, b = tags.get(next[at + 1]) ?? null;
+  if (a && a === b) return a;
+  if (into === null) return null;
+  const own = tags.get(moved) ?? null;
+  return own && (a === own || b === own) ? own : null;
+}
+
+type Placed = { id?: string; order?: number; p1?: boolean; unranked?: boolean; prioGroup?: string | null };
+/**
+ * Where a task goes to join priority level `level` (2 or more): at the end of that level's tasks, with its tag. A
+ * level that is one task so far gets a new tag, given to that task too (`pair`), so the two become a group. Past the
+ * last level: a level of its own at the end of the numbered tasks. `ranked` is the one-off list as the Tab list shows
+ * it (sortPrio), without the task being placed.
+ */
+export function placeInLevel(ranked: Placed[], level: number, tag: () => string = newLevelTag): { order: number; prioGroup: string | null; pair?: { id: string; prioGroup: string } } {
+  const group = ranked.filter((t) => t.p1 === true);
+  const numbered = ranked.filter((t) => t.p1 !== true && !t.unranked);
+  const firstFree = ranked.find((t) => t.p1 !== true && t.unranked)?.order;
+  const items = numbered.map((t, i) => ({ id: t.id ?? `#${i}`, p1: false, prioGroup: t.prioGroup ?? null }));
+  const runs = prioRuns(items);
+  const between = (before?: number, after?: number) =>
+    before != null && after != null && after > before ? (before + after) / 2 : before != null ? before + 1 : after != null ? after - 1 : 0;
+  const run = runs.find((r) => r.level === Math.max(2, Math.round(level)));
+  if (!run) {
+    // Past the last level (or no numbered tasks yet): a level of its own after the numbered tasks (or after Priority 1).
+    const last = numbered[numbered.length - 1] ?? group[group.length - 1];
+    return { order: between(last?.order, firstFree), prioGroup: null };
+  }
+  const k = items.findIndex((x) => x.id === run.ids[run.ids.length - 1]);
+  const order = between(numbered[k].order ?? 0, numbered[k + 1]?.order ?? firstFree);
+  if (run.ids.length >= LEVEL_GROUP_MIN) return { order, prioGroup: levelTag(numbered[k]) };
+  const g = tag(), only = numbered[k];
+  return { order, prioGroup: g, ...(only.id ? { pair: { id: only.id, prioGroup: g } } : {}) };
 }
 
 /**
@@ -174,4 +262,53 @@ export function colorHue(hex: string): number {
   if (!d) return 0;
   const h = mx === r ? ((g - b) / d) % 6 : mx === g ? (b - r) / d + 2 : (r - g) / d + 4;
   return Math.round((h * 60 + 360) % 360);
+}
+
+// ---------- PS 1.73: the look of the Priority 2, 3... group boxes (the developer, 21 Nov 2026) ----------
+// "I just want them to be grouped by default, like no effects or anything like that, no fancy animations by default
+// for the priority two tasks". Each level has its own look: Plain (the default: a quiet box, no glow, nothing moves) or
+// any of the Priority 1 outlines, and its own colour. Saved in settings.tmLvLook by level ("2", "3", ...).
+export const LV_PLAIN = "plain";
+export const LV_LEVEL_MAX = 20;
+export type LvLook = { style: string; color: string | null };
+/** The look of one level's box: the saved one, cleaned, or Plain with no colour. */
+export function lvLook(v: unknown, level: number): LvLook {
+  const rec = v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>)[String(level)] : undefined;
+  const r = (rec && typeof rec === "object" ? rec : {}) as { style?: unknown; color?: unknown };
+  const style = typeof r.style === "string" && (r.style === LV_PLAIN || P1_DESIGNS.some((d) => d.id === r.style)) ? r.style : LV_PLAIN;
+  return { style, color: p1Color(r.color) };
+}
+/** Every level's look after one change, cleaned; a level back to Plain with no colour is left out. */
+export function lvLookPatch(v: unknown, level: number, change: Partial<LvLook>): Record<string, { style?: string; color?: string | null }> {
+  const out: Record<string, { style?: string; color?: string | null }> = {};
+  for (let n = 2; n <= LV_LEVEL_MAX; n++) {
+    const cur = lvLook(v, n);
+    const next = n === level ? lvLook({ [n]: { ...cur, ...change } }, n) : cur;
+    if (next.style !== LV_PLAIN || next.color) out[String(n)] = { ...(next.style !== LV_PLAIN ? { style: next.style } : {}), ...(next.color ? { color: next.color } : {}) };
+  }
+  return out;
+}
+/** True when a level's look moves (an animated outline). Plain never does. */
+export const lvMoves = (style: string) => P1_DESIGNS.some((d) => d.id === style && d.moving === true);
+
+/** PS 1.73, the right click menu's Priority: move task `id` onto priority level `level` as the list shows it now (the
+ *  number on its badge). Onto a level with other tasks: it joins them, at their end. Onto the number past the last
+ *  level: a level of its own at the end. null when it is already there. `ranked` is the one-off list as shown. */
+export function levelMove(ranked: (Placed & { id: string })[], id: string, level: number, tag: () => string = newLevelTag): { order: number; prioGroup: string | null; pair?: { id: string; prioGroup: string } } | null {
+  const items = (l: (Placed & { id: string })[]) => l.map((x) => ({ id: x.id, p1: x.p1 === true, unranked: x.unranked === true, prioGroup: x.prioGroup ?? null }));
+  const nums = prioNumbers(items(ranked));
+  if (nums.get(id) === level) return null;
+  const rest = ranked.filter((x) => x.id !== id);
+  const mate = prioRuns(items(ranked)).find((r) => r.level === level)?.ids.find((x) => x !== id);
+  const target = mate ? prioNumbers(items(rest)).get(mate) ?? Infinity : Infinity;
+  return placeInLevel(rest, target === Infinity ? Number.MAX_SAFE_INTEGER : target, tag);
+}
+
+/** What a new task's priority is when the caller did not say (PS 1.73, the developer 21 Nov 2026: "stop adding in priorities at
+ *  random ... Just have them at the bottom"): a one-off task on the main list with no place (no order) and no Priority 1
+ *  gets none (unranked: no P number, at the bottom). Every day, repeating, a task group, the AI Inbox, and any task the
+ *  caller placed (a drag to a spot, a typed P2, a picked place) or ranked itself are left as they are. */
+export function newTaskRank(t: Partial<Todo>): Partial<Todo> {
+  if ((t.type ?? "once") === "daily" || t.p1 === true || t.unranked !== undefined || t.order !== undefined || t.group || t.aiInbox === true) return {};
+  return { unranked: true };
 }

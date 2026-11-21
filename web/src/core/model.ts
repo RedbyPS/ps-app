@@ -19,6 +19,7 @@ export type Kind =
   | "rwd"   // Rewind (PS 1.64): the private yearly recap history, one record per day and per year, owner private (vault key), never read back before 1 January (core/rewind.ts)
   | "sdev" | "spair" | "sjob" | "sjobst" | "smsg" | "sfile" | "sack" | "sstat" | "scmd" | "sidx" | "sget" | "sgot" | "sbudget" | "sojob" | "sores"   // Second Computer (core/second.ts), owner private (vault key)
   | "wsmeta" | "project" | "ctask" | "tick" | "update" | "approval"     // shared with one client (workspace key)
+  | "ptpl"    // Clients (PS 1.73): one saved project template, owner private (vault key), core/clientwork.ts ProjectTpl
   | "doc";                                                               // a file attached to a project (same scope as the project)
 
 export interface Doc<T = any> {
@@ -146,7 +147,9 @@ export interface ProjectPrivate {
   nextInvoiceDate?: string | null;
   notes?: string | null;
   history: { date: string; text: string }[];
+  checklist?: ChecklistItem[];   // Clients (PS 1.73): the project's checklist, owner only (the client never sees it)
 }
+export interface ChecklistItem { id: string; text: string; done: boolean; at: string | null }
 
 export type ClientStatus = "client" | "pending" | "prospect" | "lead" | "past";
 export const CLIENT_STATUSES: { key: ClientStatus; label: string; hint: string }[] = [
@@ -190,6 +193,7 @@ export interface ClientRec {
   // Their login (door button): the link plus three set words. Kept here, in the developer's private records,
   // so he can always look them up again; the client never has to change them.
   portal?: { link: string; words: string; user: string; createdAt: string; expiresAt: string } | null;
+  colour?: string | null;        // Clients (PS 1.73): the tab's colour (#rrggbb); none = one from core/clientwork.ts CLIENT_COLOURS by place
 }
 
 export interface WsMeta { clientName: string; greetingName?: string | null; ownerName?: string | null } // ownerName: set only by owners other than the developer
@@ -251,17 +255,21 @@ export interface Todo {
   pushes?: number;               // how many times the date was pushed back
   p1?: boolean;                  // in the Priority 1 group at the top of the Tab list (optional: none is fine), see core/prio.ts
   unranked?: boolean;            // no priority yet: shows no P number and sits below the numbered tasks until dragged among them (core/prio.ts)
+  prioGroup?: string | null;     // PS 1.73: the priority level it shares with its neighbours (core/prio.ts levelTag): numbered tasks next to each other with the same tag show one P number in one box
   subtasks?: Subtask[];          // mini tasks under it, in order (the developer, 24 Oct 2026), see core/subtasks.ts
   example?: boolean;             // one of the made up example tasks a new account starts with (core/examples.ts): "Delete all example tasks" removes it
   group?: string | null;         // in one of the developer's task groups (settings.tmGroups) instead of Priorities or Every day (the developer, 29 Oct 2026), see core/groups.ts
   sqOff?: boolean;               // G Squad (V1.40): Not shared, the squad never gets a copy (core/squadshare.ts)
   sqOn?: boolean;                // G Squad (V1.43): Share with G Squad, the only way a task is shared (needs the Tasks switch on too)
   p1At?: string | null;          // G Squad Priority 1 (PS 1.63): when it became Priority 1 (ISO), the 24 hour clock starts here; set by core/squadp1.ts p1Stamps, cleared when it leaves P1
+  p1Since?: string | null;       // PS 1.73: your own Priority 1 clock (ISO), set whether or not P1 is shared with a squad (core/duealerts.ts p1OwnStamps); never leaves this vault. The P1 alarm and the P1 timer use p1At first, then this
   sqAnon?: boolean | null;       // G Squad: true = the squad sees "Client task", false = the real title; unset = not asked yet (core/squadanon.ts)
   ai?: boolean;                  // Task API: an AI on this Mac added it (the small AI marker, kept wherever it goes), core/aiinbox.ts
   aiInbox?: boolean;             // Task API: still in the AI Inbox (Dimension X), on no list yet; moving it anywhere clears it
   est?: number | null;           // Time estimate (PS 1.65, core/timeest.ts): minutes, 1 to 1440; none = no estimate
   estBy?: "past" | null;         // the estimate came from the past times of tasks with this name ("Usually takes about"), not typed or picked
+  doOn?: string | null;          // Clients (PS 1.73): a one day task stays out of the list until this day starts at the day end (core/clientwork.ts)
+  deadline?: import("./clientwork").Deadline | null;   // Clients (PS 1.73): when it is due, maybe a calendar call; apart from `due` so overdue and pushes keep their meaning
 }
 
 export interface Meeting {
@@ -469,6 +477,7 @@ export interface Settings {
   gosLayout?: "compact" | "cards" | "focus" | "simple";   // PS GOS only: how the phone draws the list (src/gos/layout.ts), picked in the phone settings
   tmP1Style?: string;            // the look of the Priority 1 group's outline (core/prio.ts P1_DESIGNS), default red glisten
   p1Color?: string | null;       // one colour for every Priority 1 task, "#rrggbb" (core/prio.ts p1Tones, the developer 2 Nov 2026). Unset = the look as before
+  tmLvLook?: Record<string, { style?: string; color?: string | null }>;   // PS 1.73: the look of each Priority 2, 3... group box, keyed by level (core/prio.ts lvLook). Unset = plain: no glow, no effects
   tmBg?: string;                 // the screen wide background behind the Tab list (core/prio.ts BG_DESIGNS), default none
   tmBgIntensity?: number;        // lightning backgrounds: how bright and branchy (0 to 100, default 60)
   tmBgFrequency?: number;        // lightning backgrounds: how often (0 to 100, default 40)

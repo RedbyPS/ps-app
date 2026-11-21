@@ -158,7 +158,7 @@ else {
       assert.equal(new Set(r.map((x) => x.gear)).size, 1, "the gear never moves");
       assert.ok(r.every((x) => x.gearO === 1), "and never fades");
       const end = r[r.length - 1];
-      assert.ok(end.dimx === 1 && end.sb === 1 && end.clocks === 0 && end.overdue === 0, JSON.stringify(end));
+      assert.ok(end.dimx === 1 && end.sb === 0 /* Soundboard off screen by default since 1.72 */ && end.clocks === 0 && end.overdue === 0, JSON.stringify(end));
       const f = frameStats(r);
       console.log(`  frames: ${f.frames}, median ${f.median.toFixed(1)} ms, ${f.over34} over 34 ms`);
       assert.ok(f.median < 20, "60 fps or better");

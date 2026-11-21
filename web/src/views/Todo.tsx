@@ -83,7 +83,7 @@ async function moveDate(d: Doc<Todo>, by: number | string) {
 async function removeWithUndo(d: Doc<Todo>) {
   const data = structuredClone(d.data);
   await deleteTodo(d.id);
-  toast("Task deleted", { label: "Undo", run: () => { void addTodo({ ...data }); } }, 8000);
+  toast("Task deleted", { label: "Undo", run: () => { void addTodo({ ...data, ...(data.type !== "daily" && !data.p1 ? { unranked: data.unranked === true } : {}) }); } }, 8000);
 }
 
 /** Swap the order of two visible neighbours (keeps manual priority inside a group). */

@@ -149,6 +149,7 @@ export interface IslandInput {
   todos: Doc<Todo>[];
   settings: Partial<Settings>;
   today: string;          // YYYY-MM-DD, for which repeating tasks are due
+  land?: string;          // Clients (PS 1.73): the person's day by their day end (core/clientwork.ts landDayAt), so the next up task is one that landed
   mail: number;
   leads: number;
   event: IslandEvent | null;
@@ -186,7 +187,7 @@ export function islandState(inp: IslandInput): IslandState {
     // As the Tab list shows it: a task 48 hours overdue is on the Overdue card, not next up.
     // Not in private mode: a next up task whose name is hidden is one the developer never picked and cannot see, and a tick on
     // it ticked a real task blind (V1.44 #10). The tasks he marked as working still show, as PRIVATE_TITLE.
-    const lists = tabLists(inp.todos, inp.settings.tmGroups || [], inp.today, { now: inp.now ?? Date.now(), tz: overdueZone(inp.settings.tmHomeTz) });
+    const lists = tabLists(inp.todos, inp.settings.tmGroups || [], inp.today, { now: inp.now ?? Date.now(), tz: overdueZone(inp.settings.tmHomeTz) }, inp.land);
     const next = lists.p1[0] || lists.prio[0];
     if (next) task = { id: next.id, title: name(next), dim: true };
   }

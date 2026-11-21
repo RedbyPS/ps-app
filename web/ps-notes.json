@@ -368,5 +368,15 @@
    "Your countdown's day end now sits next to the reset time and follows it until you pick your own.",
    "The G Squad has its own button, goals can be added through the task API, and a click on the Timeline no longer makes a goal."
   ]
+ },
+ "1.73": {
+  "en": [
+   "Every start plays one of three neon boot animations, and the new icon gets its own reveal once. Esc skips them.",
+   "Clients: a full screen place for each client's projects, stages, tasks, checklist and notes, where the Soundboard was.",
+   "Client tasks and repeating tasks land in your list on their day, on the weekdays you pick, at your own day end.",
+   "Priority 1 alarms ring before a task runs out or your day ends; type yes to stop them. Tasks due today nag every 15 minutes.",
+   "Priority 2 and lower group together like Priority 1, new tasks get no priority by themselves, and deleting a mini task keeps its task.",
+   "Swipes in PS stay in PS, and Reply on a G Squad message opens on one click."
+  ]
  }
 }

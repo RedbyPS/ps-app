@@ -8,7 +8,7 @@ import { CdMenuHost, DayCardHost, DayCountdown, P1Timer } from "./DayCountdown";
 import { createPortal } from "react-dom";
 import { islandPrefs } from "../core/island";
 import { IslandSettingsWindow } from "./IslandSettings";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
+import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { meetingTitleKey, workingIdsOf, type AwareItem, type AwayEntry, type DimxItem, type DimxZone, type CalEvent, type ClientRec, type Doc, type Goal, type MeetingNote, type Settings, type StandingNote, type TaskGroup, type TimelineItem, type Todo } from "../core/model";
 import { calendarDocs, calendarSnap, campaignStats, clientViews, openReplies, replies, screenLines, screenTimeDays, settingsData, tabLayoutDoc, todos, allTodos } from "../core/select";
 import { inboxTasks } from "../core/aiinbox";
@@ -74,6 +74,7 @@ import { cleanLayout, emptyLayout, layoutReady, onPage, pageOf, MENU_SLOT_IDS } 
 /** PS 1.70: Pomodoro's copies (it is only ever added in Edit mode now) are drawn where it always sat. */
 const POMODORO_SLOT = ["pomodoro"] as const;
 const SOUNDBOARD_SLOT = ["soundboard"] as const;
+const CLIENTS_SLOT = ["clients"] as const;
 import { mailPanelId, newestOf, onMailOpen, peekMailOpen, takeMailOpen } from "../core/mailopen";
 import { PS, cleanLooks, useBgVideos as usePsBgVideos, useOverlayShown, firstSentences, askMic, askPresence, askTimeline, chooseMic, psIsOpen, psPost, useAppIcons, usePresence, usePsMic, usePsSettings, useTimeline } from "../ps";
 import { primeSfx, setEditSoundCtx, setSfxVolume, setTickSound, sfx } from "../ui/sfx";
@@ -92,6 +93,8 @@ import { useDragOrder, type DragEnd } from "../ui/dragOrder";
 import { ROW_CONTROLS, TICK_PEND_MS, TICK_STAY_MS, clickAlreadyHandled, pressMoved, pressStarts, tickMoved, tickPressStarts, tickSettled, tickShown, tickStays, tickWant, type TickPend } from "../core/press";
 import { allCompletedList, completedList, completedOn, listPrefs, nextRollAt, openOnList, resurrectList } from "../core/completed";
 import { resetMinOf } from "../core/resetday";
+import { landDayNow, useLandTick } from "../clients/clientsday";
+import { deadlinePill } from "../core/clientwork";
 import { Completed } from "./Completed";
 import { SleepHost, SleepRow } from "./SleepMode";
 import { TaskMenuHost, openTaskMenu, openTaskMenuAt } from "./TaskMenu";
@@ -114,7 +117,7 @@ import { LocalLine } from "./LocalFirst";
 import { clearDuePatch, isOverdue, nextOverdueAt, overdueZone, splitOverdue } from "../core/overdue";
 import { overdueLookOf, type OverdueLook } from "../core/overduelook";
 import { OverdueFxLayer, useOverdueCard, useOverdueLook } from "./OverdueLook";
-import { BG_DESIGNS, P1_COLORS, P1_DESIGNS, bgDesign, colorHue, hueColor, isImageBg, isVideoBg, isP1, movedId, p1AfterMove, p1Color, p1Design, p1Tones, prioNumbers, sortPrio } from "../core/prio";
+import { BG_DESIGNS, LEVEL_GROUP_MIN, LV_PLAIN, P1_COLORS, P1_DESIGNS, bgDesign, colorHue, hueColor, isImageBg, isVideoBg, isP1, levelAfterMove, lvLook, lvLookPatch, movedId, p1AfterMove, p1Color, p1Design, p1Tones, prioNumbers, prioRuns, sortPrio, type LvLook } from "../core/prio";
 import { Storm, type StormKind } from "./Storm";
 import { rainLayers } from "../core/looksample";
 import { DimensionX, dimxIsOpen, morph } from "./DimensionX";
@@ -129,6 +132,7 @@ import { BgClip, BgFitControls, PhoneBgChoice, bgPatch, shownBg, useBgKeeper, us
 import { cropCss, type BgCrop } from "../core/bgcrop";
 import { FitnessButton } from "../fitness/FitnessButton";
 import { SoundboardButton } from "../soundboard/SoundboardButton";
+import { ClientsButton } from "../clients/ClientsButton";
 import { PomodoroButton } from "./Pomodoro";
 import "../fitness/fitness.css";
 import { PsRuleButton, RuleBookHost } from "./RuleBook";
@@ -185,7 +189,7 @@ import { okTaskId } from "../core/remind";
 
 // What a tick or a click does. The PS Mac app's floating window swaps these for messages to
 // its main window, which holds the keys (see src/ps.ts).
-export type TodoPatch = Partial<Pick<Todo, "title" | "notes" | "due" | "type" | "clientId" | "order" | "repeat" | "p1" | "unranked" | "group" | "aiInbox" | "est" | "estBy">>;
+export type TodoPatch = Partial<Pick<Todo, "title" | "notes" | "due" | "type" | "clientId" | "order" | "repeat" | "p1" | "unranked" | "prioGroup" | "group" | "aiInbox" | "est" | "estBy">>;
 
 /** The order value that puts a task at priority p (1 = top) in a ranked list, between its new
  *  neighbours, so only that one task changes. */
@@ -222,7 +226,7 @@ export const taskMapActions: {
   /** A task deleted from the right click menu, put back by Undo with its own id. */
   restore: (id: string, data: Todo) => Promise<unknown>;
   /** The list's new order; p1 also sets the moved task's Priority 1 flag (same write). */
-  reorder: (ids: string[], p1?: { id: string; on: boolean }) => Promise<unknown>; scale: (percent: number) => Promise<unknown>;
+  reorder: (ids: string[], p1?: { id: string; on: boolean }, level?: { id: string; prioGroup: string | null }) => Promise<unknown>; scale: (percent: number) => Promise<unknown>;
   clockScale: (percent: number) => Promise<unknown>;
   update: (id: string, patch: TodoPatch) => Promise<unknown>; remove: (id: string) => Promise<unknown>;
   /** Dimension X (PS 1.68, core/dimxmove.ts): a task becomes an idea, an idea becomes a task, each one move that keeps the
@@ -253,7 +257,7 @@ export const taskMapActions: {
   dimx: (list: DimxItem[]) => Promise<unknown>;
   editing: (on: boolean) => void; clearClipboard: () => Promise<unknown>;
   headline: (text: string) => Promise<unknown>;
-  add: (t: { title: string; due: string | null; type: Todo["type"]; order?: number; repeat?: Repeat | null; p1?: boolean; clientId?: string | null; notes?: string | null; unranked?: boolean; sqOn?: boolean; sqAnon?: boolean; group?: string | null;
+  add: (t: { title: string; due: string | null; type: Todo["type"]; order?: number; repeat?: Repeat | null; p1?: boolean; clientId?: string | null; notes?: string | null; unranked?: boolean; prioGroup?: string | null; sqOn?: boolean; sqAnon?: boolean; group?: string | null;
     remind?: TimeRemind | null; reminder?: Reminder | null; est?: number | null }) => Promise<unknown>;   // remind: PS 1.65, a typed time (core/nlremind.ts), added once the task has its id
   // reminder (PS 1.68): the annoying reminder set up in the Add a task window, added once the task has its id (it wins over a typed time); est: its estimate
   sound: (patch: { tmSound?: number; tmMuted?: boolean }) => Promise<unknown>;
@@ -358,7 +362,7 @@ export const taskMapActions: {
   waTemplate: (chatId, name, language) => import("../core/waactions").then((m) => m.sendWaTemplate(chatId, name, language)),
   waDone: (chatId) => import("../core/waactions").then((m) => m.setWaSeen(chatId)),
   work: (id) => setWorkingOn(id),
-  reorder: (ids, p1) => setTodoOrder(ids, p1),
+  reorder: (ids, p1, level) => setTodoOrder(ids, p1, level),
   scale: (percent) => saveSettings({ tmScale: percent }),
   clockScale: (percent) => saveSettings({ tmClockScale: percent }),
   update: (id, patch) => updateTodo(id, patch),
@@ -1063,14 +1067,15 @@ export function Overlay({ onClose, controls, docked, web, footer }: { onClose: (
   const lp = listPrefs(st);
   const dayAt = resetMinOf(st);   // today starts at the reset time (core/resetday.ts)
   const roll = useRollTick(odZone, dayAt);
+  const landTick = useLandTick(s);   // Clients (PS 1.73): the next day's tasks land at the day end with no click
   // The AI Inbox (core/aiinbox.ts): tasks an AI added, on no list yet; Dimension X shows them.
   const aiInbox = useMemo(() => inboxTasks(todos(s)).filter((d) => !d.data.done), [s]);
   const { lists, overdue, stay, done } = useMemo(() => {
     const { docs: all, stay } = withTicks(todos(s));
     const now = Date.now();
-    return { lists: tabLists(all, groups, t, { now, tz: odZone }), overdue: splitOverdue(all.filter((d) => d.data.aiInbox !== true), now, odZone).overdue, stay,
+    return { lists: tabLists(all, groups, t, { now, tz: odZone }, landDayNow(s, now)), overdue: splitOverdue(all.filter((d) => d.data.aiInbox !== true), now, odZone).overdue, stay,
       done: completedOn(lp) ? completedList(all, lp.keep, now, odZone, dayAt) : [] };
-  }, [s, t, groups, odZone, odTick, tv, roll, lp.mode, lp.show, lp.keep, dayAt]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [s, t, groups, odZone, odTick, tv, roll, landTick, lp.mode, lp.show, lp.keep, dayAt]); // eslint-disable-line react-hooks/exhaustive-deps
   // The end of the list (V1.47): Complete all ticks every open task shown; Resurrect brings back Completed, or when
   // that is empty (after a reset, End day, Clear, Disappear or Completed hidden) the one-offs ticked since yesterday.
   const openIds = useMemo(() => openOnList(lists), [lists]);
@@ -1403,6 +1408,9 @@ export function Overlay({ onClose, controls, docked, web, footer }: { onClose: (
           <Slot id="dimx"><DimensionX prio={prio} aware={st.aware || []} dimx={st.dimx || []} docked={docked} inbox={aiInbox} /></Slot>
           {red && <Slot id="rules"><PsRuleButton docked={docked} /></Slot>}
           <Slot id="fitness"><FitnessButton docked={docked} /></Slot>
+          {/* PS 1.73 the Clients workspace (src/clients/): on for everyone, in the Soundboard's old place; moved or removed in Edit mode. */}
+          <Slot id="clients"><ClientsButton docked={docked} /></Slot>
+          <InlineCopies kinds={CLIENTS_SLOT} />
           {/* The Soundboard (V1.47, src/soundboard/): audio and video, the player, the queue, timed plays. PS 1.72 (the developer, 21 Nov
               2026): off the main screen for everyone; added from Edit mode's Add panel, it is drawn right here, as before
               (core/tablayout.ts soundboard: optIn, inPlace). */}
@@ -1532,7 +1540,7 @@ export function Overlay({ onClose, controls, docked, web, footer }: { onClose: (
             {keys.map((k) => {
               const common = { skey: k, working: workingShown, today: t, editing, onEdit: setEditingId, clients, move: here ? secs : undefined, lists, stay };
               if (k === "p1") return <Section key={k} {...common} kind="p1" title={shownName(pg.names, "p1")} list={p1List} design={design} color={savedP1c} />;
-              if (k === "prio") return <Section key={k} {...common} kind="prio" title={shownName(pg.names, "prio")} list={lists.prio} numbered />;
+              if (k === "prio") return <Section key={k} {...common} kind="prio" title={shownName(pg.names, "prio")} list={lists.prio} numbered lvLooks={st.tmLvLook} />;
               if (k === "daily") return <Section key={k} {...common} kind="daily" title={shownName(pg.names, "daily", daily.every((d) => isEveryDay(d.data)))} list={daily} />;
               const g = groups.find((x) => groupKey(x.id) === k);
               return g ? <Section key={k} {...common} kind="group" title={g.name} group={g} groups={groups} list={lists.groups.get(g.id) || []} /> : null;
@@ -2057,11 +2065,13 @@ function AddTaskWindow({ prio, clients, docked, onClose }: { prio: Doc<Todo>[]; 
     const r = typedN ? (typedN.kind === "repeat" ? { repeat: typedN.repeat, due: typedN.due } : null) : sh.repeat ? patchOf(rule, todayISO()) : null;
     const due = typedN ? (typedN.kind === "daily" ? null : typedN.due) : sh.repeat ? r?.due ?? null : sh.due === "today" ? iso(0) : sh.due === "tomorrow" ? iso(1) : sh.due === "date" ? o.date || null : null;
     const groupSize = prio.filter((d) => d.data.p1).length;
-    const at = typedP ? typedOrder(prio.map((d) => d.data), typedP.prio) : null;
+    const at = typedP ? typedOrder(prio.map((d) => ({ id: d.id, ...d.data })), typedP.prio) : null;
+    if (at?.pair && sh.type !== "daily") void taskMapActions.update(at.pair.id, { prioGroup: at.pair.prioGroup });   // PS 1.73: that level was one task, now a group
     const id = taskMapActions.add({
       title: v, type: sh.type, due, repeat: r?.repeat ?? null,
       order: sh.type === "daily" ? undefined : at ? at.order : sh.unranked ? orderForPriority(prio, prio.length + 1) : orderForPriority(ranked, sh.p1 ? groupSize + 1 : Math.min(o.place ?? max, max)),
       p1: at ? at.p1 : sh.p1, clientId: o.clientId || null, notes: o.notes.trim() || null, ...(sh.unranked && !at ? { unranked: true } : {}),
+      ...(at?.prioGroup ? { prioGroup: at.prioGroup } : {}),
       ...(sq.sqOn ? { sqOn: true } : {}), ...(typeof sq.sqAnon === "boolean" ? { sqAnon: sq.sqAnon } : {}),
       // V1.55: typed while one of the developer's own lists shows: it joins that list's group, at its end (views/ListPager.tsx).
       ...(addGroupHere(sh.type) ? { group: addGroupHere(sh.type), order: undefined } : {}),
@@ -2944,13 +2954,17 @@ type ClientOpt = { id: string; name: string };
 const freshUntil = new Map<string, number>();
 const TM_REPEAT = { wrap: "tm-repeat", select: "tm-ed-client", input: "tm-ed-num", date: "tm-ed-date" };
 
-function Section({ skey, kind, title, list, working, today, numbered, editing, onEdit, clients, design, color, move, lists, group, groups, stay }: {
+function Section({ skey, kind, title, list, working, today, numbered, editing, onEdit, clients, design, color, move, lists, group, groups, stay, lvLooks }: {
   skey: string; kind: "p1" | "prio" | "daily" | "group"; title: string; list: Doc<Todo>[]; working: Set<string>; today: string; numbered?: boolean; stay?: Set<string>;
   editing: string | null; onEdit: (id: string | null) => void; clients: ClientOpt[]; design?: string; color?: string | null;
-  move?: ReturnType<typeof useSectionOrder>; lists: TabLists; group?: TaskGroup; groups?: TaskGroup[];
+  move?: ReturnType<typeof useSectionOrder>; lists: TabLists; group?: TaskGroup; groups?: TaskGroup[]; lvLooks?: Settings["tmLvLook"];
 }) {
   const ids = list.map((d) => d.id);
   const byId = new Map(list.map((d) => [d.id, d]));
+  // PS 1.73 priority levels: a level just dropped into shows at once, before the saved list comes back.
+  const [lvPend, setLvPend] = useState<{ id: string; tag: string | null; until: number } | null>(null);
+  const tagOf = (id: string) => { const t = byId.get(id)?.data; return lvPend && lvPend.id === id && lvPend.until > Date.now() ? lvPend.tag : t?.prioGroup ?? null; };
+  useEffect(() => { if (lvPend && (byId.get(lvPend.id)?.data.prioGroup ?? null) === lvPend.tag) setLvPend(null); });
   const sel = useSelection();
   const el = useRef<HTMLElement | null>(null);
   // A row dragged within its section reorders it. Let go over another section and it moves there
@@ -2965,25 +2979,43 @@ function Section({ skey, kind, title, list, working, today, numbered, editing, o
       const root = el.current?.closest(".tm-overlay");
       if (!t && kind === "prio" && root && aboveIsP1(root, lists.p1.length, x, y)) hintP1(true, r ? r.offsetHeight + 10 : 60);
       listDragHint(x, y);   // V1.55: a dot or an edge takes it to another list (views/ListPager.tsx)
+      hintLv(t && t.key !== "prio" ? null : lvBoxAt(x, y));   // PS 1.73: the Priority 2, 3... box under the pointer lights up
     },
     onEnd: (e: DragEnd) => {
       listDragHint(null);
+      const box = lvBoxAt(e.x, e.y);
+      hintLv(null);
       const to = listDropAt(e.x, e.y);
       if (to) { crossHint(el.current, e.x, e.y, skey, [], 0, true); moveToList([e.id], to.page); return; }
       const t = crossHint(el.current, e.x, e.y, skey, [byId.get(e.id)?.data.type ?? "once"], 0, true);
-      if (t) { void taskMapActions.moveTasks({ ids: [e.id], to: t.key, index: t.index }); return; }
+      if (t) { void taskMapActions.moveTasks({ ids: [e.id], to: t.key, index: t.index, ...(t.key === "prio" ? { level: box } : {}) }); return; }
       const root = el.current?.closest(".tm-overlay");
       if (kind === "prio" && root && aboveIsP1(root, lists.p1.length, e.x, e.y)) { hintP1(false); void taskMapActions.moveTasks({ ids: [e.id], to: "p1", index: lists.p1.length }); return; }
+      if (kind === "prio" && !(!lists.p1.length && e.next[0] === e.id && e.moved)) {
+        // PS 1.73: let go inside a Priority 2, 3... box it joins that level (even in the same place in the list); between
+        // two tasks of one level too; anywhere else it is a level of its own (core/prio.ts levelAfterMove). A task with no
+        // priority has no level.
+        const unr = !!byId.get(e.id)?.data.unranked;
+        const numberedIds = e.next.filter((id) => id === e.id || !byId.get(id)?.data.unranked);
+        const tags = new Map(numberedIds.map((id) => [id, tagOf(id)]));
+        const tag = unr && !e.moved ? tagOf(e.id) : levelAfterMove(numberedIds, e.id, tags, box);
+        if (!e.moved && tag === tagOf(e.id)) return;
+        if (tag !== tagOf(e.id)) setLvPend({ id: e.id, tag, until: Date.now() + 2500 });
+        void taskMapActions.reorder([...lists.p1.map((d) => d.id), ...e.next], undefined, { id: e.id, prioGroup: tag });
+        return;
+      }
       if (!e.moved) return;
       if (kind === "p1") void taskMapActions.reorder([...e.next, ...lists.prio.map((d) => d.id)]);
-      else if (kind === "prio") {
-        // No Priority 1 group yet: the very top of Priorities starts one (as before).
-        if (!lists.p1.length && e.next[0] === e.id) void taskMapActions.reorder(e.next, { id: e.id, on: true });
-        else void taskMapActions.reorder([...lists.p1.map((d) => d.id), ...e.next]);
-      } else void taskMapActions.reorder(e.next);
+      // No Priority 1 group yet: the very top of Priorities starts one (as before).
+      else if (kind === "prio") void taskMapActions.reorder(e.next, { id: e.id, on: true }, { id: e.id, prioGroup: null });
+      else void taskMapActions.reorder(e.next);
     },
   });
-  const nums = numbered ? prioNumbers(order.map((id) => ({ id, p1: false, unranked: !!byId.get(id)?.data.unranked }))) : null;
+  const prioItems = numbered ? order.map((id) => ({ id, p1: false, unranked: !!byId.get(id)?.data.unranked, prioGroup: tagOf(id) })) : null;
+  const nums = prioItems ? prioNumbers(prioItems) : null;
+  // PS 1.73: each priority level with two or more tasks sits in its own box with a PRIORITY 2 (3, 4...) header.
+  const boxes = prioItems ? prioRuns(prioItems).filter((r) => r.ids.length >= LEVEL_GROUP_MIN) : [];
+  const boxStart = new Map(boxes.map((b) => [b.ids[0], b])), boxEnd = new Map(boxes.map((b) => [b.ids[b.ids.length - 1], b]));
   const ranked = kind === "p1" || kind === "prio" ? lists.ranked : undefined;
   // Tasks that join while the list is open (eg a dropped suggestion) plop in.
   const seen = useRef<Set<string> | null>(null);
@@ -3000,13 +3032,23 @@ function Section({ skey, kind, title, list, working, today, numbered, editing, o
       </h3>
       <ul className="tm-list" data-sec={skey}>
         {kind === "p1" && order.length > 0 && <P1Frame count={order.length} design={design || "red-glisten"} />}
+        {boxes.map((b) => <LvFrame key={`lvf-${b.ids[0]}`} level={b.level} first={b.ids[0]} last={b.ids[b.ids.length - 1]} tag={tagOf(b.ids[0])} look={lvLook(lvLooks, b.level)} />)}
         {order.map((id) => {
           const d = byId.get(id);
           if (!d) return null;
-          return editing === id
+          const head = boxStart.get(id), end = boxEnd.get(id);
+          const item = editing === id
             ? <Editor key={id} d={d} clients={clients} onDone={() => onEdit(null)} ranked={ranked} />
             : <Row key={id} d={d} n={kind === "p1" ? 1 : nums ? nums.get(id) ?? null : null} working={working.has(id)} today={today} drag={row(id)} onEdit={() => onEdit(id)}
                 fresh={(freshUntil.get(id) ?? 0) > Date.now()} sel={sel.has(id)} ticked={stay?.has(id)} />;
+          if (!head && !end) return item;
+          return (
+            <Fragment key={id}>
+              {head && <LvHead level={head.level} first={id} look={lvLook(lvLooks, head.level)} saved={lvLooks} />}
+              {item}
+              {end && <li className="tm-lv-gap" aria-hidden="true" />}
+            </Fragment>
+          );
         })}
         {group && order.length === 0 && <li className="tm-grp-empty">Cmd-click tasks, then drag them here</li>}
       </ul>
@@ -3415,6 +3457,189 @@ function P1Art({ design }: { design: string }) {
   }
 }
 
+// ---------- PS 1.73: the Priority 2, 3... group boxes (the developer, 21 Nov 2026) ----------
+// "if you have more than one priority two tasks, then I want it to group together in the same way as the priority one
+// tasks ... I just want them to be grouped by default, like no effects or anything like that, no fancy animations".
+// Two or more tasks on one priority level (core/prio.ts prioRuns) sit in a box with a PRIORITY 2 (3, 4...) header, inside
+// Priorities. The box is Plain by default: a quiet frame, no glow, nothing moves. Its look and colour are set from the dot
+// in its header, or in Settings, Appearance, Priority groups (settings.tmLvLook, core/prio.ts lvLook).
+let lvPreview: { level: number; look: LvLook } | null = null;
+function setLvPreview(v: typeof lvPreview) { lvPreview = v; p1Listeners.forEach((l) => l()); }
+function useLvPreview() {
+  return useSyncExternalStore((l) => { p1Listeners.add(l); return () => { p1Listeners.delete(l); }; }, () => lvPreview);
+}
+/** The box a dragged task is over (its level tag), or null. Only the list on show counts. */
+function lvBoxAt(x: number, y: number): string | null {
+  for (const f of document.querySelectorAll<HTMLElement>('.tm-overlay .tm-list[data-sec="prio"] > .tm-lv-frame[data-tag]')) {
+    if (f.closest(".tl-near")) continue;
+    const r = f.getBoundingClientRect();
+    if (x >= r.left - 4 && x <= r.right + 4 && y >= r.top && y <= r.bottom) return f.dataset.tag || null;
+  }
+  return null;
+}
+/** Lights up the box a task would join (null: none). */
+function hintLv(tag: string | null) {
+  document.querySelectorAll<HTMLElement>(".tm-lv-frame.drop-lv").forEach((f) => { if (f.dataset.tag !== tag) f.classList.remove("drop-lv"); });
+  if (!tag) return;
+  const f = document.querySelector<HTMLElement>(`.tm-overlay .tm-list[data-sec="prio"] > .tm-lv-frame[data-tag="${CSS.escape(tag)}"]`);
+  if (f && !f.classList.contains("drop-lv")) { f.classList.add("drop-lv"); sfx.hover(); }
+}
+/** The colour vars a level's colour paints with (the same tones as the Priority 1 colour). */
+function lvColourVars(c: string | null): Record<string, string> | undefined {
+  if (!c) return undefined;
+  const t = p1Tones(c);
+  return { "--lvc": t.accent, "--lvtxt": t.text, "--p1acc": t.accent, "--p1txt": t.text, "--p1glow": t.rgb, "--p1col": t.c };
+}
+/** The frame behind one level's rows, from its header to its last row. Measured like the Priority 1 frame. */
+function LvFrame({ level, first, last, tag, look: saved }: { level: number; first: string; last: string; tag: string | null; look: LvLook }) {
+  const pv = useLvPreview();
+  const look = pv && pv.level === level ? pv.look : saved;
+  const el = useRef<HTMLLIElement>(null);
+  const place = useRef(() => {});
+  place.current = () => {
+    const f = el.current, ul = f?.parentElement;
+    if (!f || !ul) return;
+    const head = ul.querySelector<HTMLElement>(`:scope > .tm-lv-h[data-first="${CSS.escape(first)}"]`);
+    const end = ul.querySelector<HTMLElement>(`:scope > .tm-row[data-id="${CSS.escape(last)}"]`);
+    if (!head || !end) return;
+    const top = head.offsetTop - 8, h = end.offsetTop + end.offsetHeight - top + 10;
+    if (f.style.top !== `${top}px`) f.style.top = `${top}px`;
+    if (f.style.getPropertyValue("--p1fh") !== `${h}px`) { f.style.setProperty("--p1fh", `${h}px`); f.style.height = `${h}px`; }
+  };
+  useLayoutEffect(() => place.current());
+  useEffect(() => {
+    const ul = el.current?.parentElement;
+    if (!ul) return;
+    const go = () => place.current();
+    const ro = new ResizeObserver(go);
+    ro.observe(ul);
+    window.addEventListener("resize", go);
+    window.addEventListener("tm-relayout", go);
+    return () => { ro.disconnect(); window.removeEventListener("resize", go); window.removeEventListener("tm-relayout", go); };
+  }, []);
+  // A glisten look sweeps once every few seconds, as on Priority 1; Plain never moves.
+  const shown = useOverlayShown();
+  useEffect(() => {
+    if (!shown || (look.style !== "red-glisten" && look.style !== "white-glisten")) return;
+    if (typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    let t = 0;
+    const sweep = () => {
+      el.current?.querySelector<HTMLElement>(".p1-ring b")?.animate(
+        [{ transform: "translateX(-120%) skewX(-18deg)" }, { transform: "translateX(380%) skewX(-18deg)" }],
+        { duration: 1500, easing: "cubic-bezier(.45,0,.2,1)" });
+      t = window.setTimeout(sweep, 5000);
+    };
+    t = window.setTimeout(sweep, 400);
+    return () => clearTimeout(t);
+  }, [shown, look.style]);
+  const plain = look.style === LV_PLAIN;
+  return (
+    <li ref={el} aria-hidden="true" data-tag={tag ?? ""} data-level={level} style={lvColourVars(look.color)}
+      className={`tm-lv-frame${plain ? " lv-plain" : ` tm-p1-frame p1d-${look.style}`}${look.color ? " lvc" : ""}`}>
+      {!plain && look.style !== "none" && <P1Art design={look.style} />}
+    </li>
+  );
+}
+/** One level's header: PRIORITY 2 (3, 4...) in the section header style, and the dot that opens its look. */
+function LvHead({ level, first, look, saved }: { level: number; first: string; look: LvLook; saved: Settings["tmLvLook"] }) {
+  const [open, setOpen] = useState(false);
+  const btn = useRef<HTMLButtonElement>(null);
+  const name = `Priority ${level}`;
+  return (
+    <li className={`tm-lv-h${look.color ? " lvc" : ""}`} data-first={first} data-level={level} style={lvColourVars(look.color)}>
+      <span className="tm-sec-h tm-lv-t">{name}</span>
+      <button ref={btn} type="button" className={`p1c-dot no-drag${look.color ? " set" : ""}${open ? " open" : ""}`}
+        style={look.color ? { ["--sw" as string]: look.color } : undefined}
+        aria-haspopup="dialog" aria-expanded={open} aria-label={`${name} look`} title={`${name} look`}
+        onPointerDown={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()}
+        onClick={(e) => { e.stopPropagation(); sfx.click(); setOpen((v) => !v); }} />
+      {open && <LvLookMenu anchor={btn} level={level} saved={saved} onClose={() => setOpen(false)} />}
+    </li>
+  );
+}
+const saveLvLook = (saved: Settings["tmLvLook"], level: number, change: Partial<LvLook>) => void taskMapActions.looks({ tmLvLook: lvLookPatch(saved, level, change) });
+/** The colours and the effects of one level, as plain buttons (the header menu and Settings both use it). */
+function LvLookControls({ level, saved, fx = true }: { level: number; saved: Settings["tmLvLook"]; fx?: boolean }) {
+  const cur = lvLook(saved, level);
+  const set = (change: Partial<LvLook>) => { sfx.click(); saveLvLook(saved, level, change); };
+  return (
+    <>
+      <div className="p1c-sw" role="radiogroup" aria-label={`Priority ${level} colour`}>
+        <button type="button" role="radio" aria-checked={cur.color === null} className={`p1c-none${cur.color === null ? " sel" : ""}`} title="No colour" aria-label="No colour" onClick={() => set({ color: null })} />
+        {P1_COLORS.map((c) => (
+          <button key={c.id} type="button" role="radio" aria-checked={cur.color === c.id} className={cur.color === c.id ? "sel" : ""} title={c.label} aria-label={c.label}
+            style={{ ["--sw" as string]: c.id }} onClick={() => set({ color: c.id })} />
+        ))}
+      </div>
+      {fx && <div className="lv-fx" role="radiogroup" aria-label={`Priority ${level} effects`}>
+        <span className="p1c-l">Effects</span>
+        <button type="button" role="radio" aria-checked={cur.style === LV_PLAIN} className={`lv-chip${cur.style === LV_PLAIN ? " sel" : ""}`} onClick={() => set({ style: LV_PLAIN })}>Off</button>
+        {P1_DESIGNS.filter((d) => d.id !== "none").map((d) => (
+          <button key={d.id} type="button" role="radio" aria-checked={cur.style === d.id} className={`lv-chip${cur.style === d.id ? " sel" : ""}`} onClick={() => set({ style: d.id })}>{d.label}</button>
+        ))}
+      </div>}
+    </>
+  );
+}
+function LvLookMenu({ anchor, level, saved, onClose }: { anchor: React.RefObject<HTMLButtonElement | null>; level: number; saved: Settings["tmLvLook"]; onClose: () => void }) {
+  const menu = useRef<HTMLDivElement>(null);
+  const [at, setAt] = useState<{ top: number; left: number } | null>(null);
+  useLayoutEffect(() => {
+    const r = anchor.current?.getBoundingClientRect();
+    if (r) setAt({ top: r.bottom + 10, left: Math.max(12, Math.min(r.left - 14, window.innerWidth - 320 - 12)) });
+  }, [anchor]);
+  const close = useRef(onClose);
+  close.current = onClose;
+  useEffect(() => {
+    const down = (e: PointerEvent) => { const t = e.target as Node; if (!menu.current?.contains(t) && !anchor.current?.contains(t)) close.current(); };
+    const key = (e: KeyboardEvent) => { if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); close.current(); } };
+    document.addEventListener("pointerdown", down, true);
+    window.addEventListener("keydown", key, true);
+    return () => { document.removeEventListener("pointerdown", down, true); window.removeEventListener("keydown", key, true); };
+  }, [anchor]);
+  if (!at) return null;
+  const stop = (e: React.SyntheticEvent) => e.stopPropagation();
+  const cur = lvLook(saved, level);
+  return createPortal(
+    <div ref={menu} className="p1c-menu lv-menu no-drag" role="dialog" aria-label={`Priority ${level} look`} style={{ top: at.top, left: at.left }}
+      onPointerDown={stop} onMouseDown={stop} onClick={stop}>
+      <div className="p1c-h">Priority {level} look<em>{cur.style === LV_PLAIN ? "Plain: no glow, nothing moves" : "With effects, like Priority 1"}</em></div>
+      <LvLookControls level={level} saved={saved} />
+      <button type="button" className="lv-more" onClick={(e) => { sfx.click(); onClose(); openSettings("looks", { jump: "prio-groups", from: e.currentTarget }); }}>More in Settings</button>
+    </div>, document.body);
+}
+/** Settings, Appearance, Priority groups: pick a level, then its colour and its look (Plain, or a Priority 1 outline). */
+export function LookPrioGroups({ st, preview }: LookProps) {
+  const saved = st.tmLvLook;
+  const levels = useMemo(() => {
+    const have = Object.keys(saved ?? {}).map(Number).filter((n) => Number.isInteger(n) && n >= 2);
+    return [...new Set([2, 3, 4, ...have])].sort((a, b) => a - b).slice(0, 12);
+  }, [saved]);
+  const [level, setLevel] = useState(2);
+  const cur = lvLook(saved, level);
+  const tiles = [{ id: LV_PLAIN, label: "Plain" }, ...P1_DESIGNS.filter((d) => d.id !== "none")];
+  return (
+    <MsSection title="Priority groups" changes={looksOption("prioGroups").changes}
+      note="Two or more tasks on the same priority sit together in a box. Plain is the default: no glow, nothing moves.">
+      <div className="lv-levels" role="radiogroup" aria-label="Priority">
+        {levels.map((n) => (
+          <button key={n} type="button" role="radio" aria-checked={level === n} className={`lv-chip${level === n ? " sel" : ""}`} onClick={() => { sfx.click(); setLevel(n); }}>Priority {n}</button>
+        ))}
+      </div>
+      <div className="lv-set">
+        <div className="p1c-h">Colour</div>
+        <LvLookControls level={level} saved={saved} fx={false} />
+      </div>
+      {tiles.map((d) => (
+        <MsTile key={d.id} kind="outline" id={`lv-${d.id}`} label={d.label} on={cur.style === d.id} onPick={() => saveLvLook(saved, level, { style: d.id })}
+          onPreview={() => preview(d.label, () => setLvPreview({ level, look: { ...cur, style: d.id } }), () => setLvPreview(null), "none")}>
+          <span className={`tm-p1-frame mini ${d.id === LV_PLAIN ? "lv-plain-mini" : `p1d-${d.id}`}`}>{d.id !== LV_PLAIN && <P1Art design={d.id} />}<i className="tm-p1-bar" /><i className="tm-p1-bar" /></span>
+        </MsTile>
+      ))}
+    </MsSection>
+  );
+}
+
 // ---------- Priority 1 colour (the developer, 2 Nov 2026: "one colour for all P1 tasks") ----------
 // A dot in the Priority 1 header opens a small picker on a real click (never hover): strong presets,
 // a custom colour (hue slider and a hex box) and "As before". Every P1 task takes the colour (text,
@@ -3586,6 +3811,7 @@ function Row({ d, n, working, today, drag, onEdit, fresh, sel, ticked }: { d: Do
         {t.ai && <span className="tm-ai" title="Added by an AI (AI task API)">AI</span>}
         {rep && <span className="tm-due tm-rep">{rep}</span>}
         {when && <span className={`tm-due num${late ? " late" : ""}`}>{when}</span>}
+        {t.deadline && !isDone && <span className="tm-due tm-dl">{deadlinePill(t.deadline, landDayNow(vaultStore.get()))}</span>}
         {t.p1 && !isDone && <P1Timer t={t} inline />}
         <EstBadge d={d} />
         <EstHint d={d} />
@@ -3634,14 +3860,15 @@ export function Editor({ d, clients, onDone, ranked }: { d: Doc<Todo>; clients: 
     // A new priority number moves just this task between its new neighbours.
     if (typedP && ranked && type === "once") {
       const e = typedEdit(ranked.map((x) => ({ id: x.id, ...x.data })), d.id, typedP.prio);
-      if (e) { patch.p1 = e.p1; patch.order = e.order; }
+      if (e) { patch.p1 = e.p1; patch.order = e.order; patch.prioGroup = e.prioGroup; if (e.pair) void taskMapActions.update(e.pair.id, { prioGroup: e.pair.prioGroup }); }
       if (t.unranked) patch.unranked = false;
     } else if (ranked && type === "once" && p1 !== !!t.p1) {
       // Priority 1 on: to the end of the P1 group. Off: just below it. (A one-off only.)
       const rest = ranked.filter((x) => x.id !== d.id);
       patch.p1 = p1;
       patch.order = orderForPriority(rest, rest.filter((x) => x.data.p1).length + 1);
-    } else if (ranked && type === "once" && p !== startP) patch.order = orderForPriority(ranked.filter((x) => x.id !== d.id), p);
+      patch.prioGroup = null;
+    } else if (ranked && type === "once" && p !== startP) { patch.order = orderForPriority(ranked.filter((x) => x.id !== d.id), p); patch.prioGroup = null; }   // a new place: a level of its own
     if (type !== "once" && t.p1) patch.p1 = false;
     void taskMapActions.update(d.id, patch);
     sfx.drop();

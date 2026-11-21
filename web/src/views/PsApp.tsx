@@ -118,7 +118,7 @@ export function PsOverlay() {
     taskMapActions.bury = async (ids, cleared) => psPost({ type: "looks", patch: { todoOp: { op: "bury", ids, cleared } } });
     taskMapActions.restore = async (id, data) => psPost({ type: "looks", patch: { todoOp: { op: "restore", id, data } } });
     taskMapActions.work = async (id) => psPost({ type: "work", id });
-    taskMapActions.reorder = async (ids, p1) => psPost({ type: "reorder", ids, p1 });
+    taskMapActions.reorder = async (ids, p1, level) => psPost({ type: "reorder", ids, p1, ...(level ? { level } : {}) });
     taskMapActions.p1Style = async (id) => psPost({ type: "p1Style", id });
     taskMapActions.looks = async (patch) => psPost({ type: "looks", patch });
     taskMapActions.scale = async (v) => psPost({ type: "tmScale", v });
@@ -176,7 +176,7 @@ export function PsOverlay() {
     taskMapActions.editing = (on) => psPost({ type: "edit", on });
     taskMapActions.clearClipboard = async () => psPost({ type: "clipboard:clear" });
     taskMapActions.headline = async (text) => psPost({ type: "headline", text });
-    taskMapActions.add = async (t) => psPost({ type: "add", title: t.title, due: t.due, kind: t.type, order: t.order, repeat: t.repeat ?? null, p1: t.p1 ?? false, clientId: t.clientId ?? null, notes: t.notes ?? null, unranked: t.unranked === true,
+    taskMapActions.add = async (t) => psPost({ type: "add", title: t.title, due: t.due, kind: t.type, order: t.order, repeat: t.repeat ?? null, p1: t.p1 ?? false, clientId: t.clientId ?? null, notes: t.notes ?? null, unranked: t.unranked === true, ...(t.prioGroup ? { prioGroup: t.prioGroup } : {}),
       ...(t.sqOn === true ? { sqOn: true } : {}), ...(typeof t.sqAnon === "boolean" ? { sqAnon: t.sqAnon } : {}), ...(t.group ? { group: t.group } : {}), ...(t.remind ? { remind: t.remind } : {}),
       ...(t.reminder ? { reminder: t.reminder } : {}), ...(t.est ? { est: t.est } : {}) });   // PS 1.68: the Add window's reminder and estimate
     taskMapActions.sound = async (patch) => psPost({ type: "sound", ...patch });

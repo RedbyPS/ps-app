@@ -123,7 +123,9 @@ ok("two devices: a merge keeps the alarm an alarm", () => {
 });
 ok("every part takes its part: the phone rings them, the Mac shows the card, nobody gets them twice", () => {
   const gw = src("src/gymwatch.ts"), rw = src("src/remwatch.ts");
-  assert.match(gw, /alarms: alarmRings\(/, "the gym plan carries the rings to the phone");
+  assert.match(gw, /\.\.\.alarmRings\(remindRec\(s\)/, "the gym plan carries the rings to the phone");
+  assert.match(gw, /duePlan\(s, now\)\.rings/, "PS 1.73: and the Priority 1 alarms (core/duealerts.ts)");
+  assert.match(gw, /gymPlan\(p, now, tz, acked\), alarms \}/, "both go in the plan's alarms");
   assert.match(rw, /PHONE && alarms\.size/, "the phone's reminder notifications leave them out");
   // The phone side (alarm rings, Acknowledge, missed) is checked by ps-gos GymClockTest.
 });

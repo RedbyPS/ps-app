@@ -81,6 +81,7 @@ class MainActivity : FragmentActivity() {
             // page jump). The bars and the keyboard height go to the page as CSS values instead.
             lastInsets = ins
             sendInsets()
+            if (guardBottom > guardTop) box.post { applyEdgeGuard() }   // PS 1.73: a rotation or a new bar size moves the strips
             WindowInsetsCompat.CONSUMED
         }
         // The keyboard's own slide, frame by frame, so sheets rise with it instead of after it.
@@ -103,13 +104,26 @@ class MainActivity : FragmentActivity() {
         getSystemService(ConnectivityManager::class.java).registerDefaultNetworkCallback(net)
     }
 
+    /** The page's WebView (PS 1.73 swipe leak: the edge strips are set on it). */
+    private var web: android.view.View? = null
     fun mountWeb() {
         val w = WebHost.attach(this)
+        web = w
         (w.parent as? FrameLayout)?.removeView(w)
         box.addView(w, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
     }
 
     private var lastInsets: WindowInsetsCompat? = null
+    /** PS 1.73 swipe leak (EdgeGuard.kt): the page's swipeable area in CSS px (0, 0 = off), kept to set again after a resize. */
+    private var guardTop = 0.0
+    private var guardBottom = 0.0
+    fun setEdgeGuard(top: Double, bottom: Double) { runOnUiThread { guardTop = top; guardBottom = bottom; applyEdgeGuard() } }
+    private fun applyEdgeGuard() {
+        val w = web ?: return
+        val g = ViewCompat.getRootWindowInsets(box)?.getInsets(WindowInsetsCompat.Type.systemGestures())
+        val r = EdgeGuard.rects(guardTop, guardBottom, resources.displayMetrics.density, w.width, w.height, g?.left ?: 0, g?.right ?: 0)
+        w.systemGestureExclusionRects = r.map { android.graphics.Rect(it[0], it[1], it[2], it[3]) }
+    }
     private var touchAt = 0L
     fun sendInsets() {
         val ins = lastInsets ?: return

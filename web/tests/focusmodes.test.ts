@@ -305,7 +305,7 @@ ok("every top right button says what it is and what it does", () => {
   assert.match(read("../src/views/Dnd.tsx"), /data-tip="Do Not Disturb settings" data-tip-line="What it mutes, focus modes and schedules"/);
   assert.match(read("../src/views/Security.tsx"), /data-tip-line=\{warn \?/);
   assert.match(read("../src/views/Second.tsx"), /data-tip-line=\{v\.peer \?/);
-  assert.match(read("../src/views/GSquad.tsx"), /data-tip="G Squad"/);
+  assert.match(read("../src/views/GSquad.tsx"), /data-tip="(The )?G Squad"/);
   assert.ok(!/className="gs-tip"/.test(read("../src/views/GSquad.tsx")), "the old G Squad tooltip is gone");
   assert.match(read("../src/main.tsx"), /if \(import\.meta\.env\.MODE !== "gos"\) startHoverCards\(\);/);
   const css = read("../src/ui/hovercard.css");

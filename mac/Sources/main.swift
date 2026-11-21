@@ -336,7 +336,7 @@ final class App: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMess
     DND.shared.onChange.append { Toast.shared.dndChanged(); Reminders.shared.dndChanged(); Updater.shared.conditionsChanged() }   // Do Not Disturb: held cards come up when it ends
     // V1.58: who is signed in decides the 1Password and Signal rules (BuildRules.swift), so a change re-applies them.
     Owner.onChange = { [weak self] in TabWatch.shared.protectedChanged(); SafePeek.shared.refresh(); Island.shared.rulesChanged(); self?.sendSettings() }
-    Protected.onChange = { [weak self] in Posture.shared.place(); self?.replyWin.protectedChanged(); TabWatch.shared.protectedChanged(); SafePeek.shared.refresh(); Reminders.shared.check(); Toast.shared.protectedChanged(); Island.shared.protectedChanged(); Popup.shared.protectedChanged(); Updater.shared.conditionsChanged(); Soundboard.shared.protectedChanged(); HelperAlert.shared.protectedChanged(); Hatch.shared.protectedChanged(); TabBlocked.shared.protectedChanged() }
+    Protected.onChange = { [weak self] in Posture.shared.place(); self?.replyWin.protectedChanged(); TabWatch.shared.protectedChanged(); SafePeek.shared.refresh(); Reminders.shared.check(); Toast.shared.protectedChanged(); Island.shared.protectedChanged(); Popup.shared.protectedChanged(); Updater.shared.conditionsChanged(); Soundboard.shared.protectedChanged(); HelperAlert.shared.protectedChanged(); Hatch.shared.protectedChanged(); Cake.shared.protectedChanged(); TabBlocked.shared.protectedChanged() }
     TabWatch.shared.start()
     KeyLayout.watch()
     KeyLayout.onChange = { [weak self] in self?.sendSettings(); self?.sendTabState(force: true) }   // V1.47: key labels follow the layout
@@ -504,6 +504,8 @@ final class App: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMess
     for k in ["lag.peaks", "lag.dot"] where UserDefaults.standard.object(forKey: k) != nil { UserDefaults.standard.removeObject(forKey: k) }
     // V1.55: cards under the Dynamic Island that come up while the Tab list is up stay behind it (island clearance).
     Toast.shared.listWindow = { [weak self] in self?.shown == true ? self?.panel : nil }
+    // PS 1.73 swipe leak: a sideways swipe on a card while the list is up moves the list's page (SwipeLeak.swift).
+    if !selfTest { Toast.handToList = { [weak self] e in self?.handToList(e) } }
     // Card buttons go to the page (the end of day question that used this first is gone since 2 Nov 2026).
     Toast.shared.onAction = { [weak self] id, action in
       if id.hasPrefix("sr:") { ScreenRecIsland.shared.cardAction(id, action); return }   // 12b: the screen recorder's cards (meeting question, Resources are high, Saved, controls)
@@ -645,10 +647,12 @@ final class App: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMess
     TabWatch.shared.onDeaf = { deaf in Popup.shared.update { $0.deaf = deaf } }   // the tap hears nothing (V1.41)
     SecureInputWatch.shared.start()
     // At launch (also the relaunch after an update) it stays quiet while Do Not Disturb holds system notices.
-    if !selfTest && !DND.shared.mutes("system") { showPopup() }
+    let popupAtStart = !selfTest && !DND.shared.mutes("system")
     // Updates from the synced Drive folder (Updater.swift); after an install, the DMG is ejected.
     Updater.shared.start(app: self)
-    Hatch.shared.atLaunch()   // PS 1.67: the start scene, unless switched off or this start follows an update (Hatch.swift)
+    // PS Cake: the boot animation (Cake.swift) in place of the 1.67 Hatch start scene, unless switched off or this start
+    // follows an update (that start plays the Hatch update scene). The pop-up waits for its end, so it never sits over it.
+    if !Cake.shared.atLaunch(app: self, then: popupAtStart ? { [weak self] in self?.showPopup() } : nil), popupAtStart { showPopup() }
     Installer.ejectIfAsked()
     if selfTest && UpdaterSelfTest.run(self) { return }
     if let dir = ProcessInfo.processInfo.environment["PS_SELFTEST"] { SelfTest.run(self, dir) }
@@ -828,8 +832,9 @@ final class App: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMess
     }
     // A panel the page never closes (a reload, a lost message) must not hold the queue for good: after 30 minutes it is let go.
     let since = Date()
-    // PS 1.67: after an update What's new waits for the Hatch scene (it may wait for 1Password or Signal to go first).
-    let o = IslandQueue.shared.enqueue(id: id, kind: "whatsnew", priority: .normal, ttl: Hatch.shared.holding ? HatchCore.updateWait + 120 : 120, show: { go() },
+    // PS 1.67: after an update What's new waits for the Hatch scene (it may wait for 1Password or Signal to go first),
+    // and PS Cake: for the logo reveal after it.
+    let o = IslandQueue.shared.enqueue(id: id, kind: "whatsnew", priority: .normal, ttl: Hatch.shared.holding || Cake.shared.kind != nil ? HatchCore.updateWait + 120 : 120, show: { go() },
                                        visible: { Date().timeIntervalSince(since) < 1800 }, dropped: { tell("{\"state\":\"go\"}") })
     switch o {
     case .showNow: go()
@@ -1090,6 +1095,7 @@ final class App: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMess
   var shown = false { didSet { if oldValue != shown { SafePeek.shared.refresh(); if shown { Updater.shared.listShown() } } } }
 
   func showOverlay() {
+    glideHold.stop()   // PS 1.73: back up during a held glide: the hold is over, the list takes every event again
     if Sentry.shared.isUp { TabWatch.shared.noteOnce("PS tab: the list stays hidden while Sentry mode is engaged"); return }   // Sentry.swift (V1.48)
     if SleepScreen.shared.isUp { TabWatch.shared.noteOnce("PS tab: the list stays hidden while Sleep mode is up (Wake up first)"); return }   // Sleep mode is up (SleepScreen.swift)
     let mouse = NSEvent.mouseLocation
@@ -1154,6 +1160,28 @@ final class App: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMess
   func setHitRects(_ list: [[Double]]) {
     hitRects = list.compactMap { $0.count == 4 ? NSRect(x: $0[0], y: $0[1], width: $0[2], height: $0[3]) : nil }
     updateClickThrough()
+  }
+  /// PS 1.73 swipe leak: the glide still running when Tab was let go (SwipeLeak.swift).
+  let glideHold = GlideHold()
+  /// PS 1.73 swipe leak: one scroll event from a card window, handed to this list's page while the list is up (the
+  /// card route in SwipeLeakCore.swift chose the list). Inside PS only: the event goes through the list's own window,
+  /// never to the system. The page swipe's phases and the glide watch hear it like the list's own events.
+  func handToList(_ e: NSEvent) {
+    guard shown, !selfTest, let cg = e.cgEvent?.copy() else { return }
+    cg.setIntegerValueField(.mouseEventWindowUnderMousePointer, value: Int64(panel.windowNumber))
+    cg.setIntegerValueField(.mouseEventWindowUnderMousePointerThatCanHandleThisEvent, value: Int64(panel.windowNumber))
+    if let ev = NSEvent(cgEvent: cg), ev.window === panel {
+      PageSwipe.heard(ev, overlay)
+      panel.sendEvent(ev)
+      return
+    }
+    // AppKit made it without a window: its place is then read in screen points, so move it by the list's own origin
+    // (the list window covers its screen exactly) and give it straight to the page's view.
+    let f = panel.frame
+    cg.location = CGPoint(x: cg.location.x - f.minX, y: cg.location.y + f.minY)
+    guard let ev = NSEvent(cgEvent: cg) else { return }
+    PageSwipe.heard(ev, overlay)
+    overlay.scrollWheel(with: ev)
   }
   /// Whether clicks go through to the app behind (the panel's own flag stays on in a self test).
   var clickThrough = true
@@ -1312,13 +1340,24 @@ final class App: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMess
     Toast.shared.reveal(false)
     guard shown else { return }
     shown = false
-    panel.ignoresMouseEvents = true
+    // PS 1.73 swipe leak: Tab let go while a sideways swipe or its glide runs. The list still goes invisible at once,
+    // but it keeps catching that gesture's scroll until it ends (at most 1.2 s), so the rest of the glide never lands
+    // on a notification or the app behind (SwipeLeakCore.swift). No gesture running: click through at once, as before.
+    if !selfTest, let hold = SwipeLeak.glide.holdOnHide(SwipeLeak.now) {
+      glideHold.start(panel, for: hold) { [weak self] in
+        guard let self, !self.shown else { return }
+        self.panel.ignoresMouseEvents = true
+        if self.panel.alphaValue == 0 { self.tuck() }
+      }
+    } else {
+      panel.ignoresMouseEvents = true
+    }
     clickThrough = true
     overlay.evaluateJavaScript("window.__psOverlayHidden && window.__psOverlayHidden()", completionHandler: nil)
     NSAnimationContext.runAnimationGroup({ $0.duration = 0.06; panel.animator().alphaValue = 0 }) { [weak self] in
       guard let self, !self.shown else { return }
       if self.panel.isKeyWindow { self.panel.resignKey() }
-      self.tuck()
+      if !self.glideHold.active { self.tuck() }   // PS 1.73: a held glide tucks the window when its hold ends
       // Hand the keyboard straight back to the app you were in (the list took it to get hover).
       if giveBack, !self.selfTest, let front = NSWorkspace.shared.frontmostApplication, front.processIdentifier != ProcessInfo.processInfo.processIdentifier,
          !Protected.matches(front) {   // golden rule: never touch 1Password or Signal
@@ -1513,6 +1552,8 @@ final class App: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMess
       if let on = msg["on"] as? Bool { Hatch.shared.launchOn = on; sendSettings() }
     case "psSettings:replayHatch" where fromMain || fromOverlay:   // PS 1.69: Settings > About and updates > Replay the update animation (Hatch.swift)
       Hatch.shared.replay()
+    case "psSettings:replayReveal" where fromMain || fromOverlay:   // PS Cake: Settings > About and updates > Replay the logo reveal (Cake.swift)
+      Cake.shared.replayReveal()
     case "psSettings:screenTime" where fromMain || fromOverlay:   // the switch in PS > Settings, or Turn on in the screen time pop-up
       if let on = msg["on"] as? Bool { ScreenTime.shared.enabled = on; sendSettings() }
     case "screentime:send" where fromMain:          // the page asks for the latest totals (opening the card)

@@ -8,6 +8,7 @@
 //  - Back gesture: the shell sends "back"; the top layer closes (every layer closes on Escape), and
 //    with nothing left to close the app goes to the background.
 import { haptic, gosPost, gosState, onShell } from "./bridge";
+import { startEdgeGuard } from "./edgeguard";
 
 const DRAGGABLE = ".tm-row, .tm-aware li, .nt-card, [data-k], .mt-item, .tm-sec-h, .tl-item, .todo-row";
 const NOT_HERE = "input, textarea, select, [contenteditable='true'], .no-drag, .tm-tick, button.mt-check, input[type='range']";
@@ -133,4 +134,5 @@ export function startTouch() {
   window.addEventListener("contextmenu", (e) => { if (hold || document.querySelector(".gos-lifted")) e.preventDefault(); }, { capture: true });
   window.addEventListener("click", onClick, { capture: true });
   onShell((m) => { if (m.type === "back") back(); });
+  startEdgeGuard();   // PS 1.73: the side edges over PS's own swipeable pages stay PS's (gos/edgeguard.ts)
 }

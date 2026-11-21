@@ -25,6 +25,10 @@
 //   share of this Mac's volume; the volume itself is never changed).
 // - The card takes the keyboard only while its box is open, then hands it back. Esc closes the box (the card stays).
 // - Test (Settings) shows a reminder right now with its sound; its buttons and Esc close it; nothing is saved.
+// - PS 1.73 (web core/duealerts.ts): the nags for tasks due today come as ordinary cards on their tasks. The Priority 1 alarm
+//   is a card with `one` (only "I acknowledge", no snooze button; it opens the box and only "yes" typed clears it, the usual
+//   typed confirm, the developer 21 Nov 2026: a click alone must not do it) and `ring`: its sound loops while it is up, for at most
+//   ringFor, and stops when it is answered, closed or answered on another device. Another card's chime never cuts it off.
 // Everything here is a few comparisons every 5 seconds on the main thread; file reading is on its own queue.
 import AppKit
 import WebKit
@@ -243,7 +247,7 @@ final class Reminders: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
   private func show(_ c: Card, fresh: Bool = false) {
     guard c.ready else { return }
     let i = c.item
-    c.web.callAsyncJavaScript("window.__fu && window.__fu.set(o, f)", arguments: ["o": ["pill": i.pill, "text": i.text, "later": i.later, "yes": i.yes, "word": i.word, "click": i.click, "open": i.open,
+    c.web.callAsyncJavaScript("window.__fu && window.__fu.set(o, f)", arguments: ["o": ["pill": i.pill, "text": i.text, "later": i.later, "yes": i.yes, "word": i.word, "click": i.click, "open": i.open, "one": i.one,
       "bg": i.bg, "accent": i.accent, "ink": i.ink, "test": c.id == Reminders.testId, "choices": i.choices, "sure": i.sure, "ask": i.ask], "f": fresh], in: nil, in: .page, completionHandler: nil)
   }
   private func close(_ id: String) {
@@ -265,7 +269,7 @@ final class Reminders: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
       c.web.evaluateJavaScript("window.__fu && window.__fu.out()", completionHandler: nil)
       NSAnimationContext.runAnimationGroup({ ctx in ctx.duration = 0.18; c.panel.animator().alphaValue = 0 }, completionHandler: gone)
     }
-    if !cards.keys.contains(where: { $0 != Reminders.testId }) && testItem == nil { stopSound() }
+    if ringId == id || (!cards.keys.contains(where: { $0 != Reminders.testId }) && testItem == nil) { stopSound() }   // PS 1.73: a ringing card's sound goes with it
   }
   /// Shown while up, except over 1Password or Signal (then hidden, and never holding the keyboard). Stacked from the
   /// top centre: the test card first, then the list's order.
@@ -396,9 +400,16 @@ final class Reminders: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
   }
   private func ownURL(_ id: String) -> URL { soundDir.appendingPathComponent("\(id).wav") }
   private func metaURL(_ id: String) -> URL { soundDir.appendingPathComponent("\(id).json") }
-  /// Its sound once, at its loudness share of this Mac's volume (the volume itself is never touched).
+  /// PS 1.73: how long a `ring` card's sound loops at most (the phone's ring, web core/remind.ts ALARM_RING_MIN).
+  static let ringFor: TimeInterval = 10 * 60
+  /// The card whose sound is ringing now (a `ring` card), nil when none.
+  private var ringId: String?
+  private var ringEnd: DispatchWorkItem?
+  /// Its sound once, at its loudness share of this Mac's volume (the volume itself is never touched). A `ring` card loops it.
   private func play(_ i: RemMath.Item) {
     guard testDir == nil, i.sound != "none" else { return }
+    if ringId != nil && !i.ring && i.id != Reminders.testId { return }   // a ringing alarm is never cut off by another card's chime
+    let ringing = i.ring && i.id != Reminders.testId
     let id = i.id == Reminders.testId ? (testSoundId ?? i.id) : i.id
     q.async { [self] in
       var data: Data?
@@ -408,11 +419,23 @@ final class Reminders: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
         player?.stop()
         player = data.flatMap { try? AVAudioPlayer(data: $0) }
         player?.volume = Float(i.vol)
+        ringEnd?.cancel(); ringEnd = nil; ringId = nil
+        if ringing, player != nil {
+          player?.numberOfLoops = -1
+          ringId = i.id
+          let end = DispatchWorkItem { [weak self] in
+            guard let self, self.ringId == i.id else { return }
+            psLog("PS reminders: ring stopped after \(Int(Reminders.ringFor / 60)) min")
+            self.stopSound()
+          }
+          ringEnd = end
+          DispatchQueue.main.asyncAfter(deadline: .now() + Reminders.ringFor, execute: end)
+        }
         player?.play()
       }
     }
   }
-  private func stopSound() { player?.stop(); player = nil }
+  private func stopSound() { ringEnd?.cancel(); ringEnd = nil; ringId = nil; player?.stop(); player = nil }
 
   // ---------- Test (Settings) ----------
   private var testSoundId: String?
@@ -620,6 +643,8 @@ final class Reminders: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
       $('p').textContent = o.pill; $('tt').textContent = o.test ? ' · test' : '';
       $('q').textContent = o.text; $('later').textContent = o.later; $('yes').textContent = o.yes;
       $('open').textContent = o.open || ''; $('open').hidden = !o.open;
+      $('later').hidden = !!o.one;   // PS 1.73: the Priority 1 alarm has one button
+      $('done').textContent = o.one ? o.yes : 'Done';   // and its box's confirm button keeps its words (I acknowledge): it works only with the word typed
       const many = Array.isArray(o.choices) && o.choices.length > 0;
       document.body.classList.toggle('multi', many);
       const ch = $('ch'); ch.textContent = '';

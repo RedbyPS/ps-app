@@ -201,7 +201,8 @@ object Gym {
             .setCategory(Notification.CATEGORY_REMINDER)
             .setVisibility(Notification.VISIBILITY_PUBLIC)
             .setContentIntent(Notifier.openIntent(c, if (alarm) "list" else "fitness", 3105))
-            .addAction(Notification.Action.Builder(null, if (alarm) a?.yes ?: "Acknowledge" else YES, ackIntent(c, r.day, r.key)).build())
+            // PS 1.73: an alarm that wants its word typed (the Priority 1 alarm) is never stopped by one tap here.
+            .apply { if (a == null || a.word.isEmpty()) addAction(Notification.Action.Builder(null, if (alarm) a?.yes ?: "Acknowledge" else YES, ackIntent(c, r.day, r.key)).build()) }
             .setGroup("gym")
             .build()
         if (!alarm) sp(c).edit().putString("noteDay", r.day).putLong("noteAt", r.at).apply()
@@ -280,8 +281,9 @@ object Gym {
             .setFullScreenIntent(full, true)
             .setContentIntent(full)
             .setForegroundServiceBehavior(Notification.FOREGROUND_SERVICE_IMMEDIATE)
-            .addAction(Notification.Action.Builder(null, a?.yes ?: YES, ackIntent(c, day, r?.key ?: GymClock.GYM)).build())
-            .addAction(Notification.Action.Builder(null, a?.later ?: "Later", laterIntent(c)).build())
+            // PS 1.73: an alarm that wants a word typed (the Priority 1 alarm's "yes") has no stop button here: a tap opens its card.
+            .apply { if (a == null || a.word.isEmpty()) addAction(Notification.Action.Builder(null, a?.yes ?: YES, ackIntent(c, day, r?.key ?: GymClock.GYM)).build()) }
+            .apply { if (a?.one != true) addAction(Notification.Action.Builder(null, a?.later ?: "Later", laterIntent(c)).build()) }   // PS 1.73: the P1 alarm has one button
             .build()
     }
     private fun laterIntent(c: Context) = PendingIntent.getBroadcast(c, 3107, Intent(c, GymAction::class.java).putExtra("op", "later"),
@@ -463,17 +465,32 @@ class GymRingActivity : ComponentActivity() {
             text = if (a != null) a.text else GymClock.title(at, System.currentTimeMillis()); textSize = 20f; gravity = Gravity.CENTER
             setTextColor(soft); setPadding(0, dp(4), 0, dp(40))
         }
+        // PS 1.73: the Priority 1 alarm wants its word ("yes") typed before its button stops it, the Annoying reminder's own box and
+        // words (RemRing.kt): "Type yes", and "Only yes clears this" after a wrong try. Other alarms and the gym: one tap, as before.
+        val word = a?.word.orEmpty()
+        val field = android.widget.EditText(this).apply {
+            hint = "Type $word"; textSize = 20f; gravity = Gravity.CENTER; setTextColor(ink); setHintTextColor(hintInk)
+            inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
+            imeOptions = android.view.inputmethod.EditorInfo.IME_ACTION_DONE; setSingleLine()
+            background = GradientDrawable().apply { setColor(Color.TRANSPARENT); setStroke(dp(2), accent); cornerRadius = 18 * d }
+            setPadding(dp(14), dp(14), dp(14), dp(14))
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { bottomMargin = dp(12) }
+        }
+        val wrong = TextView(this).apply { textSize = 15f; gravity = Gravity.CENTER; setTextColor(hintInk); setPadding(0, 0, 0, dp(10)); visibility = android.view.View.GONE }
+        fun stop(v: android.view.View) {
+            if (!GymClock.confirms(a, field.text?.toString())) { wrong.text = "Only $word clears this"; wrong.visibility = android.view.View.VISIBLE; return }
+            v.performHapticFeedback(android.view.HapticFeedbackConstants.CONFIRM)
+            Gym.ack(applicationContext, Gym.ringDay(applicationContext) ?: java.time.LocalDate.now().toString(), key, "ring")
+            finish()
+        }
         val ack = Button(this).apply {
             text = a?.yes ?: Gym.YES; isAllCaps = false; textSize = 22f; typeface = Typeface.DEFAULT_BOLD; setTextColor(onAcc)
             stateListAnimator = null
             background = GradientDrawable().apply { setColor(accent); cornerRadius = 99 * d }
             layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(76))
-            setOnClickListener {
-                performHapticFeedback(android.view.HapticFeedbackConstants.CONFIRM)
-                Gym.ack(applicationContext, Gym.ringDay(applicationContext) ?: java.time.LocalDate.now().toString(), key, "ring")
-                finish()
-            }
+            setOnClickListener { stop(it) }
         }
+        field.setOnEditorActionListener { _, id, _ -> if (id == android.view.inputmethod.EditorInfo.IME_ACTION_DONE) { stop(ack); true } else false }
         val later = Button(this).apply {
             text = a?.later ?: "Later"; isAllCaps = false; textSize = 19f; typeface = Typeface.DEFAULT_BOLD; setTextColor(soft)
             stateListAnimator = null
@@ -486,12 +503,15 @@ class GymRingActivity : ComponentActivity() {
             }
         }
         val hint = TextView(this).apply {
-            text = if (a != null) "${a.yes} stops it here and on your Mac. ${a.later} rings again in 5 minutes."
+            text = if (a != null && a.one && word.isNotEmpty()) "Type $word, then ${a.yes}. It stops here and on your Mac."   // PS 1.73: the Priority 1 alarm
+                else if (a != null && a.one) "${a.yes} stops it here and on your Mac."
+                else if (a != null) "${a.yes} stops it here and on your Mac. ${a.later} rings again in 5 minutes."
                 else "${Gym.YES} stops it here and on your Mac. Later rings again in 5 minutes."
             textSize = 14f; gravity = Gravity.CENTER
             setTextColor(hintInk); setPadding(0, dp(14), 0, 0)
         }
-        listOf(orb, big, sub, ack, later, hint).forEach(root::addView)
+        (if (word.isNotEmpty()) listOf(orb, big, sub, field, wrong, ack, hint) else if (a?.one == true) listOf(orb, big, sub, ack, hint)
+            else listOf(orb, big, sub, ack, later, hint)).forEach(root::addView)
         setContentView(root)
         // Back leaves the card; the ring goes on until Acknowledge, Later or its 10 minutes (the notification has both buttons).
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) { override fun handleOnBackPressed() { finish() } })

@@ -25,6 +25,9 @@ import { todayISO } from "../ui/kit";
 import { OWN_ACCEPT } from "../core/alarmsound";
 import { ColorWheel } from "./ColorWheel";
 import { clearNote, importOwn, pickOnMac, picksNatively, removeOwn, remSoundWhere, stopTest, testReminder, useRemSound } from "../remsound";
+import { DUE_NAG_PILL, DUE_P1_TEXT, DUE_P1_TITLE, DUE_P1_WORD, DUE_P1_YES } from "../core/remind";
+import { dueCfgOf, fillWords, patchDue } from "../core/duealerts";
+import { dayView } from "../daycount";
 import "./remind.css";
 
 const DAY_LETTERS = ["S", "M", "T", "W", "T", "F", "S"];
@@ -118,6 +121,8 @@ export function RemindSettings() {
           Add alarm
         </button>
       </div>
+      {/* PS 1.73: the nag for every task due today and the Priority 1 alarm (core/duealerts.ts). */}
+      <DueSection rec={rec} red={red} ready={ready} open={open} setOpen={setOpen} change={change} />
       {/* V1.55: reminders on tasks (added from a task's right click menu or its edit), changed here too. */}
       <h4 className="rm-h">On your tasks</h4>
       {onTasks.length
@@ -224,7 +229,10 @@ export function useTaskTitle(task: string | undefined): string | undefined {
 }
 
 /** The editor of one reminder (Settings, and the pop-up on a task: `taskTitle` set). `whenExtra`: more under When. */
-export function RemEditor({ r, red, set, ready, taskTitle, whenExtra }: { r: Reminder; red: boolean; set: (p: Partial<Reminder>) => void; ready: boolean; taskTitle?: string; whenExtra?: ReactNode }) {
+/** PS 1.73: the nag for tasks due today and the Priority 1 alarm use these editors with their own When (`due.when`), their words
+ *  filled in from an example task (`due.fill`), and their own placeholder and note under the words. */
+export interface DueEd { when: ReactNode; fill: (r: Reminder) => string; placeholder: string; note: string }
+export function RemEditor({ r, red, set, ready, taskTitle, whenExtra, due }: { r: Reminder; red: boolean; set: (p: Partial<Reminder>) => void; ready: boolean; taskTitle?: string; whenExtra?: ReactNode; due?: DueEd }) {
   const onTask = taskTitle !== undefined;
   // Colours being tried right now (the wheel while it is dragged): shown at once, saved a moment after you stop.
   const [look, setLook] = useState({ bg: r.bg, accent: r.accent });
@@ -241,6 +249,7 @@ export function RemEditor({ r, red, set, ready, taskTitle, whenExtra }: { r: Rem
   const shown: Reminder = { ...r, ...look };
   const item: PlanItem = remPlan({ v: 1, list: [shown], state: {}, gone: {}, at: 0 }, red).items[0];
   if (onTask) item.text = taskQuestion(shown, taskTitle);
+  if (due) item.text = due.fill(shown);
   const repeat = repeatOf(r);
   const zones = useMemo(() => [...new Set([...HOME_COMMON, ...(r.tz ? [r.tz] : [])])], [r.tz]);
   const snd = useRemSound();
@@ -257,12 +266,13 @@ export function RemEditor({ r, red, set, ready, taskTitle, whenExtra }: { r: Rem
       <div className="rm-cols">
         <div className="rm-col">
           <Sec title="Words">
-            <TextBox label={onTask ? "Words on the pop-up" : "Question"} value={r.text} placeholder={fallbackQ} max={REM_TEXT_MAX} save={(text) => set({ text })} wide />
-            <TextBox label="Small label on top" value={r.label} placeholder={onTask ? TASK_PILL : "Daily reminder"} max={REM_LABEL_MAX} save={(label) => set({ label })} />
+            <TextBox label={onTask || due ? "Words on the pop-up" : "Question"} value={r.text} placeholder={due ? due.placeholder : fallbackQ} max={REM_TEXT_MAX} save={(text) => set({ text })} wide />
+            <TextBox label="Small label on top" value={r.label} placeholder={due ? DUE_NAG_PILL : onTask ? TASK_PILL : "Daily reminder"} max={REM_LABEL_MAX} save={(label) => set({ label })} />
             {onTask && <p className="rm-note">Empty: the task's name. The pop-up has three buttons: {laterOf(r)}, {yesOf(r)} (ticks the task) and Open task.</p>}
+            {due && <p className="rm-note">{due.note}</p>}
           </Sec>
 
-          <Sec title="When it pops up" note={`It starts at the first time and keeps coming back until you answer. After the second time it no longer starts, but one already up stays until you answer.${r.until <= r.at ? " This one runs past midnight." : ""}`}>
+          {due ? <Sec title="When it pops up">{due.when}</Sec> : <Sec title="When it pops up" note={`It starts at the first time and keeps coming back until you answer. After the second time it no longer starts, but one already up stays until you answer.${r.until <= r.at ? " This one runs past midnight." : ""}`}>
             <div className="rm-row">
               <label className="rm-field"><span>Starts</span>
                 <input className="rm-input rm-time" type="time" value={r.at} onChange={(e) => { const v = e.target.value; if (/^\d\d:\d\d$/.test(v) && v !== r.until) set({ at: v }); }} />
@@ -303,7 +313,7 @@ export function RemEditor({ r, red, set, ready, taskTitle, whenExtra }: { r: Rem
               </>}
             </div>}
             {whenExtra}
-          </Sec>
+          </Sec>}
 
           <Sec title="Remind me in">
             <div className="rm-row">
@@ -361,7 +371,7 @@ export function RemEditor({ r, red, set, ready, taskTitle, whenExtra }: { r: Rem
           </Sec>
 
           <Sec title="Sound when it pops up">
-            <Seg label="Sound" value={r.sound} pick={(sound) => set({ sound })} options={REM_SOUNDS.map((s) => ({ id: s.id, label: s.label }))} />
+            <Seg label="Sound" value={due && r.sound === "own" ? "soft" : r.sound} pick={(sound) => set({ sound })} options={REM_SOUNDS.filter((s) => !due || s.id !== "own").map((s) => ({ id: s.id, label: s.label }))} />
             {r.sound === "own" && (
               <div className="rm-own">
                 {own
@@ -394,7 +404,7 @@ export function RemEditor({ r, red, set, ready, taskTitle, whenExtra }: { r: Rem
 
 /** The editor of one alarm (V1.57): when it rings, its title, words and stop button, its colours (the phone's ring screen
  *  and the Mac's card) and the Mac card's sound. Later is always 5 minutes and one click stops it. */
-function AlarmEditor({ r, red, set, ready }: { r: Reminder; red: boolean; set: (p: Partial<Reminder>) => void; ready: boolean }) {
+function AlarmEditor({ r, red, set, ready, due }: { r: Reminder; red: boolean; set: (p: Partial<Reminder>) => void; ready: boolean; due?: DueEd }) {
   const [look, setLook] = useState({ bg: r.bg, accent: r.accent });
   const lookT = useRef(0);
   useEffect(() => { if (!lookT.current) setLook({ bg: r.bg, accent: r.accent }); }, [r.bg, r.accent]);
@@ -408,6 +418,8 @@ function AlarmEditor({ r, red, set, ready }: { r: Reminder; red: boolean; set: (
   const [wheel, setWheel] = useState<"bg" | "accent" | null>(null);
   const shown: Reminder = { ...r, ...look };
   const item: PlanItem = remPlan({ v: 1, list: [shown], state: {}, gone: {}, at: 0 }, red).items[0];
+  if (due) Object.assign(item, { text: due.fill(shown), pill: shown.label || DUE_P1_TITLE, yes: shown.yes || DUE_P1_YES, one: true, at: "19:30",   // an example ring time
+    click: false, word: shown.word || DUE_P1_WORD });
   const zones = useMemo(() => [...new Set([...HOME_COMMON, ...(r.tz ? [r.tz] : [])])], [r.tz]);
   const snd = useRemSound();
   const testing = snd.testing?.id === r.id;
@@ -415,7 +427,7 @@ function AlarmEditor({ r, red, set, ready }: { r: Reminder; red: boolean; set: (
     <div className={`rm-ed${ready ? "" : " rm-notyet"}`}>
       <div className="rm-cols">
         <div className="rm-col">
-          <Sec title="When it rings" note={`It rings on the days you pick, for up to ${ALARM_RING_MIN} minutes, until you stop it.`}>
+          {due ? <Sec title="When it rings">{due.when}</Sec> : <Sec title="When it rings" note={`It rings on the days you pick, for up to ${ALARM_RING_MIN} minutes, until you stop it.`}>
             <div className="rm-row">
               <label className="rm-field"><span>Rings at</span>
                 <input className="rm-input rm-time" type="time" value={r.at} onChange={(e) => { const v = e.target.value; if (/^\d\d:\d\d$/.test(v) && v !== r.at) set({ at: v }); }} />
@@ -436,12 +448,13 @@ function AlarmEditor({ r, red, set, ready }: { r: Reminder; red: boolean; set: (
               <button type="button" className="rm-small" onClick={() => { sfx.hover(); set({ days: [...ALL_DAYS] }); }}>Every day</button>
               <button type="button" className="rm-small" onClick={() => { sfx.hover(); set({ days: [1, 2, 3, 4, 5] }); }}>Weekdays</button>
             </div>
-          </Sec>
+          </Sec>}
           <Sec title="Ring screen">
-            <TextBox label="Title" value={r.label} placeholder={ALARM_TITLE} max={REM_LABEL_MAX} save={(label) => set({ label })} />
-            <TextBox label="Words" value={r.text} placeholder={alarmText({ text: "", at: r.at })} max={REM_TEXT_MAX} save={(text) => set({ text })} wide />
-            <TextBox label="Stop button" value={r.yes} placeholder={ALARM_YES} max={REM_LABEL_MAX} save={(yes) => set({ yes })} />
-            <p className="rm-note">The other button is {ALARM_LATER}: it rings again in 5 minutes.</p>
+            <TextBox label="Title" value={r.label} placeholder={due ? DUE_P1_TITLE : ALARM_TITLE} max={REM_LABEL_MAX} save={(label) => set({ label })} />
+            <TextBox label="Words" value={r.text} placeholder={due ? due.placeholder : alarmText({ text: "", at: r.at })} max={REM_TEXT_MAX} save={(text) => set({ text })} wide />
+            <TextBox label="Stop button" value={r.yes} placeholder={due ? DUE_P1_YES : ALARM_YES} max={REM_LABEL_MAX} save={(yes) => set({ yes })} />
+            {due && <TextBox label="What has to be typed" value={r.word} placeholder={DUE_P1_WORD} max={REM_LABEL_MAX} save={(word) => set({ word })} />}
+            <p className="rm-note">{due ? due.note : `The other button is ${ALARM_LATER}: it rings again in 5 minutes.`}</p>
           </Sec>
         </div>
         <div className="rm-col">
@@ -497,7 +510,7 @@ function AlarmScreen({ item }: { item: PlanItem }) {
       <b className="rm-alarm-time">{item.at}</b>
       <span className="rm-alarm-words">{item.text}</span>
       <span className="rm-alarm-yes">{item.yes}</span>
-      <span className="rm-alarm-later">{ALARM_LATER}</span>
+      {!item.one && <span className="rm-alarm-later">{ALARM_LATER}</span>}
     </div>
   );
 }
@@ -523,7 +536,7 @@ export function RemCard({ item, live }: { item: PlanItem; live?: boolean }) {
       <span className="rm-card-pill"><i />{item.pill}</span>
       <h3>{item.text}</h3>
       <div className="rm-card-row">
-        <span className="rm-card-b">{item.later}</span>
+        {!item.one && <span className="rm-card-b">{item.later}</span>}
         {item.open && <span className="rm-card-b">{item.open}</span>}
         {!box && <span className="rm-card-b main" onClick={() => { if (!item.click) setBox(true); }}>{item.yes}</span>}
       </div>
@@ -555,5 +568,81 @@ export function RemTestCard() {
     <div className="rm-testcard" onClick={() => stopTest()} role="dialog" aria-label="Reminder test">
       <RemCard item={snd.testing} live />
     </div>
+  );
+}
+
+// ---------- PS 1.73: tasks due today and the Priority 1 alarm ----------
+// The developer, 21 Nov 2026. Every word here waits for the developer's yes (ps-handover-notes/p1-alarms-173.md lists them).
+const HOURS_QUICK = [1, 2, 3, 4, 6];
+const LEAD_QUICK = [15, 30, 60, 120, 180];
+const EXAMPLE_TASK = "Send the invoice";
+export const DUE_WORDS = {
+  head: "Due today",
+  intro: "Nobody loses track of a task: these come by themselves, from your list.",
+  nagTitle: "Tasks due today",
+  nagSum: (h: number, snooze: number) => `Starts ${h} ${h === 1 ? "hour" : "hours"} before your day ends, then every ${snooze} mins until it is done`,
+  nagWhen: (endHm: string) => `For every task due today that is not done: a task with today's date, a client task on its day, and each Priority 1 task by its own 24 hours. It comes back every snooze length until you tick the task or the time is up. An overdue task comes at once and all day, until it is done or has a new date. Done ticks the task. Your day ends at ${endHm} (Settings, Countdown text, Day ends).`,
+  hours: "Starts this many hours before",
+  nagNote: "{task} is the task's name, {left} the time left. Empty: the task's name.",
+  p1Title: "Priority 1 alarm",
+  p1Sum: (lead: string) => `Rings ${lead} before a Priority 1 task is due: its 24 hours or your day end, whichever comes first`,
+  p1When: (endHm: string) => `Every Priority 1 task that is not done rings: ${"before its 24 hours run out (from when it became Priority 1, shared with the squad or not) or before your day ends at "}${endHm}, whichever comes first. Your phone rings full screen like an alarm, your Mac shows a card that rings, and the iPhone web app sends a notification. Only typing the word stops it, then it stops on every device.`,
+  lead: "Rings this long before",
+  p1Note: (word: string, yes: string) => `{task} is the task's name, {left} the time left. One button, no Later: ${yes} only works once ${word} is typed.`,
+};
+const leadWords = (m: number) => (m % 60 ? `${m} mins` : `${m / 60} ${m === 60 ? "hour" : "hours"}`);
+
+function DueSection({ rec, red, ready, open, setOpen, change }: {
+  rec: RemindRec; red: boolean; ready: boolean; open: string | null; setOpen: (v: string | null) => void; change: (fn: (r: RemindRec) => RemindRec) => void;
+}) {
+  const s = useVault();
+  const cfg = dueCfgOf(rec, red);
+  const endHm = s.status === "unlocked" ? dayView(s, Date.now()).endHm : "12:00";
+  const set = (c: Parameters<typeof patchDue>[2]) => change((x) => patchDue(x, red, c, Date.now()));
+  const nag: DueEd = {
+    fill: (r) => fillWords(r.text, EXAMPLE_TASK, cfg.hours * 3_600_000),
+    placeholder: EXAMPLE_TASK, note: DUE_WORDS.nagNote,
+    when: <>
+      <div className="rm-row"><span className="rm-soft">{DUE_WORDS.hours}</span>
+        <div className="rm-quick">{HOURS_QUICK.map((h) => <button key={h} type="button" className={`rm-small${cfg.hours === h ? " on" : ""}`} disabled={!ready} onClick={() => { sfx.hover(); set({ hours: h }); }}>{h}</button>)}</div>
+      </div>
+      <p className="rm-note">{DUE_WORDS.nagWhen(endHm)}</p>
+    </>,
+  };
+  const p1: DueEd = {
+    fill: (r) => fillWords(r.text || DUE_P1_TEXT, EXAMPLE_TASK, cfg.lead * 60_000),
+    placeholder: DUE_P1_TEXT, note: DUE_WORDS.p1Note(cfg.p1.word || DUE_P1_WORD, cfg.p1.yes || DUE_P1_YES),
+    when: <>
+      <div className="rm-row"><span className="rm-soft">{DUE_WORDS.lead}</span>
+        <div className="rm-quick">{LEAD_QUICK.map((m) => <button key={m} type="button" className={`rm-small${cfg.lead === m ? " on" : ""}`} disabled={!ready} onClick={() => { sfx.hover(); set({ lead: m }); }}>{leadWords(m)}</button>)}</div>
+      </div>
+      <p className="rm-note">{DUE_WORDS.p1When(endHm)}</p>
+    </>,
+  };
+  const row = (id: string, r: Reminder, title: string, sum: string, ed: ReactNode, onOff: (on: boolean) => void) => (
+    <li className={`rm-item${open === id ? " open" : ""}${r.on ? "" : " off"}`} style={{ "--rm-acc": r.accent } as CSSProperties}>
+      <div className="rm-head">
+        <button type="button" className={`rm-switch${r.on ? " on" : ""}`} role="switch" aria-checked={r.on} aria-label={`${title} on or off`} disabled={!ready}
+          onClick={() => { sfx.hover(); onOff(!r.on); }}><i /></button>
+        <button type="button" className="rm-sum" onClick={() => { sfx.hover(); setOpen(open === id ? null : id); }} aria-expanded={open === id}>
+          <span className="rm-dot" aria-hidden="true" />
+          <span className="rm-sum-t"><b>{title}</b><span>{sum}</span></span>
+          <svg className="rm-chev" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6" /></svg>
+        </button>
+      </div>
+      <div className="rm-body" aria-hidden={open !== id}><div className="rm-body-in">{open === id && ed}</div></div>
+    </li>
+  );
+  return (
+    <>
+      <h4 className="rm-h">{DUE_WORDS.head}</h4>
+      <p className="rm-intro">{DUE_WORDS.intro}</p>
+      <ul className="rm-list">
+        {row("due:nag", cfg.nag, DUE_WORDS.nagTitle, DUE_WORDS.nagSum(cfg.hours, cfg.nag.snooze),
+          <RemEditor r={cfg.nag} red={red} set={(p) => set({ nag: p })} ready={ready} due={nag} />, (on) => set({ nag: { on } }))}
+        {row("due:p1", cfg.p1, DUE_WORDS.p1Title, DUE_WORDS.p1Sum(leadWords(cfg.lead)),
+          <AlarmEditor r={cfg.p1} red={red} set={(p) => set({ p1: p })} ready={ready} due={p1} />, (on) => set({ p1: { on } }))}
+      </ul>
+    </>
   );
 }

@@ -90,14 +90,20 @@ ok("where P1, P2 and P3 go", () => {
   assert.deepEqual(typedPlace(3, 5), { p1: false, index: 1 });
   assert.deepEqual(typedPlace(3, 0), { p1: false, index: 0 }, "shorter list: at the end");
 });
-ok("the order a typed priority saves", () => {
-  const ranked = [{ order: 1, p1: true }, { order: 5, p1: true }, { order: 2 }, { order: 4 }, { order: 9, unranked: true }];
-  assert.deepEqual(typedOrder(ranked, 1), { p1: true, order: 6 }, "P1: end of the group");
-  assert.deepEqual(typedOrder(ranked, 2), { p1: false, order: 1 }, "P2: before the first numbered task");
-  assert.deepEqual(typedOrder(ranked, 3), { p1: false, order: 3 }, "P3: between the first and second numbered task");
-  assert.deepEqual(typedOrder([{ order: 2 }], 3), { p1: false, order: 3 }, "P3 on a one task list: at the end");
-  assert.deepEqual(typedOrder([], 2), { p1: false, order: 0 });
-  assert.deepEqual(typedOrder([{ order: 7, p1: true }], 2), { p1: false, order: 8 }, "only a P1 group: just after it");
+ok("the order a typed priority saves (PS 1.73: P2 and P3 are levels a task joins)", () => {
+  const ranked = [{ id: "a", order: 1, p1: true }, { id: "b", order: 5, p1: true }, { id: "c", order: 2 }, { id: "d", order: 4 }, { id: "u", order: 9, unranked: true }];
+  const tag = () => "lnew";
+  assert.deepEqual(typedOrder(ranked, 1, tag), { p1: true, order: 6, prioGroup: null }, "P1: end of the group");
+  assert.deepEqual(typedOrder(ranked, 2, tag), { p1: false, order: 3, prioGroup: "lnew", pair: { id: "c", prioGroup: "lnew" } },
+    "P2: joins the P2 task (c) right after it, and the two become one level");
+  assert.deepEqual(typedOrder(ranked, 3, tag), { p1: false, order: 6.5, prioGroup: "lnew", pair: { id: "d", prioGroup: "lnew" } },
+    "P3: joins the P3 task (d), still above the tasks with no priority");
+  const two = [{ id: "c", order: 2, prioGroup: "g1" }, { id: "x", order: 3, prioGroup: "g1" }, { id: "d", order: 4 }];
+  assert.deepEqual(typedOrder(two, 2, tag), { p1: false, order: 3.5, prioGroup: "g1" }, "P2 already a group: to its end, same tag, nobody else changes");
+  assert.deepEqual(typedOrder(two, 3, tag), { p1: false, order: 5, prioGroup: "lnew", pair: { id: "d", prioGroup: "lnew" } });
+  assert.deepEqual(typedOrder([{ order: 2 }], 3, tag), { p1: false, order: 3, prioGroup: null }, "P3 on a one task list: a level of its own at the end");
+  assert.deepEqual(typedOrder([], 2, tag), { p1: false, order: 0, prioGroup: null });
+  assert.deepEqual(typedOrder([{ order: 7, p1: true }], 2, tag), { p1: false, order: 8, prioGroup: null }, "only a P1 group: just after it");
 });
 ok("every add box with a priority uses it, and its switch is in Settings", () => {
   const src = (f: string) => readFileSync(new URL(`../src/${f}`, import.meta.url), "utf8");

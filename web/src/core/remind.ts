@@ -69,7 +69,32 @@ export interface Reminder {
 }
 /** One reminder's state on every device: confirmed for which window (its start day), snoozed until when. */
 export interface RemState { done?: string; snoozeUntil?: number; at: number; by?: "mac" | "phone" | "web" }
-export interface RemindRec { v: 1; list: Reminder[]; state: Record<string, RemState>; gone: Record<string, number>; at: number }
+export interface RemindRec {
+  v: 1; list: Reminder[]; state: Record<string, RemState>; gone: Record<string, number>; at: number;
+  /** PS 1.73 (core/duealerts.ts): the settings of the nag for tasks due today and of the Priority 1 alarm. Unset = the defaults. */
+  due?: DueCfg;
+  /** PS 1.73: the answers to those (Done, Remind me in, I acknowledge), keyed by their worked out ids (core/duealerts.ts autoId). */
+  auto?: Record<string, RemState>;
+}
+/** PS 1.73 (the developer, 21 Nov 2026): the Annoying reminder for every task due today, and the alarm for a Priority 1 task whose 24 hours
+ *  are nearly up. Both are made from your tasks on every device (core/duealerts.ts); only these settings and the answers are saved.
+ *  nag and p1 are ordinary reminders so the same editor, cards, notifications and rules serve them (their times are unused). */
+export interface DueCfg {
+  nag: Reminder;     // id "duenag": on, the pill, the words ({task} and {left}), snooze, buttons, typed word or one click, colours, sound
+  hours: number;     // the nag starts this many hours before the day ends (or before a P1's 24 hours run out)
+  p1: Reminder;      // id "duep1", an alarm: on, the title, the words ({task} and {left}), the button ("I acknowledge"), colours, Mac sound
+  lead: number;      // minutes before a P1's 24 hours run out that it rings
+  edited: number;    // ms: the last change (two devices: the newer settings win)
+}
+export const DUE_HOURS_DEF = 3, DUE_HOURS_MIN = 1, DUE_HOURS_MAX = 12;
+export const DUE_LEAD_DEF = 60, DUE_LEAD_MIN = 5, DUE_LEAD_MAX = 720;
+export const DUE_NAG_ID = "duenag", DUE_P1_ID = "duep1";
+export const DUE_NAG_PILL = "Due today", DUE_P1_TITLE = "Priority 1", DUE_P1_YES = "I acknowledge", DUE_P1_TEXT = "{left} left: {task}";
+/** The word that has to be typed before I acknowledge stops a Priority 1 alarm (the developer, 21 Nov 2026: a click alone must not do it). */
+export const DUE_P1_WORD = "yes";
+/** The worked out ids (core/duealerts.ts autoId): "n" (a nag) or "p" (a P1 alarm) and 11 letters and digits. Never made by freshId (8). */
+export const AUTO_ID = /^[np][a-z0-9]{11}$/;
+export const AUTO_KEEP_MS = 3 * 86_400_000, AUTO_MAX = 120;
 
 // ---------- colours ----------
 export const REM_COLOURS: { id: string; label: string; bg: string; accent: string }[] = [
@@ -255,7 +280,36 @@ export function cleanRemind(v: unknown): RemindRec {
   const gone: Record<string, number> = {};
   const g = (o.gone && typeof o.gone === "object" ? o.gone : {}) as Record<string, unknown>;
   for (const [id, t] of Object.entries(g).slice(0, 160)) if (ID.test(id) && typeof t === "number" && Number.isFinite(t)) gone[id] = t;
-  return { v: 1, list, state, gone, at: typeof o.at === "number" && Number.isFinite(o.at) ? o.at : 0 };
+  const out: RemindRec = { v: 1, list, state, gone, at: typeof o.at === "number" && Number.isFinite(o.at) ? o.at : 0 };
+  const due = cleanDue(o.due);
+  if (due) out.due = due;
+  const auto = cleanAuto(o.auto, out.at);
+  if (auto) out.auto = auto;
+  return out;
+}
+/** The due settings checked, or null when there are none (the defaults then). */
+export function cleanDue(v: unknown): DueCfg | null {
+  if (!v || typeof v !== "object") return null;
+  const o = v as Record<string, unknown>;
+  const nag = cleanReminder({ ...(o.nag && typeof o.nag === "object" ? o.nag : {}), id: DUE_NAG_ID });
+  const p1 = cleanReminder({ ...(o.p1 && typeof o.p1 === "object" ? o.p1 : {}), id: DUE_P1_ID, alarm: true });
+  if (!nag || !p1) return null;
+  delete nag.task; delete nag.date; delete nag.alarm;
+  return { nag, p1, hours: num(o.hours, DUE_HOURS_MIN, DUE_HOURS_MAX, DUE_HOURS_DEF), lead: num(o.lead, DUE_LEAD_MIN, DUE_LEAD_MAX, DUE_LEAD_DEF),
+    edited: typeof o.edited === "number" && Number.isFinite(o.edited) ? o.edited : 0 };
+}
+/** The answers to the worked out items: known ids only, the newest AUTO_MAX, none older than AUTO_KEEP_MS (of the record's time). */
+export function cleanAuto(v: unknown, recAt: number): Record<string, RemState> | null {
+  if (!v || typeof v !== "object") return null;
+  const rows: [string, RemState][] = [];
+  for (const [id, x] of Object.entries(v as Record<string, unknown>).slice(0, 400)) {
+    if (!AUTO_ID.test(id)) continue;
+    const s = cleanState(x);
+    if (s && s.at > 0 && (!recAt || recAt - s.at < AUTO_KEEP_MS)) rows.push([id, s]);
+  }
+  if (!rows.length) return null;
+  rows.sort((a, b) => b[1].at - a[1].at || (a[0] < b[0] ? -1 : 1));
+  return Object.fromEntries(rows.slice(0, AUTO_MAX));
 }
 /** Does a stored record still carry the retired built in reminder (so the next save should rewrite it without)? */
 export function hasRetired(v: unknown): boolean {
@@ -406,9 +460,11 @@ export function snoozeAct(r: Reminder, now: number, by?: RemState["by"]): RemAct
  *  (unknown reminder, a broken answer, or an older answer than the one kept). */
 export function applyAct(rec: RemindRec, a: unknown): RemindRec | null {
   const o = (a && typeof a === "object" ? a : {}) as Record<string, unknown>;
-  if (typeof o.id !== "string" || !rec.list.some((r) => r.id === o.id)) return null;
+  if (typeof o.id !== "string") return null;
+  const auto = !rec.list.some((r) => r.id === o.id);
+  if (auto && !AUTO_ID.test(o.id)) return null;   // PS 1.73: a nag or P1 alarm worked out from a task (core/duealerts.ts)
   const at = typeof o.at === "number" && Number.isFinite(o.at) ? o.at : 0;
-  const old = rec.state[o.id];
+  const old = auto ? rec.auto?.[o.id] : rec.state[o.id];
   if (old && old.at >= at) return null;
   const by = o.by === "mac" || o.by === "phone" || o.by === "web" ? o.by : undefined;
   let s: RemState;
@@ -416,6 +472,7 @@ export function applyAct(rec: RemindRec, a: unknown): RemindRec | null {
   else if (o.act === "snooze" && typeof o.until === "number" && Number.isFinite(o.until)) s = { ...(old?.done ? { done: old.done } : {}), snoozeUntil: o.until, at };
   else return null;
   if (by) s.by = by;
+  if (auto) return { ...rec, auto: cleanAuto({ ...(rec.auto ?? {}), [o.id]: s }, Math.max(rec.at, at)) ?? {}, at: Math.max(rec.at, at) };
   return { ...rec, state: { ...rec.state, [o.id]: s }, at: Math.max(rec.at, at) };
 }
 
@@ -498,7 +555,18 @@ export function mergeRemind(a: RemindRec, b: RemindRec): RemindRec {
     const s = !x ? y : !y ? x : y.at >= x.at ? y : x;
     if (s) state[r.id] = s;
   }
-  return { v: 1, list, state, gone, at: Math.max(a.at, b.at) };
+  const out: RemindRec = { v: 1, list, state, gone, at: Math.max(a.at, b.at) };
+  // PS 1.73: the newer due settings, and each worked out item's newer answer.
+  const due = !a.due ? b.due : !b.due ? a.due : b.due.edited >= a.due.edited ? b.due : a.due;
+  if (due) out.due = due;
+  const ids = new Set([...Object.keys(a.auto ?? {}), ...Object.keys(b.auto ?? {})]);
+  if (ids.size) {
+    const m: Record<string, RemState> = {};
+    for (const id of ids) { const x = a.auto?.[id], y = b.auto?.[id]; const s = !x ? y : !y ? x : y.at >= x.at ? y : x; if (s) m[id] = s; }
+    const auto = cleanAuto(m, out.at);
+    if (auto) out.auto = auto;
+  }
+  return out;
 }
 
 /** What Settings shows and edits when there is no record yet: an empty list (not saved until a change). */
@@ -516,6 +584,9 @@ export interface PlanItem {
   sound: RemSound; vol: number; done: string; snoozeUntil: number; stateAt: number;
   // V1.55, reminders on tasks ("" on the list's own): the task's id, the one day of a once reminder, the third button's words.
   task: string; date: string; open: string;
+  // PS 1.73 (optional, older shells ignore them): one = only the confirm button (no snooze), ring = the Mac card's sound loops
+  // until it is answered or ALARM_RING_MIN is up (the Priority 1 alarm).
+  one?: boolean; ring?: boolean;
 }
 /** What the plan needs to know about one task (core/model.ts Todo). */
 export interface TaskInfo { title: string; done: boolean; daily: boolean; doneAt?: string | null }
@@ -721,7 +792,7 @@ export function addAlarm(rec: RemindRec, id: string, now: number): RemindRec {
   return { ...rec, list, gone, at: Math.max(now, rec.at) };
 }
 /** One ring the phone needs: which alarm, its day (its "done" day), when, and how its screen looks. */
-export interface AlarmRing { id: string; day: string; at: number; title: string; text: string; yes: string; later: string; bg: string; accent: string; ink: string }
+export interface AlarmRing { id: string; day: string; at: number; title: string; text: string; yes: string; later: string; bg: string; accent: string; ink: string; one?: boolean; word?: string }
 export const ALARM_RINGS_MAX = 40;
 /** The rings to come for the phone (and the ones that may still be ringing or snoozed, up to 6 hours back), soonest
  *  first, without the days already acknowledged. An alarm switched off or removed is simply not here, so a phone

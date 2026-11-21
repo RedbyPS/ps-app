@@ -2,7 +2,7 @@
 // awkward GTA 5 looking radio station nav bar", "it sucks", and a button parked bottom left blocks what other apps put there.
 // The hamburger is back at the top left, always there, and a tap brings out a plain list with every destination the wheel had:
 // the old menu's items (gos/menu.ts, the same the developer only and switched off rules) plus the screens that were never in it (Sleep
-// mode, Do Not Disturb, Gym, Sounds, What's new, Meetings, Inbox, Vault), under the wheel's headings.
+// mode, Do Not Disturb, Gym, Sounds, What's new, Meetings, Inbox, Vault), under the wheel's headings. PS 1.73: Clients too.
 // Pure: no React, no DOM (gos/GosLayer.tsx draws it, tests/phonemenu.test.ts checks it).
 import { menuItems } from "./menu.ts";
 import type { MenuId } from "./menu.ts";
@@ -10,7 +10,7 @@ import type { MenuId } from "./menu.ts";
 /** A point on the screen (where an item's icon sits, so its screen can zoom out of it, gos/launch.ts). */
 export interface Pt { x: number; y: number }
 
-export type NavId = MenuId | "sleep" | "dnd" | "gym" | "sounds" | "whatsnew" | "plan" | "inbox" | "vault";
+export type NavId = MenuId | "sleep" | "dnd" | "gym" | "sounds" | "clients" | "whatsnew" | "plan" | "inbox" | "vault";
 export type NavSection = "Most used" | "Your day" | "Tools";
 
 export interface NavItem {
@@ -24,7 +24,7 @@ export interface NavItem {
 }
 
 /** The items that are not in the old menu: each has its own screen or page on the phone. */
-const EXTRA: Record<"sleep" | "dnd" | "gym" | "sounds" | "whatsnew" | "plan" | "inbox" | "vault", { label: string; line: string; icon: string }> = {
+const EXTRA: Record<"sleep" | "dnd" | "gym" | "sounds" | "clients" | "whatsnew" | "plan" | "inbox" | "vault", { label: string; line: string; icon: string }> = {
   sleep: { label: "Sleep mode", line: "A calm clock and your alarms, logged when you wake.",
     icon: "M3 18v-6.5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2V18M3 15h18M3 18v2M21 18v2M6.5 9.5V8a1.5 1.5 0 0 1 1.5-1.5h3A1.5 1.5 0 0 1 12.5 8v1.5" },
   dnd: { label: "Do Not Disturb", line: "Mutes cards and sounds until you say.",
@@ -33,6 +33,9 @@ const EXTRA: Record<"sleep" | "dnd" | "gym" | "sounds" | "whatsnew" | "plan" | "
     icon: "M6.5 6.5v11M17.5 6.5v11M3.5 9v6M20.5 9v6M6.5 12h11" },
   sounds: { label: "Sounds", line: "Your soundboard, the player and the queue.",
     icon: "M9 18.5a2.5 2.5 0 1 1-5 0 2.5 2.5 0 0 1 5 0zM20 16.5a2.5 2.5 0 1 1-5 0 2.5 2.5 0 0 1 5 0zM9 18.5V6l11-2.5v13" },
+  // PS 1.73 the Clients workspace (clients/ClientsButton.tsx).
+  clients: { label: "Clients", line: "Your clients, their projects and tasks.",
+    icon: "M6 7h12a2.5 2.5 0 0 1 2.5 2.5V17a2.5 2.5 0 0 1-2.5 2.5H6A2.5 2.5 0 0 1 3.5 17V9.5A2.5 2.5 0 0 1 6 7zM9 7V5.6A1.6 1.6 0 0 1 10.6 4h2.8A1.6 1.6 0 0 1 15 5.6V7M3.5 12.5h17M10.5 12.5v1.6h3v-1.6" },
   whatsnew: { label: "What's new", line: "What changed in this version of PS.",
     icon: "M12 3l1.8 4.6L18.5 9.5l-4.7 1.9L12 16l-1.8-4.6L5.5 9.5l4.7-1.9zM18.5 15l.8 2 2 .8-2 .8-.8 2-.8-2-2-.8 2-.8z" },
   plan: { label: "Meetings", line: "Your calls coming up, on the Plan page.",
@@ -46,7 +49,7 @@ const EXTRA: Record<"sleep" | "dnd" | "gym" | "sounds" | "whatsnew" | "plan" | "
 /** Every item, in order of use, under its heading: Most used, Your day, Tools (the wheel's order, kept). */
 export const NAV_ORDER: { id: NavId; section: NavSection }[] = [
   { id: "sleep", section: "Most used" }, { id: "dnd", section: "Most used" }, { id: "clocks", section: "Most used" },
-  { id: "gym", section: "Most used" }, { id: "gsquad", section: "Most used" }, { id: "receipts", section: "Most used" },
+  { id: "gym", section: "Most used" }, { id: "clients", section: "Most used" }, { id: "gsquad", section: "Most used" }, { id: "receipts", section: "Most used" },
   { id: "timelines", section: "Most used" }, { id: "settings", section: "Most used" },
   { id: "goals", section: "Your day" }, { id: "screentime", section: "Your day" }, { id: "numerology", section: "Your day" },
   { id: "plan", section: "Your day" }, { id: "inbox", section: "Your day" }, { id: "series", section: "Your day" },

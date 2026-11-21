@@ -343,7 +343,8 @@ ok("inboxMove: to a list's first section that takes it, or a new To do group the
   const pages = [{ id: "work01", name: "Work", secs: ["g:errand1"] }, { id: "dd0001", name: "Streaks", secs: ["daily"] }, { id: "pp0001", name: "P", secs: [], kind: "panels" as const }];
   const full = ["p1", "prio", "daily", "g:errand1"];
   const ctx = { lists, full, pages, groups };
-  assert.deepEqual(inboxMove({ type: "once" }, "main", ctx, () => "zz")!.patch, { group: null, order: 4, p1: false, unranked: false, aiInbox: false });
+  // PS 1.73 (the developer: "stop adding in priorities at random"): into Priorities with no priority, at the bottom.
+  assert.deepEqual(inboxMove({ type: "once" }, "main", ctx, () => "zz")!.patch, { group: null, order: 4, p1: false, unranked: true, prioGroup: null, aiInbox: false });
   assert.deepEqual(inboxMove({ type: "once" }, "work01", ctx, () => "zz")!.patch, { group: "errand1", order: 0, aiInbox: false });
   const made = inboxMove({ type: "once" }, "dd0001", ctx, () => "newg1")!;
   assert.deepEqual(made.patch, { group: "newg1", order: 0, aiInbox: false });

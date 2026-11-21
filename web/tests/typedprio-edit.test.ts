@@ -27,17 +27,20 @@ ok("edit: P1 for a task with no priority gives it one", () => {
   const e = typedEdit(L, "u", 1)!;
   assert.equal(e.p1, true);
 });
-ok("edit: P2 takes a task out of P1 and puts it first below the group", () => {
-  const e = typedEdit(L, "a", 2)!;
+ok("edit: P2 takes a task out of P1 and puts it on the P2 level (PS 1.73)", () => {
+  const tag = () => "lnew";
+  const e = typedEdit(L, "a", 2, tag)!;
   assert.equal(e.p1, false);
-  assert.ok(e.order < 3, "above the numbered tasks (c); the P1 flag, not the number, keeps it below the group");
-  assert.deepEqual(e, typedOrder(L.filter((x) => x.id !== "a"), 2));
+  assert.ok(e.order > 3 && e.order < 4, "right after c, the P2 task");
+  assert.deepEqual(e.pair, { id: "c", prioGroup: "lnew" }, "c and a now share P2");
+  assert.deepEqual(e, typedOrder(L.filter((x) => x.id !== "a"), 2, tag));
 });
-ok("edit: P3 puts it third in the numbered list", () => {
-  const e = typedEdit(L, "e", 3)!;
+ok("edit: P3 puts it on the P3 level", () => {
+  const e = typedEdit(L, "e", 3, () => "lnew")!;
   assert.equal(e.p1, false);
-  // numbered after removing e: c (P2), d (P3): P3 goes between c and d
-  assert.ok(e.order > 3 && e.order < 4);
+  // numbered after removing e: c (P2), d (P3): e joins d, right after it, above the task with no priority (u)
+  assert.ok(e.order > 4 && e.order < 6);
+  assert.deepEqual(e.pair, { id: "d", prioGroup: "lnew" });
 });
 ok("edit: already at that priority means no move, only the word comes out of the name", () => {
   assert.equal(typedEdit(L, "a", 1), null);

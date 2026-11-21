@@ -20,6 +20,8 @@ import { sleepState } from "../sleepmode/engine";
 import type { SquadRec } from "../core/squadrec";
 import type { SquadView } from "./view";
 import { lpClear, lpInterval } from "../core/lowpower.ts";   // PS 1.65 Low power mode: these timers stop while asleep
+import { landDayNow } from "../clients/clientsday";
+import { waitsToLand } from "../core/clientwork";
 
 type Post = (m: object) => void;
 const PS_PAGE = import.meta.env.MODE === "ps";
@@ -57,7 +59,9 @@ export interface P1Hooks {
 
 export function startP1(h: P1Hooks) {
   let hadRec = false, working = false, again = false, lastPull = 0, lastTick = Date.now();
-  const myTodos = (): Doc<Todo>[] => docs<Todo>("todo").filter((d) => d.ws === null);
+  // Clients (PS 1.73): a task still waiting for its do date is not in the list yet, so its P1 clock starts when it lands.
+  const myTodos = (): Doc<Todo>[] => { const day = landDayNow(vaultStore.get()); return docs<Todo>("todo").filter((d) => d.ws === null && !waitsToLand(d.data, day)); };
+  let landSeen = "";
   const owner = () => { const s = vaultStore.get(); return s.status === "unlocked" && s.role === "owner" && s.userId !== "ps-overlay" && s.userId !== "dev"; };
   const sharing = () => !!h.rec() && feature(P1_FEATURE) && p1On(cleanShareOpts(settingsData(vaultStore.get()).squadShare));
 
@@ -148,6 +152,8 @@ export function startP1(h: P1Hooks) {
     if (graceCrossed(lastTick, now) && sharing()) h.push();
     lastTick = now;
     quietPull(now);
+    const day = landDayNow(vaultStore.get());
+    if (day !== landSeen) { if (landSeen) void reconcile(); landSeen = day; }   // the day ended: tasks that landed get their P1 start now
     alerts();
     try { h.tick?.(); } catch { /* the board's own problem */ }
   }, TICK_MS);

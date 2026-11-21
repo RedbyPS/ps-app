@@ -744,18 +744,19 @@ function Board({ prio, aware, dimx, inbox, ready, escRef, view, onClose }: {
     } else {
       if (prio) {
         // Typed P1, P2 or P3 (core/typedprio.ts): in at that priority, shown there straight away.
-        const real = cur.prio.filter((p) => !p.pending).map((p) => prioDocs.current.get(p.id)?.data).filter((d): d is Todo => !!d);
+        const real = cur.prio.filter((p) => !p.pending).map((p) => { const d = prioDocs.current.get(p.id)?.data; return d ? { id: p.id, ...d } : null; }).filter((d): d is Todo & { id: string } => !!d);
         const at = typedOrder(real, prio);
         const group = cur.prio.filter((p) => p.p1).length;
         const numbered = cur.prio.filter((p) => !p.p1 && !p.unranked).length;
         const index = at.p1 ? group : group + Math.min(prio - 2, numbered);
         keep({ prio: insertAt(cur.prio, { id: `pending-${uid()}`, title: t, pending: true, p1: at.p1 }, index) });
-        void taskMapActions.add({ title: t.slice(0, 500), due, type: "once", order: at.order, p1: at.p1, ...r });
+        void taskMapActions.add({ title: t.slice(0, 500), due, type: "once", order: at.order, p1: at.p1, unranked: false, ...(at.prioGroup ? { prioGroup: at.prioGroup } : {}), ...r });
+        if (at.pair) void taskMapActions.update(at.pair.id, { prioGroup: at.pair.prioGroup });   // PS 1.73: that level was one task: now a group of two
         return;
       }
       const order = orderAt(cur.prio.length);
       keep({ prio: [...cur.prio, { id: `pending-${uid()}`, title: t, pending: true }] });
-      void taskMapActions.add({ title: t.slice(0, 500), due, type: "once", order, ...r });
+      void taskMapActions.add({ title: t.slice(0, 500), due, type: "once", order, unranked: true, ...r });   // PS 1.73: no priority unless one is typed
     }
   };
   const rename = (card: Card, text: string) => {
@@ -778,7 +779,8 @@ function Board({ prio, aware, dimx, inbox, ready, escRef, view, onClose }: {
         const group = rest.filter((p) => p.p1).length, numbered = rest.filter((p) => !p.p1 && !p.unranked).length;
         const index = at.p1 ? group : group + Math.min(typed.prio - 2, numbered);
         keep({ prio: insertAt(rest, { ...(me ?? { id: card.id }), title, p1: at.p1, unranked: false }, index) });
-        void taskMapActions.update(card.id, { title, p1: at.p1, order: at.order, unranked: false });
+        void taskMapActions.update(card.id, { title, p1: at.p1, order: at.order, unranked: false, prioGroup: at.prioGroup });
+        if (at.pair) void taskMapActions.update(at.pair.id, { prioGroup: at.pair.prioGroup });   // PS 1.73: P2 and P3 are levels
         return;
       }
       keep({ prio: cur.prio.map((p) => (p.id === card.id ? { ...p, title: t } : p)) }); void taskMapActions.update(card.id, { title: t.slice(0, 500) });

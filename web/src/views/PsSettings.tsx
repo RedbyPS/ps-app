@@ -100,8 +100,9 @@ export function PsSettingsView({ onBack, overlay }: { onBack?: () => void; overl
   );
 }
 
-/** PS 1.67, the start animation (Hatch): every time PS starts, the icon builds itself, cracks, drops and hatches the
- *  island. This Mac only, kept by PS (ps-mac Hatch.swift); on unless switched off. In every build, the public one too. */
+/** The start animation: every time PS starts, one of three Cake scenes (Night drive, Harbor lights, City swarm) plays
+ *  and builds the island (ps-mac Cake.swift; until PS Cake, the 1.67 Hatch start scene). This Mac only, kept by PS
+ *  (UserDefaults hatch.launch); on unless switched off. In every build, the public one too. */
 export function StartAnimationSection() {
   const st = usePsSettings();
   const on = st ? st.launchScene !== false : true;
@@ -117,7 +118,7 @@ export function StartAnimationSection() {
         <span className="stack tight" style={{ gap: 2 }}>
           <b className="small">Play the start animation when {appName()} opens</b>
           <span className="xs muted">
-            The icon builds itself, drops and hatches the Dynamic Island. It takes a couple of seconds; Esc or a click skips it.
+            One of three Cake scenes plays and builds the Dynamic Island. It takes about six seconds; Esc or a click skips it.
           </span>
         </span>
       </label>
