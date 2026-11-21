@@ -170,6 +170,8 @@ export const SETTINGS: SetEntry[] = [
   { id: "transparency", group: "looks", name: "List transparency", line: "How much of your screen shows through the list.", on: MAC, words: ["transparent", "transparency", "glass", "see through", "opacity", "opaque", "blur", "backdrop", "clear"] },
   { id: "overdue-tab", group: "looks", name: "Overdue card", line: "The Overdue card at the bottom right: its colour, its text colour and an effect like lightning.", words: ["overdue", "late", "missed", "due", "past due", "bottom right", "tab", "card", "colour", "color", "text colour", "text color", "red", "effect", "lightning", "glow", "pulse", "shimmer", "fire", "embers", "alarm", "flash"] },
   { id: "outline", group: "looks", name: "Outline", line: "The frame drawn round the Priority 1 group.", words: ["p1", "priority", "border", "frame", "box"] },
+  // PS 1.73 (the developer, 21 Nov 2026): the box round two or more tasks on one priority (core/prio.ts lvLook), Plain by default.
+  { id: "prio-groups", group: "looks", name: "Priority groups", line: "The box round two or more tasks on the same priority: its colour and effects. Plain by default.", words: ["p2", "p3", "priority", "priority 2", "priority 3", "group", "groups", "box", "frame", "outline", "colour", "color", "effects", "glow", "plain"] },
   { id: "background", group: "looks", name: "Background", line: "What fills the screen behind the list: a scene, lightning, a picture or a video.", words: ["wallpaper", "video", "scene", "lightning", "storm", "image", "picture", "backdrop", "neon", "city", "neon city", "night"] },
   { id: "bg-colour", group: "looks", name: "Colour background", line: "A plain colour behind the list.", words: ["colour", "color", "solid", "plain"] },
   { id: "rain", group: "looks", name: "Rain", line: "Rain falling over the screen. Off by default.", words: ["weather", "drops", "drizzle", "storm", "falling"] },
@@ -225,6 +227,9 @@ export const SETTINGS: SetEntry[] = [
   { id: "rem-sound", group: "remind", parent: "reminders", name: "Reminder sound", line: "None, a soft chime, an alarm tone or your own sound file.", words: ["sound", "audio", "file", "mp3", "chime", "alarm", "ring", "own sound", "loudness", "volume", "music"] },
   // V1.57: alarms at any time (the phone rings like the gym ring, the Mac shows a card).
   { id: "alarms", group: "remind", parent: "reminders", name: "Phone alarms", line: "Your phone rings like an alarm at the times you pick, and your Mac shows a card.", words: ["ring", "wake", "wake up", "alarm clock", "phone rings", "ring screen", "acknowledge", "time"] },
+  // PS 1.73 (the developer, 21 Nov 2026): the nag for tasks due today and the Priority 1 alarm (core/duealerts.ts, views/RemindSettings.tsx DueSection).
+  { id: "due-nag", group: "remind", parent: "reminders", name: "Tasks due today", line: "The annoying reminder for every task due today, from 3 hours before your day ends until it is done.", words: ["due", "due today", "today", "deadline", "dated", "date", "day ends", "day end", "client", "clients", "lost track", "forgot", "nag", "pin me", "3 hours", "hours before"] },
+  { id: "due-p1", group: "remind", parent: "reminders", name: "Priority 1 alarm", line: "Rings an hour before a Priority 1 task is due, by its 24 hours or your day end. Type yes to stop it.", words: ["priority 1", "priority one", "p1", "24 hours", "expire", "expiring", "expires", "running out", "alarm", "ring", "i acknowledge", "acknowledge", "lead time", "one hour"] },
   { id: "rem-test", group: "remind", parent: "reminders", name: "Test a reminder", line: "Shows it right now with its sound. Esc ends it.", words: ["test", "try", "preview", "see it", "demo"] },
 
   // ---------- Posture Reminder (PS 1.65, core/posture.ts; the controls are views/PostureSettings.tsx) ----------
@@ -283,7 +288,8 @@ export const SETTINGS: SetEntry[] = [
   // ---------- Mac ----------
   { id: "island", group: "island", name: "Dynamic Island", line: "Its shape or Off, where it sits, how long its line hides it, notifications and full screen.", on: MAC, words: ["island", "notch", "pill", "position", "move", "hide", "dynamic", "notifications", "cards", "pop-ups", "popups", "top right", "corner", "come from", "animation", "full screen", "fullscreen", "top left", "top bar", "black bar", "menu bar", "tick", "circle", "side", "left", "right", "off", "turn off", "disable"] },
   // PS 1.67 Hatch: the start animation (ps-mac Hatch.swift, views/PsSettings.tsx StartAnimationSection). This Mac, on unless switched off.
-  { id: "start-animation", group: "island", name: "Start animation", line: "Each time the app opens, the icon builds itself and hatches the island. Esc skips it.", on: MAC, words: ["start", "startup", "launch", "opens", "animation", "intro", "hatch", "icon", "logo", "splash", "off", "turn off", "disable"] },
+  // PS Cake (the developer, 21 Nov 2026): the switch now governs the boot animation (ps-mac Cake.swift), one of three scenes at random.
+  { id: "start-animation", group: "island", name: "Start animation", line: "Each time the app opens, one of three Cake scenes plays and builds the island. Esc skips it.", on: MAC, words: ["start", "startup", "launch", "opens", "animation", "intro", "hatch", "icon", "logo", "splash", "off", "turn off", "disable", "boot", "cake", "night drive", "harbor", "city"] },
   // PS 1.60 (pull request 12a, views/ScreenRec.tsx): one block with every choice; the rows below are only found by the search.
   { id: "screenrec", group: "screenrec", name: "Screen recording", line: "Record calls. Off until you switch it on: PS asks macOS for nothing while it is off.", on: MAC, sr: true,
     words: ["record", "recording", "screen", "recorder", "meeting", "call", "video", "zoom", "capture", "privacy", "permission", "microphone"] },
@@ -446,6 +452,8 @@ export const SETTINGS: SetEntry[] = [
   { id: "whats-new", group: "about", name: "What's new", line: "The changes in this version.", on: NOT_PHONE, words: ["changelog", "release notes", "changes", "news", "new"] },
   // PS 1.69 (the developer, 18 Nov 2026): plays the update animation (Hatch, ps-mac Hatch.swift) again with made up progress. Mac only, every build.
   { id: "replay-update", group: "about", name: "Replay the update animation", line: "Plays the update animation again. Nothing is downloaded or installed. Esc skips it.", on: MAC, words: ["replay", "again", "play", "watch", "update", "animation", "hatch", "icon", "island", "hatches", "intro", "show"] },
+  // PS Cake (the developer, 21 Nov 2026): the logo reveal (the old PS icon turns into the knight globe, ps-mac Cake.swift) again. Mac only, every build.
+  { id: "replay-reveal", group: "about", name: "Replay the logo reveal", line: "Plays the logo reveal again: the old PS icon turns into the new one. Esc skips it.", on: MAC, words: ["replay", "again", "play", "watch", "logo", "reveal", "icon", "new icon", "knight", "globe", "cake", "animation", "intro", "show"] },
   { id: "setup", group: "about", name: "Setup menu", line: "The few settings that matter, in plain words, one at a time.", on: MAC, words: ["welcome", "tour", "onboarding", "setup", "start"] },
   // V1.55 (the developer, 12 Nov 2026): the first use tips come once per account; this brings them back.
   { id: "tips", group: "about", name: "Tips", line: "Short tips about swiping between pages, the dots, Edit and reminders. They show once each.", words: ["tips", "show tips again", "hints", "tutorial", "help", "tour", "swipe", "learn"] },

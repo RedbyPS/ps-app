@@ -39,7 +39,9 @@ export type NavEdge = "top" | "bottom";
 export type NavAlign = "full" | "left" | "center" | "right";
 /** A navbar button: one of the phone's own, or "page:<id>" to open a page of panels. */
 export type NavItem = string;
-export type PhoneNav = { edge: NavEdge; align: NavAlign; items: NavItem[] };
+/** given (PS 1.73): the new default buttons this navbar has had put in once (ONE_TIME_NAV). A navbar saved before one came
+ *  gets it in its own place the first time it is read; taken out after that, it stays out. */
+export type PhoneNav = { edge: NavEdge; align: NavAlign; items: NavItem[]; given?: NavItem[] };
 export type PhoneLayout = { phone: PhoneKind; at: string; pages: PhonePage[]; nav: PhoneNav; bg?: string; look?: string };
 
 /** The navbar buttons a phone has (the dock in gos/GosLayer.tsx). keep: never taken out. red: the developer's account only.
@@ -52,16 +54,21 @@ export const NAV_ITEMS: readonly NavInfo[] = [
   { id: "list", label: "List" },
   { id: "inbox", label: "Inbox" },
   { id: "gym", label: "Gym" },
+  // PS 1.73 (the developer, 21 Nov 2026): "Plan, List, Inbox, Gym, Rules, Clients, Vault, PS". Rules (his account only) sat right of Vault.
+  { id: "rules", label: "Rules", red: true },
   // PS 1.72 (the developer, 21 Nov 2026): the Soundboard leaves the navbar by default, here and on the Mac's Tab list. Its own id, so a
   // navbar saved before 1.72 with the old "sounds" button no longer draws it (cleanNavItems drops ids it does not know;
-  // carryUnknownPhone keeps the stored word for an older PS). Edit mode adds it back, in this place. This is the place a
-  // new default button between Gym and Vault takes (the Clients workspace the developer has planned).
+  // carryUnknownPhone keeps the stored word for an older PS). Edit mode adds it back, in this place.
   { id: "soundboard", label: "Sounds", add: "Soundboard", optIn: true },
+  // PS 1.73 (the developer, 21 Nov 2026): the Clients workspace (clients/ClientsButton.tsx) takes the Sounds place, left of Vault, in
+  // every navbar: the default one, and a saved one once (ONE_TIME_NAV).
+  { id: "clients", label: "Clients" },
   { id: "vault", label: "Vault" },
-  { id: "rules", label: "Rules", red: true },
   { id: "settings", label: "Settings", keep: true },
 ];
 const NAV = new Map(NAV_ITEMS.map((n) => [n.id, n]));
+/** New default buttons a navbar saved before them gets once, in their own place (nav.given remembers it was done). */
+export const ONE_TIME_NAV: readonly NavItem[] = ["clients"];
 const BUILT_IN: readonly PageKind[] = ["plan", "list", "inbox"];
 export const HOME = "list";
 
@@ -111,7 +118,7 @@ export function phoneGallery(l: PhoneLayout, page: string, red: boolean): { kind
 /** The navbar a phone had before V1.56 (gos/GosLayer.tsx): every button, Rules only on the developer's account. */
 export const defaultNavItems = (red: boolean): NavItem[] => NAV_ITEMS.filter((n) => (red || !n.red) && !n.optIn).map((n) => n.id);
 export function defaultPhoneLayout(phone: PhoneKind, red = false): PhoneLayout {
-  return { phone, at: "", pages: BUILT_IN.map((k) => ({ id: k, kind: k })), nav: { edge: "bottom", align: "full", items: defaultNavItems(red) } };
+  return { phone, at: "", pages: BUILT_IN.map((k) => ({ id: k, kind: k })), nav: { edge: "bottom", align: "full", items: defaultNavItems(red), given: [...ONE_TIME_NAV] } };
 }
 
 // ---------- checking a record ----------
@@ -175,10 +182,16 @@ export function cleanPhoneLayout(v: unknown, phone: PhoneKind, red = false): Pho
     ids.add(k);
   }
   const n = (o.nav && typeof o.nav === "object" ? o.nav : {}) as Record<string, unknown>;
+  // PS 1.73: a saved navbar gets each new default button once (given lists those it had); after that it is the person's.
+  // A newer build's own ones stay too (it must not give them twice).
+  const given = Array.isArray(n.given) ? n.given.filter((x): x is string => typeof x === "string" && /^[a-z][a-z0-9-]{0,31}$/.test(x)).slice(0, 16) : [];
+  let items = cleanNavItems(Array.isArray(n.items) ? n.items : defaultNavItems(red), pages, red);
+  if (Array.isArray(n.items)) for (const x of ONE_TIME_NAV) if (!given.includes(x) && !items.includes(x) && items.length < MAX_NAV) items = cleanNavItems(placeNav(items, x), pages, red);
   const nav: PhoneNav = {
     edge: n.edge === "top" ? "top" : "bottom",
     align: n.align === "left" || n.align === "center" || n.align === "right" ? n.align : "full",
-    items: cleanNavItems(Array.isArray(n.items) ? n.items : defaultNavItems(red), pages, red),
+    items,
+    given: [...new Set([...given, ...ONE_TIME_NAV])],
   };
   const out: PhoneLayout = { phone, at: typeof o.at === "string" && !Number.isNaN(Date.parse(o.at)) ? o.at : "", pages, nav };
   const bg = lookVal(o.bg), look = lookVal(o.look);
@@ -191,7 +204,7 @@ export function cleanPhoneLayout(v: unknown, phone: PhoneKind, red = false): Pho
 // and a value it cannot read all stay in the record exactly where they were; what the person removed here stays removed.
 const PHONE_TOP = new Set(["phone", "at", "pages", "nav", "bg", "look"]);
 const PHONE_PAGE = new Set(["id", "kind", "name", "tiles", "bg", "look"]);
-const PHONE_NAV = new Set(["edge", "align", "items"]);
+const PHONE_NAV = new Set(["edge", "align", "items", "given"]);
 type PObj = Record<string, unknown>;
 const pobj = (v: unknown): v is PObj => !!v && typeof v === "object" && !Array.isArray(v);
 /** Fields of `s` that `n` lacks: unknown ones (not in `known`), and known ones whose value `seen` (this build's reading
@@ -412,14 +425,19 @@ export function setNavItems(l: PhoneLayout, items: NavItem[], red: boolean, at: 
 export function toggleNav(l: PhoneLayout, item: NavItem, red: boolean, at: string): PhoneLayout {
   if (l.nav.items.includes(item)) return NAV.get(item)?.keep ? l : setNavItems(l, l.nav.items.filter((x) => x !== item), red, at);
   if (l.nav.items.length >= MAX_NAV) return l;
-  const items = [...l.nav.items];
-  // An opt in button goes back in its own place: before the first button that comes after it in NAV_ITEMS.
+  // An opt in button goes back in its own place; any other at the end, before Settings.
+  return setNavItems(l, placeNav(l.nav.items, item, !!NAV.get(item)?.optIn || ONE_TIME_NAV.includes(item)), red, at);
+}
+/** `item` put in: in its own place (`own`, the default: before the first button that comes after it in NAV_ITEMS), else at
+ *  the end, before Settings. */
+function placeNav(list: NavItem[], item: NavItem, own = true): NavItem[] {
+  const items = [...list];
   const rank = (x: NavItem) => NAV_ITEMS.findIndex((n) => n.id === x);
-  const mine = NAV.get(item)?.optIn ? rank(item) : -1;
+  const mine = own ? rank(item) : -1;
   const after = mine < 0 ? -1 : items.findIndex((x) => rank(x) > mine);
   const s = items.indexOf("settings");
   items.splice(after >= 0 ? after : s < 0 ? items.length : s, 0, item);
-  return setNavItems(l, items, red, at);
+  return items;
 }
 /** Every button this account can put in the navbar: the phone's own and one per page of panels. */
 export function navChoices(l: PhoneLayout, red: boolean): { id: NavItem; label: string; keep: boolean; on: boolean }[] {

@@ -93,7 +93,8 @@ extension App {
 
   /// The small Sign in window: the engine page's own sign in (passphrase, Remember me, recovery, Touch
   /// ID). Only on the developer's click. Over 1Password or Signal it appears but never takes the keyboard.
-  func showSignIn() {
+  /// rise: PS Cake, the end of a signed out boot animation: the window comes up a little as it fades in, as on the demo.
+  func showSignIn(rise: Bool = false) {
     if vaultUnlocked { showPopup(); return }
     if ProjectSetup.shared.holding { ProjectSetup.shared.show(mode: .first); return }   // no project yet: set one up first
     Popup.shared.hide(giveBack: false)
@@ -110,9 +111,22 @@ extension App {
     psLog("PS: sign in window shown")
     if selfTest { window.orderFrontRegardless(); syncAppActive(); return }   // parked off screen, invisible, never key
     window.alphaValue = 0
+    // The boot animation's scene sits over every app window (Cake.swift): for its rise the window goes up to the scene's
+    // own level, in front of it, while the scene fades behind; then it is a normal window again.
+    if rise { window.level = NSWindow.Level(rawValue: NSWindow.Level.mainMenu.rawValue - 1) }
     if Protected.front { window.orderFrontRegardless() }
     else { window.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true) }
-    NSAnimationContext.runAnimationGroup { $0.duration = 0.22; $0.timingFunction = CAMediaTimingFunction(name: .easeOut); window.animator().alphaValue = 1 }
+    let rest = window.frame
+    if rise && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion { window.setFrame(rest.offsetBy(dx: 0, dy: -16), display: false) }
+    NSAnimationContext.runAnimationGroup({ c in
+      c.duration = rise ? 0.52 : 0.22
+      c.timingFunction = rise ? CAMediaTimingFunction(controlPoints: 0.16, 1, 0.3, 1) : CAMediaTimingFunction(name: .easeOut)
+      window.animator().alphaValue = 1
+      if rise { window.animator().setFrame(rest, display: true) }
+    }, completionHandler: { [weak self] in
+      guard rise, let w = self?.window else { return }
+      DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { w.level = .normal }   // the scene has gone by then
+    })
     syncAppActive()
   }
 

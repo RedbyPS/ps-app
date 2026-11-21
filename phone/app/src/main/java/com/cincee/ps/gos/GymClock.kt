@@ -17,11 +17,14 @@ import org.json.JSONObject
  *  - Alarms at any time (Settings, Annoying 15 min reminder, Alarms): the plan's `alarms`, each a ring with its own
  *    title, words, stop button and colours. They ring with the same ring (GymRing with key "a:<id>"), the same
  *    10 minutes, the same Later and the same missed notice. Acknowledge is the reminder's "done" for that day.
+ *  - PS 1.73: the Priority 1 alarm (web core/duealerts.ts) is one of these alarms with `one`: a single button,
+ *    "I acknowledge", and no Later, and with `word` ("yes"): the button only stops it once that word is typed (any case), the
+ *    Annoying reminder's own rule (RemRing). Its words carry the task's name and the time left, so they may be up to 160 long.
  */
 data class GymItem(val day: String, val at: Long, val end: Long = 0, val ring: Long = 0, val from: Long = 0, val every: Long = 0)
 /** One alarm ring (web core/remind.ts alarmRings). `day` is the day Acknowledge counts for. */
 data class AlarmItem(val id: String, val day: String, val at: Long, val title: String, val text: String, val yes: String,
-                     val later: String, val bg: String, val accent: String, val ink: String) {
+                     val later: String, val bg: String, val accent: String, val ink: String, val one: Boolean = false, val word: String = "") {
     val key get() = "a:$id"
     val ackKey get() = "$id:$day"
 }
@@ -52,6 +55,9 @@ object GymClock {
     const val MAX_ALARMS = 40
     private fun line(s: String, max: Int) = s.replace(Regex("[\\u0000-\\u001f\\u007f]"), "").trim().take(max)
 
+    /** PS 1.73: may this typed text stop the alarm? Always when it has no word; else only the word, any case, spaces trimmed. */
+    fun confirms(a: AlarmItem?, typed: String?): Boolean = a == null || a.word.isEmpty() || (typed ?: "").trim().equals(a.word.trim(), ignoreCase = true)
+
     fun parse(s: String?): GymPlan? = runCatching { from(JSONObject(s ?: return null)) }.getOrNull()
     fun from(j: JSONObject): GymPlan {
         val items = ArrayList<GymItem>()
@@ -80,10 +86,11 @@ object GymClock {
                 fun hex(k: String, def: String) = o.optString(k).takeIf { HEX.matches(it) } ?: def
                 alarms.add(AlarmItem(id, day, at,
                     title = line(o.optString("title"), 30).ifEmpty { "Alarm" },
-                    text = line(o.optString("text"), 80),
+                    text = line(o.optString("text"), 160),
                     yes = line(o.optString("yes"), 30).ifEmpty { "Acknowledge" },
                     later = line(o.optString("later"), 30).ifEmpty { "Later" },
-                    bg = hex("bg", "#2a1a08"), accent = hex("accent", "#f59e0b"), ink = RemInk.inkOr(o.optString("ink"), hex("bg", "#2a1a08"))))   // V1.58: never white on a light alarm
+                    bg = hex("bg", "#2a1a08"), accent = hex("accent", "#f59e0b"), ink = RemInk.inkOr(o.optString("ink"), hex("bg", "#2a1a08")),   // V1.58: never white on a light alarm
+                    one = o.optBoolean("one", false), word = line(o.optString("word"), 30)))
             }
         }
         return GymPlan(
@@ -102,7 +109,7 @@ object GymClock {
         .put("acked", org.json.JSONArray(p.acked.sorted())).put("before", org.json.JSONArray(p.before)).put("ring", p.ring).put("grace", p.grace)
         .put("alarms", org.json.JSONArray().apply { p.alarms.forEach { put(alarmJson(it)) } })
     fun alarmJson(a: AlarmItem): JSONObject = JSONObject().put("id", a.id).put("day", a.day).put("at", a.at).put("title", a.title).put("text", a.text)
-        .put("yes", a.yes).put("later", a.later).put("bg", a.bg).put("accent", a.accent).put("ink", a.ink)
+        .put("yes", a.yes).put("later", a.later).put("bg", a.bg).put("accent", a.accent).put("ink", a.ink).put("one", a.one).put("word", a.word)
 
     /** Every step for the days not acknowledged (by the vault or on this phone), soonest first. */
     fun steps(p: GymPlan?, localAcked: Set<String> = emptySet()): List<GymStep> {

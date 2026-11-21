@@ -31,7 +31,7 @@ import type { Settings } from "../core/model";
 import type { Go, SetEntry, Where } from "../core/settingsindex";
 import { OpenButton, openSettings, SetRow, SettingsScreen, useSettingsWanted, type Controls, type RowProps, type SettingsOwner } from "./SettingsScreen";
 import {
-  AfkControls, Choice, LookBackground, LookBgColour, LookOutline, LookOwnColour, LookRain, MicPicker, NetworkSetting, networkNote, NotifyControls,
+  AfkControls, Choice, LookBackground, LookBgColour, LookOutline, LookOwnColour, LookPrioGroups, LookRain, MicPicker, NetworkSetting, networkNote, NotifyControls,
   SoundControls, StHoursControls, taskMapActions, TzSelect, type GenProps,
 } from "./TaskMap";
 import { AccentPart, LookPicker, TypePart, WorkPart } from "../looks/AppearanceSettings";
@@ -181,7 +181,7 @@ const usePs = () => usePsSettings() as Ps;
 const row = (right: (p: RowProps) => ReactNode) => (p: RowProps) => <SetRow e={p.e} right={right(p)} />;
 const block = (body: (p: RowProps) => ReactNode, open = true) => (p: RowProps) => <SetRow e={p.e} body={body(p)} open={open} />;
 
-function Looks({ p, part }: { p: RowProps; part: "look" | "accent" | "type" | "work" | "lt" | "outline" | "bg" | "bgc" | "own" | "rain" | "trail" }) {
+function Looks({ p, part }: { p: RowProps; part: "look" | "accent" | "type" | "work" | "lt" | "outline" | "lvl" | "bg" | "bgc" | "own" | "rain" | "trail" }) {
   const { st } = useGen();
   const body = part === "look" ? <LookPicker st={st} set={save} preview={p.preview} />
     : part === "accent" ? <AccentPart st={st} set={save} />
@@ -189,6 +189,7 @@ function Looks({ p, part }: { p: RowProps; part: "look" | "accent" | "type" | "w
     : part === "work" ? <WorkPart st={st} set={save} preview={p.preview} />
     : part === "lt" ? <ListTransparency saved={st.tmBackdrop} save={(v, keep) => taskMapActions.backdrop(v, keep)} />
     : part === "outline" ? <LookOutline st={st} preview={p.preview} />
+    : part === "lvl" ? <LookPrioGroups st={st} preview={p.preview} />
     : part === "bg" ? <LookBackground st={st} preview={p.preview} />
     : part === "bgc" ? <LookBgColour st={st} preview={p.preview} />
     : part === "own" ? <LookOwnColour st={st} preview={p.preview} />
@@ -303,6 +304,7 @@ export const CONTROLS: Controls = {
   "transparency": looks("lt"),
   "overdue-tab": (p) => <SetRow e={p.e} body={<div className="gs-looks ms-win"><OverdueLookSettings preview={p.preview} /></div>} open plain className="gs-look-row" />,
   "outline": looks("outline"),
+  "prio-groups": looks("lvl"),
   "background": looks("bg"),
   "bg-colour": looks("bgc"),
   "rain": looks("rain"),
@@ -511,6 +513,10 @@ export const CONTROLS: Controls = {
   // PS 1.69: the Hatch update animation again, with made up progress (no restart, no download, no What's new). Esc skips it.
   "replay-update": function ReplayUpdate({ e }) {
     return <SetRow e={e} right={<button type="button" className="btn quiet sm" onClick={() => { sfx.click(); psPost({ type: "psSettings:replayHatch" }); }}>Replay</button>} />;
+  },
+  // PS Cake: the logo reveal again (ps-mac Cake.swift replayReveal). Esc skips it.
+  "replay-reveal": function ReplayReveal({ e }) {
+    return <SetRow e={e} right={<button type="button" className="btn quiet sm" onClick={() => { sfx.click(); psPost({ type: "psSettings:replayReveal" }); }}>Replay</button>} />;
   },
   "setup": function Setup({ e }) {
     return (<>

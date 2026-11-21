@@ -17,9 +17,16 @@ enum PageSwipe {
     guard monitor == nil else { return }
     monitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak web] e in
       guard let web, let w = web.window, e.window === w, e.hasPreciseScrollingDeltas else { return e }
-      if let p = phase(e) { web.evaluateJavaScript("window.__psPageSwipe&&window.__psPageSwipe('\(p)')", completionHandler: nil) }
+      heard(e, web)
       return e
     }
+  }
+
+  /// One of the list's own trackpad events, or one handed over from PS's cards while the list is up (PS 1.73,
+  /// SwipeLeak.swift): the glide watch follows it, and the page hears a phase change.
+  static func heard(_ e: NSEvent, _ web: WKWebView) {
+    SwipeLeak.glide.feed(SwipeLeak.wheel(e))
+    if let p = phase(e) { web.evaluateJavaScript("window.__psPageSwipe&&window.__psPageSwipe('\(p)')", completionHandler: nil) }
   }
 
   /// The one letter for a phase change, or nil for every other event (the moves in between say nothing).

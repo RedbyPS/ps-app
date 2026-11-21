@@ -32,10 +32,15 @@ enum SquadMessageCard {
     ICON.chat='<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>';
     var SquadMsg={
       UNDO:5000,cur:null,
+      // PS 1.73 (the developer, 21 Nov 2026: "I tried to click the reply button ... nothing happened, the reply button went away"): Toast
+      // draws these buttons before it puts their row into the card, so the row had no parent yet and the Reply box had nowhere
+      // to go (since 1.60). The box's place is now looked up when Reply is clicked (host), and the buttons only hide once the
+      // box is really on the card.
       buttons:function(c,mb){
         [['main','Open','open'],['rep','Reply','reply'],['dis','Dismiss','dismiss']].forEach(function(x){var b=el('button',x[0],x[1]);b.dataset.sq=x[2];mb.appendChild(b)});
-        c.sqActs=mb;c.sqFull=mb.parentNode;
+        c.sqActs=mb;
       },
+      host:function(c){return c.sqActs&&c.sqActs.parentNode||null},
       click:function(c,t){
         var b=t.closest&&t.closest('button'),a=b&&b.dataset&&b.dataset.sq;
         if(!a)return !!(t.closest&&t.closest('.sqbox'));
@@ -49,10 +54,11 @@ enum SquadMessageCard {
       },
       // The box: words, Send, Cancel. The keyboard comes to the panel for it (Swift, "typing").
       show:function(c){
-        if(c.sqOpen||!c.sqActs)return;
+        if(c.sqOpen||!SquadMsg.host(c))return;
         if(SquadMsg.cur&&SquadMsg.cur!==c)SquadMsg.close(SquadMsg.cur);
-        c.sqOpen=true;c.sqActs.style.display='none';SquadMsg.cur=c;
+        c.sqOpen=true;SquadMsg.cur=c;
         SquadMsg.draw(c,'');
+        c.sqActs.style.display='none';
         post({type:'typing',on:true});
         SquadMsg.focus();
       },
@@ -69,7 +75,7 @@ enum SquadMessageCard {
         ta.addEventListener('click',function(e){e.stopPropagation()});
         var row=el('div','acts'),s=el('button','main','Send'),x=el('button','dis','Cancel');
         s.dataset.sq='send';x.dataset.sq='cancel';row.appendChild(s);row.appendChild(x);
-        box.appendChild(ta);box.appendChild(row);c.sqFull.appendChild(box);c.sqBox=box;c.sqTa=ta;c.sqUndo=false;
+        box.appendChild(ta);box.appendChild(row);SquadMsg.host(c).appendChild(box);c.sqBox=box;c.sqTa=ta;c.sqUndo=false;
       },
       focus:function(){var c=SquadMsg.cur;if(c&&c.sqTa&&!c.sqUndo){c.sqTa.focus();var n=c.sqTa.value.length;try{c.sqTa.setSelectionRange(n,n)}catch(e){}}},
       // Send: nothing goes yet. A short Undo first; when it runs out the page gets the words.

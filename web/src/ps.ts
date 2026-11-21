@@ -34,7 +34,7 @@ import { cleanTimelines } from "./core/timelines";
 import { todayISO } from "./ui/kit";
 import { applyScreen } from "./core/screenfit";
 import { relayoutNow } from "./ui/relayout";
-import { bgDesign, p1Color, p1Design } from "./core/prio";
+import { bgDesign, lvLookPatch, p1Color, p1Design } from "./core/prio";
 import { bgBright } from "./core/bgbright";
 import { cleanPicks, cleanName as cleanDevName } from "./core/devicebg";
 import { setDeviceNameHint } from "./devicebeat";
@@ -62,6 +62,7 @@ export function cleanLooks(p: Record<string, unknown>): Partial<Settings> {
   if (typeof p.tmP1Style === "string") o.tmP1Style = p1Design(p.tmP1Style);
   if (p.p1Color === null) o.p1Color = null;                                         // the Priority 1 colour picker: back to the look's own colours
   else if (p1Color(p.p1Color)) o.p1Color = p1Color(p.p1Color);
+  if (p.tmLvLook && typeof p.tmLvLook === "object") o.tmLvLook = lvLookPatch(p.tmLvLook, 0, {});   // PS 1.73: the Priority 2, 3... group looks, cleaned
   if (typeof p.tmBg === "string") o.tmBg = bgDesign(p.tmBg);
   if (Number.isFinite(Number(p.tmBgIntensity)) && p.tmBgIntensity !== null) o.tmBgIntensity = pct(p.tmBgIntensity);
   if (Number.isFinite(Number(p.tmBgFrequency)) && p.tmBgFrequency !== null) o.tmBgFrequency = pct(p.tmBgFrequency);
@@ -320,7 +321,7 @@ type W = Window & {
   __psUpdateReady?: boolean;
 };
 type ShellMsg = { type: "tick"; id: string; done?: boolean } | { type: "work"; id: string | null }
-  | { type: "reorder"; ids: string[]; p1?: unknown } | { type: "p1Style"; id: string } | { type: "looks"; patch: unknown } | { type: "tmScale"; v: number } | { type: "tmClockScale"; v: number }
+  | { type: "reorder"; ids: string[]; p1?: unknown; level?: unknown } | { type: "p1Style"; id: string } | { type: "looks"; patch: unknown } | { type: "tmScale"; v: number } | { type: "tmClockScale"; v: number }
   | { type: "update"; id: string; patch: Record<string, unknown> } | { type: "remove"; id: string }
   | { type: "aware"; list: { id: string; text: string; createdAt: string }[] }
   | { type: "homeTz"; id: string | null }
@@ -329,7 +330,7 @@ type ShellMsg = { type: "tick"; id: string; done?: boolean } | { type: "work"; i
       standing?: { title: string; items: { id: string; text: string }[] }[] }
   | { type: "timelineOrder"; ids: string[] } | { type: "timelineHidden"; ids: string[] }
   | { type: "timelines"; list: TimelineItem[] } | { type: "headline"; text: string } | { type: "sound"; tmSound?: number; tmMuted?: boolean }
-  | { type: "add"; title: string; due: string | null; kind: "once" | "daily"; order?: number; repeat?: unknown; p1?: unknown; clientId?: unknown; notes?: unknown; unranked?: unknown; sqOn?: unknown; sqAnon?: unknown; group?: unknown; remind?: unknown; reminder?: unknown; est?: unknown } | { type: "sync" } | { type: "tap"; on: boolean }
+  | { type: "add"; title: string; due: string | null; kind: "once" | "daily"; order?: number; repeat?: unknown; p1?: unknown; clientId?: unknown; notes?: unknown; unranked?: unknown; prioGroup?: unknown; sqOn?: unknown; sqAnon?: unknown; group?: unknown; remind?: unknown; reminder?: unknown; est?: unknown } | { type: "sync" } | { type: "tap"; on: boolean }
   | { type: "psSettings"; data: PsSettings }
   | { type: "tab"; enabled: boolean; trusted: boolean; on: boolean }
   | { type: "waReply"; id: string } | { type: "mailOpen"; via: string }
@@ -431,7 +432,11 @@ function cleanTaskMove(t: Record<string, unknown>): TaskMove | null {
   const to = typeof t.to === "string" ? t.to : "";
   const index = Number(t.index);
   if (!ids.length || !(to === "new" || cleanSecOrder([to]).length) || !Number.isFinite(index)) return null;
-  return { ids, to, index: Math.max(0, Math.round(index)), ...(t.inbox === true ? { inbox: true } : {}) };
+  return { ids, to, index: Math.max(0, Math.round(index)), ...(t.inbox === true ? { inbox: true } : {}), ...("level" in t ? { level: cleanLevelTag(t.level) } : {}) };
+}
+/** PS 1.73: a priority level tag (core/prio.ts newLevelTag), or null. */
+function cleanLevelTag(v: unknown): string | null {
+  return typeof v === "string" && /^[a-z0-9]{1,24}$/.test(v) ? v : null;
 }
 function cleanPatch(p: Record<string, unknown>) {
   const o: Partial<Todo> = {};
@@ -443,6 +448,7 @@ function cleanPatch(p: Record<string, unknown>) {
   if (typeof p?.order === "number" && Number.isFinite(p.order)) o.order = p.order;
   if (typeof p?.p1 === "boolean") o.p1 = p.p1;
   if (typeof p?.unranked === "boolean") o.unranked = p.unranked;
+  if (p && "prioGroup" in p) o.prioGroup = cleanLevelTag(p.prioGroup);   // PS 1.73: the priority level it shares (core/prio.ts)
   // The AI Inbox (core/aiinbox.ts): moved out of it (Dimension X), into a task group or back to the sections.
   if (typeof p?.aiInbox === "boolean") o.aiInbox = p.aiInbox;
   if (p?.group === null || (typeof p?.group === "string" && /^[a-z0-9]{4,24}$/.test(p.group))) o.group = (p.group as string | null) || null;
@@ -681,7 +687,9 @@ export function startPsBridge() {
       else if (m.type === "work") void setWorkingOn(m.id);
       else if (m.type === "reorder" && Array.isArray(m.ids)) {
         const p1 = m.p1 && typeof m.p1 === "object" && typeof (m.p1 as { id?: unknown }).id === "string" ? { id: (m.p1 as { id: string }).id, on: (m.p1 as { on?: unknown }).on === true } : undefined;
-        void setTodoOrder(m.ids.filter((x) => typeof x === "string"), p1);
+        // PS 1.73: the moved task's priority level (core/prio.ts levelAfterMove), worked out in the Tab list.
+        const lv = m.level && typeof m.level === "object" && typeof (m.level as { id?: unknown }).id === "string" ? m.level as { id: string; prioGroup?: unknown } : null;
+        void setTodoOrder(m.ids.filter((x) => typeof x === "string"), p1, lv ? { id: lv.id, prioGroup: cleanLevelTag(lv.prioGroup) } : undefined);
       }
       else if (m.type === "p1Style" && typeof m.id === "string") void saveSettings({ tmP1Style: p1Design(m.id) });
       else if (m.type === "looks" && m.patch && typeof m.patch === "object") {
@@ -840,6 +848,7 @@ export function startPsBridge() {
           ...(typeof m.clientId === "string" && m.clientId ? { clientId: m.clientId.slice(0, 64) } : {}),
           ...(typeof m.notes === "string" && m.notes.trim() ? { notes: m.notes.trim().slice(0, 2000) } : {}),
           ...(typeof m.order === "number" && Number.isFinite(m.order) ? { order: m.order } : {}),
+          ...(cleanLevelTag(m.prioGroup) && m.kind !== "daily" ? { prioGroup: cleanLevelTag(m.prioGroup) } : {}),   // PS 1.73: a typed P2 or P3 joins that level
           // G Squad: Share with G Squad (V1.43: off unless picked), and the answer to "Anonymise this task?"
           // (core/squadanon.ts), from the Add task box.
           ...(m.sqOn === true ? { sqOn: true } : {}), ...(typeof m.sqAnon === "boolean" ? { sqAnon: m.sqAnon } : {}),

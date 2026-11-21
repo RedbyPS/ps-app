@@ -34,11 +34,15 @@ enum RemMath {
     var choices: [String] = []
     var sure = -1
     var ask = ""
+    // PS 1.73 (web core/duealerts.ts): `one` = only the confirm button (the Priority 1 alarm's "I acknowledge", no snooze);
+    // `ring` = its sound loops while the card is up, for Reminders.ringFor at most, like an alarm.
+    var one = false
+    var ring = false
 
     var json: [String: Any] {
       ["id": id, "on": on, "pill": pill, "text": text, "at": at, "until": until, "days": days, "tz": tz, "snooze": snooze, "later": later,
        "yes": yes, "word": word, "click": click, "bg": bg, "accent": accent, "ink": ink, "sound": sound, "vol": vol, "done": done,
-       "snoozeUntil": snoozeUntil, "stateAt": stateAt, "task": task, "date": date, "open": open, "choices": choices, "sure": sure, "ask": ask]
+       "snoozeUntil": snoozeUntil, "stateAt": stateAt, "task": task, "date": date, "open": open, "choices": choices, "sure": sure, "ask": ask, "one": one, "ring": ring]
     }
   }
 
@@ -115,6 +119,9 @@ enum RemMath {
       if let d = o["date"] as? String, d.range(of: dayPattern, options: .regularExpression) != nil { i.date = d }
       i.open = line(o["open"], 30)
     }
+    // PS 1.73: the nags and the Priority 1 alarm are once items on their task (web core/duealerts.ts), so they keep their one day.
+    i.one = o["one"] as? Bool ?? false
+    i.ring = o["ring"] as? Bool ?? false
     if let c = o["choices"] as? [Any] {
       i.choices = Array(c.prefix(3)).compactMap { x -> String? in let t = line(x, 60); return t.isEmpty ? nil : t }
       if let n = (o["sure"] as? NSNumber)?.intValue, (0..<i.choices.count).contains(n) { i.sure = n }

@@ -71,7 +71,7 @@ export const sb = createClient(SB_URL, SB_KEY, {
   db: { schema: PROJECT.schema as "public" },
 });
 
-const OWNER_KINDS = new Set<Kind>(["client", "pprivate", "todo", "meeting", "draft", "settings", "reply", "brief", "calendar", "iemail", "ithread", "agenda", "journal", "quote", "note", "daylog", "screentime", "stline", "cstats", "cpage", "fup", "irep", "msender", "fprog", "fwork", "fit", "psnote", "tzperson", "tzzones", "tablayout", "remind", "fsleep", "squad", "squadask", "squadjoin", "fact", "phonelayout", "phonedev", "rout", "wachat", "srec", "srkey", "rwd", "sqpast", "bgdev", "rcpt", "mhist", "ttime",
+const OWNER_KINDS = new Set<Kind>(["client", "pprivate", "todo", "meeting", "draft", "settings", "reply", "brief", "calendar", "iemail", "ithread", "agenda", "journal", "quote", "note", "daylog", "screentime", "stline", "cstats", "cpage", "fup", "irep", "msender", "fprog", "fwork", "fit", "psnote", "tzperson", "tzzones", "tablayout", "remind", "fsleep", "squad", "squadask", "squadjoin", "fact", "phonelayout", "phonedev", "rout", "wachat", "srec", "srkey", "rwd", "sqpast", "bgdev", "rcpt", "mhist", "ttime", "ptpl",
   "sdev", "spair", "sjob", "sjobst", "smsg", "sfile", "sack", "sstat", "scmd", "sidx", "sget", "sgot", "sbudget", "sojob", "sores"]);   // f*: Fitness (core/fitness.ts); s*: Second Computer (core/second.ts)
 // Offline merge (Fitness, 31 Oct 2026): records two devices may change at the same time (a workout logged
 // on the phone with no signal while the Mac fixes a weight in it) merge instead of the last write winning.

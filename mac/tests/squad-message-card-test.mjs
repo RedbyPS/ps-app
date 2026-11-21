@@ -46,10 +46,13 @@ const setTimeoutF = (f, ms) => { lates.push({ at: now + ms, f }); return lates.l
 const advance = (ms) => { for (let s = 0; s < ms; s += 250) { now += 250; [...timers].forEach((t) => t.f()); for (const l of [...lates]) if (l.at <= now) { lates.splice(lates.indexOf(l), 1); l.f(); } } };
 const SquadMsg = new Function("ICON", "el", "post", "answer", "remove", "layout", "setInterval", "clearInterval", "setTimeout", `${js}\nreturn SquadMsg;`)(ICON, el, post, answer, remove, layout, setIntervalF, clearIntervalF, setTimeoutF);
 
+// Built in Toast's own order (Toast.swift add): the buttons are drawn first, and only then is their row put into the card.
+// PS 1.73: the test used to put the row in first, which hid that the real card's Reply box had nowhere to go.
 function card(id = "g:11111111-2222-4333-8444-555555555555") {
-  const full = el("div", "full"), mb = el("div", "acts"); full.appendChild(mb);
+  const full = el("div", "full"), mb = el("div", "acts");
   const c = { data: { id, tone: "squad" } };
   SquadMsg.buttons(c, mb);
+  full.appendChild(mb);
   return { c, full, mb };
 }
 const btn = (root, sq) => root.find((x) => x.tagName === "BUTTON" && x.dataset.sq === sq);
@@ -65,6 +68,22 @@ ok("the script never writes HTML", !/innerHTML|outerHTML|insertAdjacentHTML/.tes
 }
 { reset(); const { c, mb } = card();
   ok("Dismiss answers dismiss and the card goes", press(c, mb, "dismiss") && answers[0][1] === "dismiss" && removed.length === 1);
+}
+{ reset(); const { c, full, mb } = card();
+  press(c, mb, "reply");
+  const box = full.kids.find((k) => k.className === "sqbox");
+  ok("PS 1.73 (the developer): one click on Reply puts the box on the card, under the buttons' row", !!box && !!box.find((x) => x.tagName === "TEXTAREA") && box === c.sqBox);
+  SquadMsg.close(c);
+}
+{ reset(); const c = { data: { id: "g:x", tone: "squad" } }, mb = el("div", "acts");
+  SquadMsg.buttons(c, mb);   // a row that is not on a card: Reply must never hide the buttons and show nothing
+  let threw = false; try { SquadMsg.click(c, btn(mb, "reply")); } catch { threw = true; }
+  ok("PS 1.73: with nowhere to put the box, Reply leaves the buttons as they were", !threw && !c.sqOpen && mb.style.display !== "none" && !posted.length);
+}
+{ reset(); const { c, full, mb } = card();
+  press(c, mb, "reply");
+  ok("PS 1.73: the source keeps no box place from before the row was on the card", !/sqFull/.test(js) && /host:function\(c\)\{return c\.sqActs&&c\.sqActs\.parentNode\|\|null\}/.test(js));
+  SquadMsg.close(c);
 }
 { reset(); const { c, full, mb } = card();
   press(c, mb, "reply");

@@ -72,8 +72,9 @@ startDeviceBeat();   // PS 1.65: this device tells the account it exists, for Ba
 const ExPicsDev = import.meta.env.DEV ? lazy(() => import("./dev/expics")) : null;
 // Dev page: the Activity monitor over a made up Mac (src/dev/activity-dev.tsx, PS 1.65). Lazy, never in a release build.
 const ActivityDev = import.meta.env.DEV ? lazy(() => import("./dev/activity-dev")) : null;
+const ClientsDev = import.meta.env.DEV ? lazy(() => import("./clients/ClientsScreen").then((m) => ({ default: m.ClientsScreen }))) : null;
 
-function route(): "demo" | "join" | "join-owner" | "app" | "overlay" | "campaigns" | "fitview" | "second-window" | "reply-window" | "gsquad" | "expics" | "activity-dev" {
+function route(): "demo" | "join" | "join-owner" | "app" | "overlay" | "campaigns" | "fitview" | "second-window" | "reply-window" | "gsquad" | "expics" | "activity-dev" | "clients-dev" {
   const p = location.pathname.replace(BASE, "/").replace(/\/+$/, "");
   // cincee.com/campaigns (also /client/campaigns): the Cincee Campaigns dashboard, owner only.
   if (!PS && (/^\/campaigns(\/|$)/.test(location.pathname) || p === "/campaigns")) return "campaigns";
@@ -95,6 +96,10 @@ function route(): "demo" | "join" | "join-owner" | "app" | "overlay" | "campaign
       st.setSecondMirror(x.local);
     });
     return "second-window";
+  }
+  if (import.meta.env.DEV && p === "/dev-clients") {   // the Clients workspace (PS 1.73) with fictional clients; ?cal=0: no calendar
+    void Promise.all([import("./dev/clients-fake"), import("./core/vault")]).then(([f, v]) => v.__devLoad(f.clientsFakeDocs(!location.search.includes("cal=0"))));
+    return "clients-dev";
   }
   if (import.meta.env.DEV && p === "/dev-campaigns") {
     void import("./dev/fake").then((m) => import("./core/vault").then((v) => v.__devLoad(m.fakeDocs())));
@@ -185,6 +190,7 @@ export default function App() {
   if (r === "overlay") { startPsOverlay(); return <PsOverlay />; }
   if (r === "fitview") { startPsOverlay(); return <Wait><FitnessTestView /></Wait>; }
   if (r === "expics" && ExPicsDev) return <Suspense fallback={null}><ExPicsDev /></Suspense>;
+  if (r === "clients-dev" && ClientsDev) return <Suspense fallback={null}><div style={{ position: "fixed", inset: 0 }}><ClientsDev where={location.search.includes("phone") ? "phone" : "mac"} onClose={() => {}} /></div></Suspense>;
   if (r === "activity-dev" && ActivityDev) return <Suspense fallback={null}><ActivityDev /></Suspense>;
   if (r === "second-window") { startPsSecondWindow(); return <PsSecondWindow />; }
   if (r === "reply-window") { startReplyWindow(); return <ReplyWindow />; }

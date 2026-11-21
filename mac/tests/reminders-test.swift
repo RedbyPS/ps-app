@@ -97,5 +97,20 @@ ok("blank choices are left out", RemMath.item(["id": "n", "choices": ["A", "  ",
 ok("the page hears every checklist outcome, a dropped card (away) too", RemMath.chkOutcomes == ["rethink", "forgot", "sure", "esc", "away"] && !RemMath.chkOutcomes.contains("done"))
 ok("the typed yes is checked in any case", RemMath.confirms(chk, " YES ") && !RemMath.confirms(chk, "y") && !RemMath.confirms(chk, "yes please"))
 
+// PS 1.73: the nag for tasks due today and the Priority 1 alarm (web core/duealerts.ts, the numbers of tests/duealerts.test.ts)
+let nag = RemMath.item(["id": "nabcdefghijk", "task": "t1", "date": "2026-11-21", "at": "09:00", "until": "12:00", "tz": "Asia/Dubai", "snooze": 15, "open": "Open task"])!
+ok("a nag: 09:00 to 12:00 on its day only (the developer's day ends 12:00)", st(nag, tb("2026-11-21", "08:59")) == "closed" && st(nag, tb("2026-11-21", "09:00")) == "show"
+   && st(nag, tb("2026-11-21", "11:59")) == "show" && st(nag, tb("2026-11-21", "12:00")) == "closed" && st(nag, tb("2026-11-22", "10:00")) == "closed")
+ok("a nag snoozed 15 minutes comes back", st(nag, tb("2026-11-21", "09:10"), snooze: ms(tb("2026-11-21", "09:15"))) == "snoozed" && st(nag, tb("2026-11-21", "09:15"), snooze: ms(tb("2026-11-21", "09:15"))) == "show")
+let p1 = RemMath.item(["id": "pabcdefghijk", "task": "t2", "date": "2026-11-21", "at": "19:30", "until": "20:30", "tz": "Asia/Dubai", "yes": "I acknowledge", "word": "yes", "click": false, "one": true, "ring": true])!
+ok("the P1 alarm: one button and a ring", p1.one && p1.ring && p1.yes == "I acknowledge" && p1.open.isEmpty)
+ok("the P1 alarm: a click alone never clears it, only yes typed", !p1.click && p1.word == "yes" && !RemMath.confirms(p1, "") && !RemMath.confirms(p1, "I acknowledge")
+   && RemMath.confirms(p1, "yes") && RemMath.confirms(p1, " YES "))
+ok("the P1 alarm shows from 19:30 until the 24 hours run out, once", st(p1, tb("2026-11-21", "19:29")) == "closed" && st(p1, tb("2026-11-21", "19:30")) == "show"
+   && st(p1, tb("2026-11-21", "20:29")) == "show" && st(p1, tb("2026-11-21", "20:30")) == "closed" && st(p1, tb("2026-11-22", "19:30")) == "closed")
+ok("I acknowledge from the phone (done for its day) closes it here", st(p1, tb("2026-11-21", "19:31"), done: "2026-11-21") == "done")
+ok("older plans: no one, no ring", !RemMath.item(["id": "x"])!.one && !RemMath.item(["id": "x"])!.ring)
+ok("one and ring go round the saved plan", RemMath.item(p1.json) == p1)
+
 print("\n\(n - bad) of \(n) passed")
 if bad > 0 { exit(1) }

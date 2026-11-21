@@ -1,0 +1,35 @@
+/* The Clients workspace's window and its button (PS 1.73, clients/ClientsButton.tsx). Only the host lives here: the screen
+   inside draws itself (clients/clients.css). Full screen everywhere; on the phone the dock stays on top of it, lit. */
+.clw-layer { position: fixed; inset: 0; z-index: 65; pointer-events: none; }   /* over the Tab list's Edit corner (60) */
+.clw-layer.docked { z-index: 96; }
+.clw-dim { position: absolute; inset: 0; background: color-mix(in srgb, var(--k-base, #050307) 66%, transparent); pointer-events: auto; }
+.clw-win {
+  position: absolute; inset: 0; pointer-events: auto; overflow: hidden; isolation: isolate; will-change: transform;
+  background: var(--k-base, #0B080D); color: var(--k-fg, #FFFFFF); font-size: calc(14px * var(--k-fs, 1));
+}
+.clw-morph { position: absolute; inset: 0; z-index: 5; pointer-events: none; opacity: 0; background: radial-gradient(circle at 50% 40%, var(--k-acc, #F0567F), var(--k-acc2, #7C6CFF)); }
+.clw-body { position: relative; z-index: 2; height: 100%; box-sizing: border-box; overflow: hidden; }
+
+/* ---------- the phone (PS GOS and the iPhone web app): above the page, under the dock ---------- */
+.clw-layer.gos { z-index: 205; }
+.clw-layer.gos .clw-dim { background: var(--k-base, #050307); }
+.clw-layer.gos .clw-win { top: 0; bottom: calc(var(--gos-dock-h, 64px) + var(--gos-bottom, 0px) + 16px); }
+.clw-layer.gos .clw-body { padding-top: var(--sat, 0px); }
+html.gos[data-gos-nav="top"] .clw-layer.gos .clw-win { top: calc(var(--gos-inset-top, env(safe-area-inset-top, 0px)) + 80px); bottom: var(--gos-bottom, 0px); }
+html.gos[data-gos-nav="top"] .clw-layer.gos .clw-body { padding-top: 0; }
+html.gos body:has(.clw-layer.gos) .gos-dock { z-index: 215; }
+html.gos body:has(.clw-layer.gos) :is(.gos-fab, .gos-isl) { opacity: 0; transform: scale(.6); pointer-events: none; }
+
+/* ---------- the bottom row button (Tab list, website To-do page) ---------- */
+.clw-tab-btn { display: inline-flex; align-items: center; gap: calc(7px * var(--k-dn, 1)); height: calc(34px * var(--k-dn, 1)); padding: 0 calc(12px * var(--k-dn, 1)); border-radius: calc(17px * var(--k-rd, 1));
+  border: 1px solid color-mix(in srgb, var(--k-fg, #fff) 16%, transparent); background: color-mix(in srgb, var(--k-base, #000) 55%, transparent); color: var(--k-fg, #fff);
+  font: inherit; font-weight: 650; cursor: pointer; transition: transform .12s, background .16s, border-color .16s; white-space: nowrap; }
+.clw-tab-btn:hover { background: color-mix(in srgb, var(--k-fg, #fff) 12%, transparent); }
+.clw-tab-btn:active { transform: scale(.95); }
+.clw-tab-btn.on { border-color: color-mix(in srgb, var(--k-acc, #F0567F) 60%, transparent); color: var(--k-acc, #F0567F); }
+.clw-tab-btn svg { width: 18px; height: 18px; }
+@media (max-width: 720px) { .clw-tab-btn span { display: none; } }
+@media (prefers-reduced-motion: reduce) { .clw-tab-btn { transition: none; } }
+
+/* A client task's deadline in the to-do list (views/TaskMap.tsx): 'Deadline: call Sat 28 Nov 15:00', 'Call today 15:00', 'Deadline today'. */
+.tm-due.tm-dl { color: var(--k-bad-t, #FF8F8A); }

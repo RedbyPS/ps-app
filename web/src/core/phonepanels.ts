@@ -9,7 +9,7 @@
  *  purpose: it takes no touches outside its card and the tour moves between pages itself. */
 export const PANEL_LAYERS = [
   ".nu-layer", ".pc-layer", ".rs-layer", ".dx-layer", ".ms-layer", ".cs-win", ".tl-layer", ".sp-layer", ".gs-layer", ".gs-win",
-  ".gsw", ".sb-layer", ".fit-pop-layer", ".fit-look-layer", ".fit-menu-layer", ".fit-scr-layer", ".fp-layer", ".fp-ask-layer", ".fq-ov",
+  ".gsw", ".sb-layer", ".clw-layer", ".fit-pop-layer", ".fit-look-layer", ".fit-menu-layer", ".fit-scr-layer", ".fp-layer", ".fp-ask-layer", ".fq-ov",
   ".rb-layer", ".bf-layer", ".ia-layer", ".od-layer", ".uf-layer", ".wn-layer", ".wt-layer", ".af-layer", ".gc-modal", ".chk-layer",
   ".trm-layer", ".slp-layer", ".slp-cust-layer", ".slp-warn-layer", ".slp-wi-layer", ".sn-warn-layer", ".isw-back", ".wa-guide",
   ".lk-ask-wrap", ".tm-add-layer", ".nt-win", ".sr-layer", ".am-win", ".mcs-ov", ".scrim", ".sm-overlay", ".gos-sheet-wrap",

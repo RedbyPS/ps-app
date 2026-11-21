@@ -19,10 +19,10 @@ const overlaps = (ts: Tile[]) => ts.some((a, i) => ts.some((b, j) => i !== j && 
 const inGrid = (ts: Tile[]) => ts.every((t) => t.c >= 0 && t.c + t.w <= COLS && t.r >= 0 && t.w >= 1 && t.h >= 1);
 
 // ---------- the default and storage per phone ----------
-ok("a phone with no record: Plan, List, Inbox and every dock button at the bottom but the Soundboard (PS 1.72)", () => {
+ok("a phone with no record: Plan, List, Inbox and every dock button at the bottom but the Soundboard (PS 1.72), Clients in (1.73)", () => {
   const g = defaultPhoneLayout("gos", false);
   assert.deepEqual(g.pages.map((p) => p.id), ["plan", "list", "inbox"]);
-  assert.deepEqual(g.nav, { edge: "bottom", align: "full", items: ["plan", "list", "inbox", "gym", "vault", "settings"] });
+  assert.deepEqual(g.nav, { edge: "bottom", align: "full", items: ["plan", "list", "inbox", "gym", "clients", "vault", "settings"], given: ["clients"] });
   assert.ok(defaultPhoneLayout("gos", true).nav.items.includes("rules"), "The developer's dock has Rules");
   assert.ok(isDefaultPhone(g));
   assert.equal(HOME, "list");
@@ -65,7 +65,8 @@ ok("cleaning: unknown pages and panels go, the built in pages come back where th
   assert.equal(t.name, "Morning stuff", "no dashes, ever");
   assert.deepEqual(t.tiles!.map((x) => x.id), ["meetings", "sleep", "timelines"], "the Mac only Sentry button and junk are dropped");
   assert.ok(!overlaps(t.tiles!) && inGrid(t.tiles!));
-  assert.deepEqual(l.nav, { edge: "bottom", align: "full", items: ["list", "page:pabcdef12", "settings"] });
+  // PS 1.73: a navbar saved before Clients gets it once (no Vault here, so before Settings).
+  assert.deepEqual(l.nav, { edge: "bottom", align: "full", items: ["list", "page:pabcdef12", "clients", "settings"], given: ["clients"] });
 });
 ok("cleaning keeps the developer only panels off a stranger's phone and GOS only ones off an iPhone", () => {
   const raw = { phone: "ios", pages: [{ id: "pqwerty12", kind: "panels", tiles: [{ id: "mail", c: 0, r: 0, w: 4, h: 3 }, { id: "clipboard", c: 0, r: 3, w: 1, h: 1 }, { id: "dnd", c: 1, r: 3, w: 1, h: 1 }] }] };
@@ -190,10 +191,10 @@ ok("navbar: top or bottom, full, left, centre or right; buttons in and out in an
   l = setNavAlign(l, "center", AT);
   assert.deepEqual([l.nav.edge, l.nav.align], ["top", "center"]);
   l = toggleNav(l, "vault", false, AT);
-  assert.deepEqual(l.nav.items, ["plan", "list", "inbox", "gym", "settings"]);
+  assert.deepEqual(l.nav.items, ["plan", "list", "inbox", "gym", "clients", "settings"]);
   assert.equal(toggleNav(l, "settings", false, AT), l, "Settings never leaves");
   l = toggleNav(l, "vault", false, AT);
-  assert.deepEqual(l.nav.items, ["plan", "list", "inbox", "gym", "vault", "settings"], "a button comes back before Settings");
+  assert.deepEqual(l.nav.items, ["plan", "list", "inbox", "gym", "clients", "vault", "settings"], "a button comes back before Settings");
   l = setNavItems(l, ["settings", "list", "gym"], false, AT);
   assert.deepEqual(l.nav.items, ["settings", "list", "gym"], "any order, Settings too");
   assert.deepEqual(setNavItems(l, ["list"], false, AT).nav.items, ["list", "settings"]);
@@ -258,19 +259,89 @@ ok("the grid on screen: tiles land on whole cells, the inverse finds the same ce
 ok("the Soundboard: not in a new navbar, and a navbar saved before 1.72 with the old Sounds button no longer draws it", () => {
   assert.ok(!defaultNavItems(false).includes("soundboard") && !defaultNavItems(true).includes("soundboard"));
   const old = cleanPhoneLayout({ phone: "gos", pages: [], nav: { edge: "bottom", align: "full", items: ["plan", "list", "inbox", "gym", "sounds", "vault", "settings"] } }, "gos", false);
-  assert.deepEqual(old.nav.items, ["plan", "list", "inbox", "gym", "vault", "settings"]);
+  assert.deepEqual(old.nav.items, ["plan", "list", "inbox", "gym", "clients", "vault", "settings"], "PS 1.73: Clients takes the Sounds place");
 });
 ok("the Soundboard: Edit mode's navbar list offers it by its Soundboard name, and it goes back in its own place, between Gym and Vault", () => {
   let l = defaultPhoneLayout("gos");
   const c = navChoices(l, false).find((x) => x.id === "soundboard")!;
   assert.equal(c.label, "Soundboard"); assert.equal(c.on, false);
   l = toggleNav(l, "soundboard", false, AT);
-  assert.deepEqual(l.nav.items, ["plan", "list", "inbox", "gym", "soundboard", "vault", "settings"]);
+  assert.deepEqual(l.nav.items, ["plan", "list", "inbox", "gym", "soundboard", "clients", "vault", "settings"]);
   assert.equal(navLabel(l, "soundboard"), "Sounds", "the button keeps its word");
   l = toggleNav(l, "soundboard", false, AT);
   assert.ok(!l.nav.items.includes("soundboard"));
   // A button that is not opt in still comes back before Settings.
   l = toggleNav(toggleNav(l, "gym", false, AT), "gym", false, AT);
-  assert.deepEqual(l.nav.items, ["plan", "list", "inbox", "vault", "gym", "settings"]);
+  assert.deepEqual(l.nav.items, ["plan", "list", "inbox", "clients", "vault", "gym", "settings"]);
+});
+
+// ---------- PS 1.73: the Clients workspace in the navbar (the developer, 21 Nov 2026), in the Sounds place, left of Vault ----------
+const P = await import("../src/core/phonelayout.ts");
+ok("Clients: in every new navbar, left of Vault, on both phones and on the developer's account", () => {
+  for (const red of [false, true]) {
+    const items = defaultNavItems(red);
+    assert.ok(items.includes("clients"), String(red));
+    assert.equal(items[items.indexOf("clients") + 1], "vault");
+    assert.ok(items.length <= MAX_NAV);
+  }
+  assert.deepEqual(defaultNavItems(true), ["plan", "list", "inbox", "gym", "rules", "clients", "vault", "settings"], "The developer's order");
+  for (const k of ["gos", "ios"] as const) assert.ok(defaultPhoneLayout(k).nav.items.includes("clients"), k);
+  assert.equal(navLabel(defaultPhoneLayout("gos"), "clients"), "Clients");
+  assert.ok(isDefaultPhone(cleanPhoneLayout({ phone: "gos", pages: [], nav: { edge: "bottom", align: "full", items: ["plan", "list", "inbox", "gym", "vault", "settings"] } }, "gos")),
+    "an untouched navbar saved before 1.73 is the default again");
+});
+ok("Clients: a navbar saved before 1.73 gets it once, in its own place, and keeps the person's own order", () => {
+  const saved = { phone: "gos", pages: [], nav: { edge: "top", align: "center", items: ["list", "gym", "rules", "vault", "plan", "settings"] } };
+  const l = cleanPhoneLayout(saved, "gos", true);
+  assert.deepEqual(l.nav.items, ["list", "gym", "rules", "clients", "vault", "plan", "settings"], "The developer's order: Gym, Rules, Clients, Vault");
+  assert.deepEqual(l.nav.given, ["clients"]);
+  // No Vault in it: before the next button that comes after it (Rules), else before Settings.
+  assert.deepEqual(cleanPhoneLayout({ nav: { items: ["plan", "list", "gym", "settings"] } }, "gos").nav.items, ["plan", "list", "gym", "clients", "settings"]);
+  // A full navbar loses nothing for it.
+  const full = ["plan", "list", "inbox", "gym", "soundboard", "vault", "rules", "settings"];
+  assert.deepEqual(cleanPhoneLayout({ nav: { items: full } }, "gos", true).nav.items, full);
+});
+ok("Clients: taken out in Edit mode it stays out, put back it goes in its own place, and the save says so", () => {
+  let l = cleanPhoneLayout({ nav: { items: ["plan", "list", "inbox", "gym", "vault", "settings"] } }, "gos");
+  l = toggleNav(l, "clients", false, AT);
+  assert.deepEqual(l.nav.items, ["plan", "list", "inbox", "gym", "vault", "settings"]);
+  const back = cleanPhoneLayout(JSON.parse(JSON.stringify(l)), "gos");
+  assert.ok(!back.nav.items.includes("clients"), "read again (the next day, another phone): still out");
+  assert.ok(P.samePhoneLayout(back, l));
+  l = toggleNav(setNavItems(l, ["vault", "list", "gym", "settings"], false, AT), "clients", false, AT);
+  assert.deepEqual(l.nav.items, ["clients", "vault", "list", "gym", "settings"], "put back: left of Vault, wherever Vault is");
+  // Moved anywhere, it stays there.
+  l = setNavItems(l, ["clients", "vault", "list", "gym", "settings"], false, AT);
+  assert.deepEqual(cleanPhoneLayout(JSON.parse(JSON.stringify(l)), "gos").nav.items, ["clients", "vault", "list", "gym", "settings"]);
+  assert.equal(navChoices(l, false).find((x) => x.id === "clients")?.label, "Clients");
+});
+// An older PS (1.72): this very file without Clients, loaded from a temporary copy.
+const { mkdtempSync, readFileSync, rmSync, writeFileSync } = await import("node:fs");
+const { tmpdir } = await import("node:os");
+const core = new URL("../src/core/", import.meta.url).href;
+const oldDir = mkdtempSync(`${tmpdir()}/ps-old-phone-`);
+const oldSrc = readFileSync(new URL("phonelayout.ts", core), "utf8")
+  .replace(/\n\s*\{ id: "clients", label: "Clients" \},/, "").replace(/ONE_TIME_NAV: readonly NavItem\[\] = \["clients"\]/, "ONE_TIME_NAV: readonly NavItem[] = []")
+  .replace(/from "\.\/([a-z]+\.ts)"/g, (_m, f) => `from "${core}${f}"`);
+assert.ok(!/"clients"/.test(oldSrc), "the older copy has no Clients");
+writeFileSync(`${oldDir}/phonelayout.ts`, oldSrc);
+const Old = await import(`${oldDir}/phonelayout.ts`) as typeof P;
+rmSync(oldDir, { recursive: true, force: true });
+ok("Clients: an older PS draws no Clients button, and its save keeps the button and the note that it was given", () => {
+  const newer = { phone: "gos", at: AT, pages: [{ id: "plan", kind: "plan" }, { id: "list", kind: "list" }, { id: "inbox", kind: "inbox" }],
+    nav: { edge: "bottom", align: "full", items: ["plan", "list", "inbox", "gym", "clients", "vault", "settings"], given: ["clients"] } };
+  const seen = Old.cleanPhoneLayout(newer, "gos");
+  assert.deepEqual(seen.nav.items, ["plan", "list", "inbox", "gym", "vault", "settings"]);
+  const moved = Old.setNavAlign(seen, "left", AT);
+  const out = Old.carryUnknownPhone(newer, moved) as PhoneLayout;
+  assert.deepEqual(out.nav.items, ["plan", "list", "inbox", "gym", "clients", "vault", "settings"]);
+  assert.deepEqual(out.nav.given, ["clients"]);
+  assert.equal(out.nav.align, "left");
+  // Read back here: still there, and still there once only.
+  assert.deepEqual(cleanPhoneLayout(out, "gos").nav.items, ["plan", "list", "inbox", "gym", "clients", "vault", "settings"]);
+  // Removed here, then saved by the older PS: stays removed.
+  const gone = { ...newer, nav: { ...newer.nav, items: ["plan", "list", "inbox", "gym", "vault", "settings"] } };
+  const out2 = Old.carryUnknownPhone(gone, Old.setNavAlign(Old.cleanPhoneLayout(gone, "gos"), "left", AT));
+  assert.ok(!cleanPhoneLayout(out2, "gos").nav.items.includes("clients"));
 });
 console.log(`\n${n} passed`);

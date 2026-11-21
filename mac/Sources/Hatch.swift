@@ -104,7 +104,7 @@ final class Hatch: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
   /// builds with made up progress, then it cracks, falls and hatches the island, and the number reads 'Updated to'. No
   /// restart, no download, no What's new. Never while another scene is on screen, or over 1Password or Signal.
   func replay() {
-    guard !test, mode == nil, !Updater.shared.busy, HatchCore.mayShow(protectedFront: Protected.front) else { psLog("PS hatch: replay not started"); return }
+    guard !test, mode == nil, Cake.shared.kind == nil, !Updater.shared.busy, HatchCore.mayShow(protectedFront: Protected.front) else { psLog("PS hatch: replay not started"); return }
     psLog("PS hatch: replay")
     replaying = true
     mode = .update; dismissed = false; built = HatchCore.replayBuilt(elapsed: 0)
@@ -195,7 +195,8 @@ final class Hatch: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
     take()
     return true
   }
-  /// Every start of PS (main.swift, after the updater started).
+  /// Every start of PS. PS Cake: no longer called; the Cake boot animation (Cake.swift) took the start scene's place and its
+  /// Settings switch (hatch.launch). Kept so the launch mode and its tests stay whole.
   func atLaunch() {
     guard mode == nil, HatchCore.playLaunch(on: launchOn, afterUpdate: holding, test: test, install: INSTALL_MODE) else { return }
     mode = .launch

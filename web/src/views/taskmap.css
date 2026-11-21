@@ -1496,3 +1496,42 @@ html.gos .tm-done-bar :is(.tm-all, .tm-all-ask), html.gos .tm-done-bar .slp-row 
 html.gos .tm-done-row { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
 .tm-ed .tp-wrap > .tm-ed-title { width: 100%; }
 .tm-ed-seg button:not(.on):hover { background: color-mix(in srgb, var(--k-fg, #FFFFFF) min(100%, calc(14% * var(--k-ia, 1))), transparent); }
+
+/* PS 1.73 (the developer, 21 Nov 2026): the Priority 2, 3... group boxes (TaskMap.tsx LvFrame, LvHead). Plain by default: a quiet
+   frame, no glow, nothing moves. A level can take any Priority 1 outline and its own colour (core/prio.ts lvLook). */
+.tm-lv-h { list-style: none; display: flex; align-items: center; gap: calc(10px * var(--k-dn, 1)); margin-top: 8px; min-height: 20px; padding: 0 calc(4px * var(--k-dn, 1)); }
+.tm-lv-h > .tm-lv-t { margin: 0; }
+.tm-lv-h.lvc > .tm-lv-t { color: var(--lvtxt); }
+.tm-lv-gap { list-style: none; height: 6px; }
+.tm-lv-frame { position: absolute; left: -12px; right: -12px; top: 0; height: 0; z-index: -1; pointer-events: none; list-style: none; border-radius: calc(24px * var(--k-rd, 1)); }
+.tm-lv-frame.lv-plain { border: 1px solid color-mix(in srgb, var(--k-fg, #FFFFFF) min(100%, calc(16% * var(--k-ia, 1))), transparent); background: color-mix(in srgb, var(--k-fg, #FFFFFF) min(100%, calc(3% * var(--k-ia, 1))), transparent); }
+.tm-lv-frame.lv-plain.lvc { border-color: color-mix(in srgb, var(--lvc) 75%, transparent); background: color-mix(in srgb, var(--lvc) 7%, transparent); }
+.tm-lv-frame.drop-lv { box-shadow: 0 0 0 2px var(--k-acc-t, #FF6FA5), inset 0 0 22px color-mix(in srgb, var(--k-acc, #FF508C) 22%, transparent); }
+.tm-lv-frame.lvc.tm-p1-frame:is(.p1d-red, .p1d-purple, .p1d-gold):not(.drop-lv) { border-color: var(--p1acc); box-shadow: 0 0 18px rgba(var(--p1glow), .55), inset 0 0 14px rgba(var(--p1glow), .2); }
+.tm-lv-frame.lvc.tm-p1-frame:is(.p1d-crown, .p1d-radar, .p1d-spotlight, .p1d-converge, .p1d-tunnel, .p1d-hypno):not(.drop-lv) { border-color: var(--p1acc); box-shadow: 0 0 22px rgba(var(--p1glow), .5); }
+.tm-lv-frame.lvc.tm-p1-frame:is(.p1d-red-glisten, .p1d-white-glisten, .p1d-rainbow, .p1d-glitch, .p1d-neon):not(.drop-lv) { box-shadow: 0 0 22px rgba(var(--p1glow), .5); }
+.tm-lv-frame.lvc.tm-p1-frame:is(.p1d-red-glisten, .p1d-white-glisten) .p1-ring { background: var(--p1acc); }
+.tm-lv-frame.lvc.tm-p1-frame.p1d-white-glisten .p1-ring b { background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--k-fg, #FFFFFF) min(100%, calc(95% * var(--k-ia, 1))), transparent) 45%, var(--k-fg, #FFFFFF) 50%, color-mix(in srgb, var(--k-fg, #FFFFFF) min(100%, calc(95% * var(--k-ia, 1))), transparent) 55%, transparent); }
+.tm-lv-frame.lvc.tm-p1-frame.p1d-lightning { border-color: var(--p1acc); background: radial-gradient(120% 140% at 50% 0%, rgba(var(--p1glow), .3), color-mix(in srgb, var(--k-base, #0A0408) 60%, transparent)); }
+.tm-lv-frame.lvc.tm-p1-frame.p1d-lightning:not(.drop-lv) { box-shadow: 0 0 26px rgba(var(--p1glow), .45); }
+.tm-lv-frame.lvc.tm-p1-frame .p1-bolts { stroke: var(--p1txt); filter: drop-shadow(0 0 2px var(--p1acc)); }
+.tm-lv-frame.lvc.tm-p1-frame.p1d-target { border-color: rgba(var(--p1glow), .45); }
+.tm-lv-frame.lvc.tm-p1-frame .p1-corner, .tm-lv-frame.lvc.tm-p1-frame .p1-bull b { border-color: var(--p1acc); }
+.tm-lv-frame.lvc.tm-p1-frame .p1-bull b:nth-child(3) { background: var(--p1acc); }
+.tm-lv-frame.lvc.tm-p1-frame .p1-cross.h { background: linear-gradient(90deg, transparent, rgba(var(--p1glow), .7) 12%, transparent 30%, transparent 70%, rgba(var(--p1glow), .7) 88%, transparent); }
+.tm-lv-frame.lvc.tm-p1-frame .p1-cross.v { background: linear-gradient(180deg, rgba(var(--p1glow), .8), transparent 30%, transparent 70%, rgba(var(--p1glow), .8)); }
+.tm-lv-frame.lvc.tm-p1-frame .p1-radar b { background: conic-gradient(from 0deg, rgba(var(--p1glow), .32), transparent 12%); }
+.tm-lv-frame.lvc.tm-p1-frame.p1d-neon::before { border-color: var(--p1acc); box-shadow: inset 0 0 10px rgba(var(--p1glow), .55); }
+.tm-lv-frame.lvc.tm-p1-frame .p1-neon-l { text-shadow: 0 0 6px var(--p1acc), 0 0 14px var(--p1acc); }
+.tm-lv-frame.lvc.tm-p1-frame .p1-gl.b { border-color: var(--p1acc); }
+.tm-lv-frame.lvc.tm-p1-frame .p1-crown { fill: var(--p1acc); filter: drop-shadow(0 0 6px rgba(var(--p1glow), .8)); }
+.lv-menu { width: 320px; }
+.lv-fx, .lv-levels { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 10px; }
+.lv-fx > .p1c-l { width: 100%; }
+.lv-chip { border: 1px solid color-mix(in srgb, var(--k-fg, #FFFFFF) min(100%, calc(18% * var(--k-ia, 1))), transparent); background: transparent; color: inherit; font: inherit; font-size: 12px; font-weight: 650; padding: 4px 10px; border-radius: 999px; cursor: pointer; }
+.lv-chip:hover { background: color-mix(in srgb, var(--k-fg, #FFFFFF) min(100%, calc(8% * var(--k-ia, 1))), transparent); }
+.lv-chip.sel { background: var(--k-acc, #EC4E86); border-color: var(--k-acc, #EC4E86); color: var(--k-on-acc, #FFFFFF); }
+.lv-more { margin-top: 12px; border: 0; background: none; padding: 0; color: var(--k-acc-t, #F49BBE); font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; }
+.lv-set { width: 100%; grid-column: 1 / -1; display: grid; gap: 6px; margin: 4px 0 10px; }
+.lv-levels { width: 100%; grid-column: 1 / -1; margin: 0 0 6px; }
+.tm-p1-frame.mini.lv-plain-mini { border: 1px solid color-mix(in srgb, var(--k-fg, #FFFFFF) min(100%, calc(22% * var(--k-ia, 1))), transparent); }

@@ -50,7 +50,9 @@ export function intoSection(key: string, lists: TabLists): Partial<Todo> {
   const g = groupOf(key);
   if (g) return { group: g, order: top(lists.groups.get(g) ?? []) };
   if (key === "daily") return { group: null, order: top(lists.daily) };
-  return { group: null, order: top(lists.ranked), p1: key === "p1", unranked: false };
+  // PS 1.73 (the developer: "stop adding in priorities at random"): into Priorities it has no priority, at the bottom; only a
+  // task sent to Priority 1 gets one.
+  return key === "p1" ? { group: null, order: top(lists.ranked), p1: true, unranked: false, prioGroup: null } : { group: null, order: top(lists.ranked), p1: false, unranked: true, prioGroup: null };
 }
 /** Can this section take a task of this kind (Every day only repeating ones, Priority 1 and Priorities only one-offs). */
 export const sectionTakes = (key: string, type: Todo["type"]) => accepts(key, [type]);

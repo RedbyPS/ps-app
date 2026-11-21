@@ -34,6 +34,8 @@ export const LOOKS_OPTIONS: LooksOption[] = [
     changes: "Changes the typeface of all the words in PS app. Sizes and colours stay the same." },
   { id: "outline", title: "Outline (Priority 1 group)", part: "outline", settings: ["tmP1Style"], everyone: true,
     changes: "Changes only the frame drawn round your Priority 1 group. It shows once a task is in Priority 1." },
+  { id: "prioGroups", title: "Priority groups", part: "none", settings: ["tmLvLook"], everyone: true,
+    changes: "Changes only the box round two or more tasks on the same priority (Priority 2, 3 and so on). Plain by default: no glow, nothing moves." },
   { id: "overdue", title: "Overdue card", part: "overdue", settings: ["tmOverdue"], everyone: true,
     changes: "Changes only the Overdue card at the bottom right: its colour, its words and its effect." },
   { id: "background", title: "Background", part: "bg", settings: ["tmBg"], everyone: true,

@@ -4,9 +4,10 @@
 // and takes more tasks the same way. A task in a group (todo.group) shows there instead of in
 // Priorities or Every day; a group that no longer exists is ignored, so the task comes back.
 import type { Doc, TaskGroup, Todo } from "./model";
-import { isP1, sortPrio } from "./prio.ts";
+import { isP1, levelAfterMove, levelTag, sortPrio } from "./prio.ts";
 import { isDueNow } from "./repeat.ts";
 import { isOverdue } from "./overdue.ts";
+import { isClientTask, waitsToLand } from "./clientwork.ts";
 
 export const SEC_BUILTIN = ["p1", "prio", "daily"] as const;
 export const groupKey = (id: string) => `g:${id}`;
@@ -52,15 +53,20 @@ const byOrder = (a: Doc<Todo>, b: Doc<Todo>) => (a.data.order ?? 0) - (b.data.or
 /** Every section's tasks, in order. Repeating tasks show while due (as in Every day). */
 /** With `overdue` (now and the developer's zone), tasks 48 hours past their due are left out: they show on the
  *  Overdue card instead (core/overdue.ts). */
-export function tabLists(every: Doc<Todo>[], groups: TaskGroup[], today: string, overdue?: { now: number; tz: string }): TabLists {
+/** With `land` (PS 1.73, Clients: the person's day by their day end, core/clientwork.ts landDayAt), a one day task waits out
+ *  of sight until its do date, and repeating tasks with a rule land on their days at the day end instead of midnight. */
+export function tabLists(every: Doc<Todo>[], groups: TaskGroup[], today: string, overdue?: { now: number; tz: string }, land?: string): TabLists {
   // The AI Inbox's tasks (core/aiinbox.ts) are on no list until they are moved out of it.
-  const lists = every.filter((d) => d.data.aiInbox !== true);
+  const lists = every.filter((d) => d.data.aiInbox !== true && !(land && waitsToLand(d.data, land)));
+  if (land) today = land;
   const all = overdue ? lists.filter((d) => !isOverdue(d.data, overdue.now, overdue.tz)) : lists;
   const known = new Set(groups.map((g) => g.id));
   const gid = (t: Todo) => (t.group && known.has(t.group) ? t.group : null);
   const showing = (t: Todo) => (t.type === "daily" ? isDueNow(t, today) : !t.done);
-  const daily = all.filter((d) => d.data.type === "daily" && !gid(d.data) && isDueNow(d.data, today)).sort(byOrder);
-  const ranked = sortPrio(all.filter((d) => d.data.type !== "daily" && !d.data.done && !gid(d.data)));
+  // A repeating client task with P1 on (Clients, PS 1.73) lands in Priority 1 on its days instead of Every day.
+  const p1Daily = (t: Todo) => t.type === "daily" && t.p1 === true && isClientTask(t);
+  const daily = all.filter((d) => d.data.type === "daily" && !p1Daily(d.data) && !gid(d.data) && isDueNow(d.data, today)).sort(byOrder);
+  const ranked = sortPrio(all.filter((d) => (d.data.type !== "daily" ? !d.data.done : p1Daily(d.data) && isDueNow(d.data, today)) && !gid(d.data)));
   const map = new Map<string, Doc<Todo>[]>(groups.map((g) => [g.id, []]));
   for (const d of all) { const g = gid(d.data); if (g && showing(d.data)) map.get(g)!.push(d); }
   map.forEach((l) => l.sort(byOrder));
@@ -98,7 +104,7 @@ export function accepts(key: string, types: Todo["type"][]): boolean {
 
 /** ids: the tasks moved, top to bottom. index: where they land among the section's rows as shown
  *  (moved rows already in that section count). */
-export type TaskMove = { ids: string[]; to: string; index: number; inbox?: boolean };   // inbox (PS 1.68): the tasks come out of the AI Inbox
+export type TaskMove = { ids: string[]; to: string; index: number; inbox?: boolean; level?: string | null };   // level (PS 1.73): the Priority 2, 3... box let go over   // inbox (PS 1.68): the tasks come out of the AI Inbox
 
 /** The saves a move makes: the order of its new section (Priority 1 and Priorities count as one
  *  order, as before), and the moved tasks' group, Priority 1 and "no priority yet" flags. */
@@ -123,6 +129,11 @@ export function planMove(lists: TabLists, m: TaskMove, inbox: Doc<Todo>[] = []):
     : m.to === "prio" ? [...lists.p1.filter((d) => !ids.has(d.id)), ...next] : next;
   // Dropped below a task with no priority yet: it has none either (core/prio.ts).
   const unranked = m.to === "prio" && next.slice(0, at).some((d) => d.data.unranked);
+  // PS 1.73: dropped between two tasks of one priority level, they join that level; anywhere else they are a level of
+  // their own (core/prio.ts levelAfterMove). `m.level` is the box the pointer was let go over, when there is one.
+  const level = m.to !== "prio" || unranked ? null
+    : levelAfterMove(next.filter((d) => !ids.has(d.id) || d.id === moved[0].id).map((d) => d.id), moved[0].id,
+      new Map(next.filter((d) => !ids.has(d.id)).map((d) => [d.id, levelTag(d.data)])), m.level === undefined ? null : m.level);
   const out: { id: string; patch: Partial<Todo> }[] = [];
   ordered.forEach((d, i) => {
     const t = d.data, patch: Partial<Todo> = {};
@@ -133,6 +144,7 @@ export function planMove(lists: TabLists, m: TaskMove, inbox: Doc<Todo>[] = []):
       if (t.type !== "daily") {
         if (!!t.p1 !== (m.to === "p1")) patch.p1 = m.to === "p1";
         if (!!t.unranked !== unranked) patch.unranked = unranked;
+        if ((t.prioGroup ?? null) !== level) patch.prioGroup = level;
       }
     }
     if (Object.keys(patch).length) out.push({ id: d.id, patch });

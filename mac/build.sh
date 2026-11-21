@@ -80,6 +80,10 @@ cp "$HERE/ui/hatch.html" "$APP/Contents/Resources/hatch.html"
 # as big as before; a tree without it uses the app icon itself.
 HATCH_ICON="$HERE/icon/hatch-1024.png"; [ -f "$HATCH_ICON" ] || HATCH_ICON="$HERE/icon/icon-1024.png"
 sips -Z 512 "$HATCH_ICON" --out "$APP/Contents/Resources/hatch-icon.png" >/dev/null
+# PS Cake: the boot animation and the logo reveal (Sources/Cake.swift), their two icon pictures (the old white PS icon
+# and the knight globe, as on the approved demo), and the Anton font with its licence (SIL Open Font License 1.1, which
+# must travel with the font). The small version line is Menlo: VT323 carries its author's email, which the audit blocks.
+cp "$HERE/ui/cake.html" "$HERE/ui/cake-old.webp" "$HERE/ui/cake-new.webp" "$HERE/ui/cake-anton.ttf" "$HERE/ui/cake-anton-OFL.txt" "$APP/Contents/Resources/"
 node "$WEB/scripts/ps-kit.mjs" "$APP/Contents/Resources/project-kit"
 
 # V1.58 layers (core tools/assemble.mjs): an assembled tree has ps-build.json at its top (flavour, commits, the

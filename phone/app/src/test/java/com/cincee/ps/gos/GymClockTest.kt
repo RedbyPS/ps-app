@@ -215,6 +215,30 @@ class GymClockTest {
         assertEquals(p, GymClock.from(GymClock.toJson(p)))
     }
 
+    // ---------- PS 1.73: the Priority 1 alarm (web core/duealerts.ts): one button, the task's name and time left ----------
+    @Test fun thePriorityOneAlarmHasOneButtonAndRingsLikeTheOthers() {
+        val words = "1 hour left: " + "Send the invoice to the client before the call ".repeat(3).trim()
+        val p1 = JSONObject().put("id", "pabcdefghijk").put("day", day).put("at", t("19:30")).put("title", "Priority 1").put("text", words)
+            .put("yes", "I acknowledge").put("later", "Later").put("bg", "#2a0d0d").put("accent", "#ef4444").put("ink", "#ffffff").put("one", true).put("word", "yes")
+        val p = night(alarms = JSONArray().put(p1).put(alarm("al1", t("07:44"))))
+        val a = p.alarms.single { it.id == "pabcdefghijk" }
+        assertTrue(a.one)
+        assertEquals("I acknowledge", a.yes)
+        // The developer: a tap alone never stops it, only "yes" typed (any case); your own alarms stay one tap
+        assertEquals("yes", a.word)
+        assertFalse(GymClock.confirms(a, "")); assertFalse(GymClock.confirms(a, null)); assertFalse(GymClock.confirms(a, "I acknowledge"))
+        assertTrue(GymClock.confirms(a, "yes")); assertTrue(GymClock.confirms(a, " YES "))
+        assertTrue(GymClock.confirms(p.alarms.single { it.id == "al1" }, ""))
+        assertEquals(words.take(160), a.text)                                  // longer words than an alarm of your own
+        assertFalse(p.alarms.single { it.id == "al1" }.one)                    // your own alarms keep Later
+        assertEquals(p, GymClock.from(GymClock.toJson(p)))                     // one survives the saved plan
+        assertEquals(listOf("pabcdefghijk"), GymClock.alarmsDue(p, t("19:30") + 1000, emptySet()).map { it.id })
+        // I acknowledge on the Mac: the page's next plan no longer has it, so a ring going here stops
+        val r = GymRing(day, t("19:30"), t("19:30"), 0, "a:pabcdefghijk")
+        assertEquals(RingNow.RINGING, GymClock.ringNow(r, p, t("19:31"), emptySet()))
+        assertEquals(RingNow.DONE, GymClock.ringNow(r, night(alarms = JSONArray().put(alarm("al1", t("07:44")))), t("19:31"), emptySet()))
+    }
+
     @Test fun alarmsRingOnTimeOnceAndNotLate() {
         val p = night(alarms = JSONArray().put(alarm("al1", t("07:44"))).put(alarm("al2", t("13:00"))))
         assertEquals(2, p.alarms.size)

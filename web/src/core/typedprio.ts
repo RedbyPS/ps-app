@@ -5,7 +5,7 @@
 // the title and the task goes in at that priority. Typed twice, the last one wins. The pure parts live here so
 // they can be tested without a page; views/TypedPrio.tsx draws it.
 // V1.57: editing a task's name takes it too (typedEdit): a friend of the developer's typed P1 while editing and nothing happened.
-import { prioNumbers } from "./prio.ts";
+import { placeInLevel, prioNumbers } from "./prio.ts";
 
 export type PrioNum = 1 | 2 | 3;
 /** One typed priority word: which priority, where it sits in the text ([start, end)) and how it was written. */
@@ -102,43 +102,41 @@ export function backspaceDismisses(st: PrioState, text: string, caret: number | 
 }
 
 /**
- * Where a task with a typed priority goes in the list. P1 joins the Priority 1 group. P2 and P3 are places in the
- * numbered list under it (P2 is the first task after the group, core/prio.ts prioNumbers): the new task is put
- * there, or at the end when the list is shorter. `index` is the place among the numbered tasks that are not P1.
+ * Where a task with a typed priority goes in the list. P1 joins the Priority 1 group. P2 and P3 are LEVELS (PS 1.73,
+ * the developer 21 Nov 2026: more than one Priority 2 task makes a Priority 2 group): the task joins that level, at its end,
+ * and shares its P number (core/prio.ts placeInLevel). A level past the last one there is: a level of its own at the
+ * end of the numbered tasks, as before. `index` is the place among the numbered tasks that are not P1 when each
+ * numbered task is its own level (kept for callers that only need a rough spot).
  */
 export function typedPlace(prio: PrioNum, numberedNotP1: number): { p1: boolean; index: number } {
   if (prio === 1) return { p1: true, index: 0 };
   return { p1: false, index: Math.min(prio - 2, numberedNotP1) };
 }
 
-/** The order number (and P1 flag) for a task added with a typed priority. `ranked`: the one-off tasks as the Tab list
- *  shows them (core/prio.ts sortPrio: the P1 group, then the numbered tasks, then the ones with no priority). P1 goes
- *  at the end of the P1 group; P2 and P3 take that place in the numbered list (typedPlace). */
-export function typedOrder(ranked: { order?: number; p1?: boolean; unranked?: boolean }[], prio: PrioNum): { p1: boolean; order: number } {
-  const between = (list: { order?: number }[], k: number) => {
-    const before = list[k - 1]?.order, after = list[k]?.order;
-    if (before != null && after != null) return (before + after) / 2;
-    if (after != null) return after - 1;
-    if (before != null) return before + 1;
-    return 0;
-  };
+type RankedItem = { id?: string; order?: number; p1?: boolean; unranked?: boolean; prioGroup?: string | null };
+/** What a typed priority sets on the task: its order, the P1 flag and its level tag; `pair` is a task that gets the same
+ *  tag in the same go (a level that was one task becomes a group of two). */
+export type TypedAt = { p1: boolean; order: number; prioGroup: string | null; pair?: { id: string; prioGroup: string } };
+/** The order number (and P1 flag and level) for a task added with a typed priority. `ranked`: the one-off tasks as the Tab
+ *  list shows them (core/prio.ts sortPrio: the P1 group, then the numbered tasks, then the ones with no priority). P1
+ *  goes at the end of the P1 group; P2 and P3 join that level (placeInLevel). */
+export function typedOrder(ranked: RankedItem[], prio: PrioNum, tag?: () => string): TypedAt {
   const group = ranked.filter((t) => t.p1 === true);
-  if (prio === 1) return { p1: true, order: between(group, group.length) };
-  const numbered = ranked.filter((t) => t.p1 !== true && !t.unranked);
-  const { index } = typedPlace(prio, numbered.length);
-  // No numbered tasks yet: just after the P1 group (or 0 on an empty list).
-  if (!numbered.length) return { p1: false, order: between(group, group.length) };
-  return { p1: false, order: between(numbered, index) };
+  if (prio === 1) {
+    const last = group[group.length - 1]?.order;   // the end of the P1 group (P1 tasks sort first whatever their order)
+    return { p1: true, order: last != null ? last + 1 : 0, prioGroup: null };
+  }
+  return { p1: false, ...placeInLevel(ranked, prio, tag) };
 }
 
 /** Editing a task's name with a typed priority (V1.57): where the task goes, or null when it is already at that
  *  priority (the word is still taken out of the name). `ranked` is the one-off list as the Tab list shows it (the P1
- *  group, the numbered tasks, then the ones with no priority), this task included. The task is placed as if it were
- *  added fresh among the others (typedOrder), and a task with no priority gets one. */
-export function typedEdit(ranked: { id: string; order?: number; p1?: boolean; unranked?: boolean }[], id: string, prio: PrioNum): { p1: boolean; order: number } | null {
-  const nums = prioNumbers(ranked.map((x) => ({ id: x.id, p1: x.p1 === true, unranked: x.unranked === true })));
+ *  group, the numbered tasks, then the ones with no priority), this task included. The task joins that level as if it
+ *  were added fresh among the others (typedOrder), and a task with no priority gets one. */
+export function typedEdit(ranked: (RankedItem & { id: string })[], id: string, prio: PrioNum, tag?: () => string): TypedAt | null {
+  const nums = prioNumbers(ranked.map((x) => ({ id: x.id, p1: x.p1 === true, unranked: x.unranked === true, prioGroup: x.prioGroup ?? null })));
   if (nums.get(id) === prio) return null;
-  return typedOrder(ranked.filter((x) => x.id !== id), prio);
+  return typedOrder(ranked.filter((x) => x.id !== id), prio, tag);
 }
 
 /** A name edited in place (a Dimension X card, V1.57): the priority word that is new in it, or null when there is none

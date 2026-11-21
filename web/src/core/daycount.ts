@@ -326,8 +326,10 @@ export function livelyStage(leftMs: number, asking: boolean): 0 | 1 | 2 | 3 {
 /** A Priority 1 task's own clock: the moment its 24 hours run out (ms), or null when it has none (not P1, done, daily, or no start
  *  yet: the clock starts while Priority 1 is shared with the squad, core/squadp1.ts). At 24 hours nothing changes on the task:
  *  the row says Missed, as the squad panel does, and the day log counts it once (core/taskhist.ts), exactly as before. */
-export function p1Deadline(t: { p1?: boolean; p1At?: string | null; done?: boolean; type?: string }, now: number): number | null {
+export function p1Deadline(t: { p1?: boolean; p1At?: string | null; p1Since?: string | null; done?: boolean; type?: string }, now: number): number | null {
   if (t.p1 !== true || t.done || t.type === "daily") return null;
-  const s = cleanStart(t.p1At, now);
+  // PS 1.73: the squad's clock first, else your own (Todo.p1Since, core/duealerts.ts), so a P1 that is not shared has its timer
+  // too, and it is the same 24 hours the Priority 1 alarm rings for.
+  const s = cleanStart(t.p1At, now) ?? cleanStart(t.p1Since, now);
   return s ? Date.parse(s) + P1_WINDOW_MS : null;
 }

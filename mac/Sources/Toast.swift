@@ -79,6 +79,24 @@ final class Toast: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
   /// V1.55: the Tab list's window while it is up (main.swift): a stack under the island that comes up then stays
   /// behind it, so it never covers the list's buttons that island clearance keeps clear.
   var listWindow: () -> NSWindow? = { nil }
+  /// PS 1.73 swipe leak (SwipeLeakCore.swift): hands one scroll event to the Tab list's page (main.swift handToList).
+  static var handToList: ((NSEvent) -> Void)?
+  /// While the Tab list is up, a sideways two finger swipe that lands on a card goes to the list (its page moves) and
+  /// no longer dismisses the card. Up or down first stays with the cards. The list hidden: the cards keep every gesture.
+  private var cardRoute = SwipeLeakCore.CardRoute()
+  private var routeMonitor: Any?
+  private func watchSwipes() {
+    guard routeMonitor == nil, !Toast.testCopy else { return }
+    routeMonitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self] e in
+      guard let self, let p = self.panel, e.window === p else { return e }
+      let listUp = Toast.shared.listWindow() != nil && Toast.handToList != nil
+      switch self.cardRoute.route(SwipeLeak.wheel(e), listUp: listUp) {
+      case .cards: return e
+      case .both: Toast.handToList?(e); return e
+      case .list: Toast.handToList?(e); return nil
+      }
+    }
+  }
 
   // ---------- two stacks: the corner and the Dynamic Island (V1.55, NoteDropCore.swift) ----------
   // Two card windows made from this same class: `shared`, always in the top right corner as it always was, and
@@ -320,6 +338,7 @@ final class Toast: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
     // A self test copy never shows anything on the developer's screen and never catches his clicks
     // (the pictures still render from the invisible panel, like the Tab list's).
     if ProcessInfo.processInfo.environment["PS_SELFTEST"] != nil { panel.alphaValue = 0; panel.ignoresMouseEvents = true }
+    watchSwipes()   // PS 1.73 swipe leak
     web.loadHTMLString(Toast.page, baseURL: nil)
   }
 

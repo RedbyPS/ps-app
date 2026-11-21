@@ -17,6 +17,7 @@ import { saveSettings } from "./core/actions";
 import { rewindNote } from "./rewind";   // Rewind (PS 1.64): reminders shown, Later and Yes, as behaviour notes for the recap
 import { ackGym, gymReady, gymCard, gymCardText, gymDue, gymEnd, gymLater, gymNextWake, gymPlan, gymPrefs, gymQuiet, gymRingAt, gymSnoozed, pruneFired, YES_WORDS, type GymSnooze } from "./core/gym";
 import { alarmRings } from "./core/remind";
+import { duePlan } from "./duewatch";
 import { DEVICE_TZ } from "./core/tz";
 import { homeTz, setHomeTz } from "./core/tz";
 import { dndMutes } from "./core/dnd";
@@ -65,10 +66,13 @@ function run() {
   setHomeTz(st.tmHomeTz);
   const tz = homeTz(), now = Date.now(), p = prefsOf(st), acked = st.gymAck || [];
   if (PHONE) {
-    const plan = { ...gymPlan(p, now, tz, acked), alarms: alarmRings(remindRec(s), now, DEVICE_TZ) };
+    // PS 1.73: the Priority 1 alarms ring with the same ring (duewatch.ts), one button: I acknowledge.
+    const alarms = [...alarmRings(remindRec(s), now, DEVICE_TZ), ...duePlan(s, now).rings].sort((a, b) => a.at - b.at).slice(0, 40);
+    const plan = { ...gymPlan(p, now, tz, acked), alarms };
     const json = JSON.stringify(plan);
     if (json !== lastPlan) { lastPlan = json; post({ type: "gymPlan", plan }); }
-    timer = window.setTimeout(run, 30 * 60_000);   // the plan rolls on (8 days ahead), even with nothing changing
+    timer = window.setTimeout(run, 5 * 60_000);   // the plan rolls on (8 days ahead), even with nothing changing; PS 1.73: a P1 that is
+                                                  // made now rings in under a day, so the plan looks again every 5 minutes (sent only when it changed)
     return;
   }
   let fired = load(FIRED);

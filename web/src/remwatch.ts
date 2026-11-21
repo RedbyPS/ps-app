@@ -12,6 +12,10 @@
 //  - Alarms (V1.57): the Mac gets them in this plan (their card); the phone does not (it rings them, gymwatch.ts). Their
 //    Acknowledge comes back as an ordinary remAct "done", from either device.
 //  - 1.60: the built in daily reminder ("fu") is gone for everyone: never in the plan, rewritten out of a saved record.
+//  - PS 1.73 (duewatch.ts, core/duealerts.ts): every task due today gets the Annoying reminder from 3 hours before the day ends,
+//    and a Priority 1 task rings an alarm an hour before its 24 hours run out. Both join this plan as ordinary items (the phone
+//    rings the P1 alarms with the gym ring instead, gymwatch.ts; the iPhone web app keeps them as its card and push). Their
+//    answers are saved in the record's `auto`; Done on a nag ticks its task.
 import { vaultStore } from "./core/vault";
 import { allTodos, remindDoc, remindRec } from "./core/select";
 import { saveRemind, setTodoDone } from "./core/actions";
@@ -22,6 +26,8 @@ import { feature } from "./core/features";
 import { gymReady } from "./core/gym";
 import { pushClearArgs } from "./core/webpush";
 import { lpInterval } from "./core/lowpower.ts";
+import { MWEB } from "./gos/bridge";
+import { dueItemOf, duePlan, dueTaskOf, stampP1Own } from "./duewatch";
 
 type Post = (m: object) => void;
 const PHONE = import.meta.env.MODE === "gos";
@@ -60,7 +66,13 @@ function run() {
   // 1.60: never hand the shells a plan before the saved reminders have loaded: an empty one would cancel every alarm and
   // ring on the phone and make a reminder that was just answered ring again from scratch. They keep the plan they have.
   if (!gymReady({ hasSettings: !!rec, syncing: s.syncing, lastSync: s.lastSync })) return;
-  const full = remPlan(rec, !!s.red, { tasks, now: Date.now(), deviceTz: DEVICE_TZ });
+  stampP1Own(s);   // PS 1.73: your own Priority 1 clock, shared with a squad or not
+  const now = Date.now();
+  const base = remPlan(rec, !!s.red, { tasks, now, deviceTz: DEVICE_TZ });
+  // PS 1.73: the nags for tasks due today and the Priority 1 alarms, after your own reminders. The phone app rings the P1
+  // alarms (gymwatch.ts), so only the Mac and the iPhone web app get them here.
+  const due = duePlan(s, now);
+  const full = { ...base, items: [...base.items, ...due.nags, ...(PHONE && !MWEB ? [] : due.p1)] };
   // Alarms (V1.57): the Mac shows their card from this plan; the phone RINGS them with the gym ring instead (gymwatch.ts
   // hands them over with the gym plan), so they are left out of the phone's reminder notifications.
   const alarms = new Set((rec?.list ?? []).filter((r) => r.alarm).map((r) => r.id));
@@ -78,7 +90,7 @@ export function remAnswer(a: RemAct) {
   let clearRem: Reminder | null = null;
   void saveRemind((cur) => {
     const next = cur ? applyAct(cur, a) : null;
-    if (next && a.act === "done") { const r0 = cur!.list.find((r) => r.id === a.id); task = r0?.task; clearRem = r0 ?? null; }
+    if (next && a.act === "done") { const r0 = cur!.list.find((r) => r.id === a.id); task = r0?.task ?? dueTaskOf(a.id) ?? undefined; clearRem = r0 ?? (dueItemOf(a.id) as unknown as Reminder | null); }
     return next;
   }).then(() => {
     if (a.act === "done" && feature("remind-push")) void sb.rpc("push_clear", pushClearArgs(clearRem, a.at || Date.now(), DEVICE_TZ)).then(() => {}, () => {});   // pushes still waiting for it (iPhone) go too, from any device

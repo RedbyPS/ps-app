@@ -190,6 +190,9 @@ final class Updater {
       // PS 1.67: the new build finishes the icon the old one built and plays the rest (Hatch.swift); its own 'Updated to'
       // takes the place of the island's short moment.
       let hatched = Hatch.shared.afterUpdate(sameRun: false)
+      // PS Cake (the developer, 21 Nov 2026, the plan he approved): the logo reveal once, straight after the update scene and before
+      // What's new (both wait in the island queue at high priority). Never at a fresh install; replay from Settings.
+      if hatched { Cake.shared.revealOnce() }
       DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { [weak self] in
         // The sign in may still be on its way from the old build (UpdateHandoff, its own thread).
         DispatchQueue.global(qos: .utility).async {
@@ -865,6 +868,7 @@ final class Updater {
             self.pageSet("done", ["kind": "web"], unseen: true)   // the Tab list's card says "Updated to" once
             // PS 1.67: no relaunch, so this same run finishes the icon and plays the rest (Hatch.swift).
             if !Hatch.shared.afterUpdate(sameRun: true) { Island.shared.updateDone(version: Updater.parts(PSVersion.name).0) }   // PS 1.60: the island's own short moment
+            else { Cake.shared.revealOnce() }   // PS Cake: the logo reveal once, after the update scene (as after a relaunch)
             self.updatedThisRun = true   // the reloaded page may bring a setup menu (setup:can)
             if self.viaPanel || !self.usePage { self.showDone("\(AppName.current) updated", "Now on \(PSVersion.name). No restart needed.") }
           }

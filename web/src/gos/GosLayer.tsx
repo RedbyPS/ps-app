@@ -1,7 +1,7 @@
 // PS GOS home screen. The Tab list from the Mac (the same Overlay component, every panel in it) is
 // the phone's home, split into three panes a thumb can reach: Plan (the meetings), List (the tasks) and Inbox
 // (client emails, meeting notes, New tasks, Urgent). Vault shows the website's pages, PS (far right) opens Settings,
-// and on the developer's account Rules, left of PS, opens his rule book.
+// and on the developer's account Rules, right of Gym, opens his rule book. PS 1.73: Clients, left of Vault, opens the Clients workspace.
 // V1.47 (the developer, 10 Nov 2026): "The hamburger navbar on the very top left: I like it, but add more to it: the screen time,
 // the PS rules (which is for some reason at the very top of the screen, like the copy to clipboard stuff), the numerology
 // tab and the timelines. All in the hamburger icon to clear it up. On the Plan tab I just want the Meetings menu, and put
@@ -26,6 +26,7 @@ import { openSettings, useSettingsWanted } from "../views/SettingsScreen";
 import { openGSquad } from "../views/GSquad";
 import { MENU, type MenuItem } from "./menu";
 import { NoteIcon, SoundboardHost, openSoundboard } from "../soundboard/SoundboardButton";
+import { ClientsHost, ClientsIcon, clientsIsOpen, closeClients, openClients, useClientsOpen } from "../clients/ClientsButton";
 import { useSb } from "../soundboard/store";
 import { BgProblemCard } from "./GosBackgrounds";
 import { useGosLayout } from "./layout";
@@ -75,6 +76,7 @@ export function GosLayer() {
   const fit = useFitPop();
   useEffect(() => { noteGymScreen(fit !== "closed"); }, [fit]);   // G Squad members list (PS 1.64): "At the gym" while Gym is open
   const sbOpen = useSb().open;
+  const cwOpen = useClientsOpen();   // PS 1.73 the Clients workspace (clients/ClientsButton.tsx): over the pages, the dock stays
   useGosLayout();   // Compact, Cards, Focus or Simple (the phone settings): follows the vault settings
   useEffect(() => { startTouch(); }, []);
   // V1.56 the phone layout (core/phonelayout.ts): this phone kind's pages, navbar and looks, synced from the Mac's
@@ -253,7 +255,9 @@ export function GosLayer() {
   const red = isRedAccount(s);
   // The navbar's buttons (Rules only on the developer's account), and which one glows.
   const dockItems = pl.nav.items.filter((it) => it !== "rules" || red);
-  const glowAt = dockItems.findIndex((it) => it === "settings" ? settingsOpen : it === "gym" ? fit !== "closed" && !settingsOpen : it === "soundboard" ? sbOpen && !settingsOpen && fit === "closed" : it === "rules" ? !!book && !settingsOpen : !settingsOpen && it === view);
+  const glowAt = dockItems.findIndex((it) => it === "settings" ? settingsOpen : it === "gym" ? fit !== "closed" && !settingsOpen : it === "soundboard" ? sbOpen && !settingsOpen && fit === "closed" : it === "clients" ? cwOpen && !settingsOpen && fit === "closed" : it === "rules" ? !!book && !settingsOpen : !settingsOpen && !cwOpen && it === view);
+  // Clients covers the pages: any other dock button closes it first (List goes back to the list, Clients again just closes).
+  const leaveCw = () => { if (clientsIsOpen()) closeClients(); };
   // The book draws inside the list, so from the Vault pages it first goes back to the list.
   // Do Not Disturb (views/Dnd.tsx): a tap turns it on, a tap while on opens its sheet. In the thumb row on every pane.
   const dnd = <DndButton st={settingsData(s)} s={s} act={(o) => setDnd(o)} homeTz={settingsData(s).tmHomeTz || undefined} size={24} />;
@@ -302,6 +306,7 @@ export function GosLayer() {
     const from = { getBoundingClientRect: () => new DOMRect(at.x - size / 2, at.y - size / 2, size, size) } as unknown as Element;
     const run = () => {
       if (settingsOpen && id !== "settings") openSettings(null);
+      if (id !== "clients" && clientsIsOpen()) closeClients();
       if (id !== "gym" && fitPop.get() === "open") fitPop.min();   // a workout steps aside to its bubble, like an app to the background
       if (id === "sleep") { launch(at, size, () => { void goToSleep(); }, "none"); return; }
       if (id === "dnd") {
@@ -313,6 +318,7 @@ export function GosLayer() {
       }
       if (id === "gym") { fitPop.open(from); return; }   // Fitness grows out of the spot by itself (fitness/FitnessPop.tsx)
       if (id === "sounds") { launch(at, size, () => openSoundboard(from as HTMLElement), "own"); return; }
+      if (id === "clients") { launch(at, size, () => openClients(from as HTMLElement), "own"); return; }
       if (id === "whatsnew") { launch(at, size, () => openWhatsNew()); return; }
       if (id === "plan" || id === "inbox") { launch(at, size, () => { setShow(null); if (view !== id) { setView(id); } }, "home"); return; }
       if (id === "vault") { launch(at, size, () => go("vault"), "none"); return; }
@@ -329,6 +335,7 @@ export function GosLayer() {
       <NewPopupsHost />{/* the "new in this version" pop-ups (V1.56): only the open source one shows on the phone */}
       <TipsHost />{/* the first use tips (V1.55): one finger swipe, the dots, a right click... only when the list is showing */}
       <SoundboardHost anchor={() => null} />
+      <ClientsHost anchor={() => null} />
       <PhoneEditMount kind={kind} red={red} />{/* V1.56 the phone's own Edit mode (gos/PhoneEditMode.tsx) */}
       {view !== "vault" && (
         <div className="gos-home" data-pane={isPane(view) ? view : curPage?.kind === "panels" ? (order.indexOf(view) < listAt ? "panels-l" : "panels-r") : "list"} data-show={view === "plan" && show ? show : undefined}>
@@ -363,16 +370,18 @@ export function GosLayer() {
       {/* The navbar (V1.56: its buttons, their order, its edge and its place come from the phone layout). */}
       <nav ref={dockRef} className="gos-dock" aria-label="PS" data-edge={pl.nav.edge} data-align={pl.nav.align} style={{ ["--n" as string]: dockItems.length }}>
         {dockItems.map((it) => {
-          if (it === "plan") return <DockBtn key={it} flip={it} on={view === "plan"} onClick={() => go("plan")} label="Plan" icon={<PlanIcon />} />;
-          if (it === "list") return <DockBtn key={it} flip={it} on={view === "list"} onClick={() => go("list")} label="List" icon={<ListIcon />} />;
-          if (it === "inbox") return <DockBtn key={it} flip={it} on={view === "inbox"} onClick={() => go("inbox")} label="Inbox" icon={<InboxIcon />} />;
-          if (it === "gym") return <DockBtn key={it} flip={it} on={fit !== "closed"} onClick={(el) => { haptic("press"); primeSfx(); fitPop.open(el); }} label="Gym" icon={<DumbbellIcon size={24} />} />;
+          if (it === "plan") return <DockBtn key={it} flip={it} on={view === "plan" && !cwOpen} onClick={() => { leaveCw(); go("plan"); }} label="Plan" icon={<PlanIcon />} />;
+          if (it === "list") return <DockBtn key={it} flip={it} on={view === "list" && !cwOpen} onClick={() => { leaveCw(); go("list"); }} label="List" icon={<ListIcon />} />;
+          if (it === "inbox") return <DockBtn key={it} flip={it} on={view === "inbox" && !cwOpen} onClick={() => { leaveCw(); go("inbox"); }} label="Inbox" icon={<InboxIcon />} />;
+          if (it === "gym") return <DockBtn key={it} flip={it} on={fit !== "closed"} onClick={(el) => { haptic("press"); primeSfx(); leaveCw(); fitPop.open(el); }} label="Gym" icon={<DumbbellIcon size={24} />} />;
           // The Soundboard (V1.47, src/soundboard/), next to Gym: audio and video, the player, the queue, timed plays.
-          if (it === "soundboard") return <DockBtn key={it} flip={it} on={sbOpen} onClick={(el) => { haptic("press"); primeSfx(); openSoundboard(el); }} label="Sounds" icon={<NoteIcon size={24} />} />;
-          if (it === "vault") return <DockBtn key={it} flip={it} on={view === "vault"} onClick={() => go("vault")} label="Vault" icon={<VaultIcon />} />;
-          if (it === "rules") return <Fragment key={it}>{red && <DockBtn flip={it} on={!!book} onClick={rules} label="Rules" icon={<span className="gos-dock-rb">PS</span>} />}</Fragment>;
-          if (it === "settings") return <DockBtn key={it} flip={it} on={settingsOpen} onClick={() => { haptic("press"); primeSfx(); if (settingsOpen) openSettings(null); else settings(); }} label={MWEB ? "Settings" : "PS"} icon={<GearIcon />} badge={g.update.state === "available" || g.update.state === "ready"} />;
-          if (it.startsWith("page:")) return <DockBtn key={it} flip={it} on={view === it} onClick={() => go(it as View)} label={navLabel(pl, it)} icon={<PageIcon />} />;
+          if (it === "soundboard") return <DockBtn key={it} flip={it} on={sbOpen} onClick={(el) => { haptic("press"); primeSfx(); leaveCw(); openSoundboard(el); }} label="Sounds" icon={<NoteIcon size={24} />} />;
+          // PS 1.73 the Clients workspace (src/clients/), left of Vault: a tap opens it over the page, a tap again closes it.
+          if (it === "clients") return <DockBtn key={it} flip={it} on={cwOpen} onClick={(el) => { haptic("press"); primeSfx(); if (clientsIsOpen()) closeClients(); else openClients(el); }} label="Clients" icon={<ClientsIcon size={24} />} />;
+          if (it === "vault") return <DockBtn key={it} flip={it} on={view === "vault" && !cwOpen} onClick={() => { leaveCw(); go("vault"); }} label="Vault" icon={<VaultIcon />} />;
+          if (it === "rules") return <Fragment key={it}>{red && <DockBtn flip={it} on={!!book} onClick={() => { leaveCw(); rules(); }} label="Rules" icon={<span className="gos-dock-rb">PS</span>} />}</Fragment>;
+          if (it === "settings") return <DockBtn key={it} flip={it} on={settingsOpen} onClick={() => { haptic("press"); primeSfx(); leaveCw(); if (settingsOpen) openSettings(null); else settings(); }} label={MWEB ? "Settings" : "PS"} icon={<GearIcon />} badge={g.update.state === "available" || g.update.state === "ready"} />;
+          if (it.startsWith("page:")) return <DockBtn key={it} flip={it} on={view === it && !cwOpen} onClick={() => { leaveCw(); go(it as View); }} label={navLabel(pl, it)} icon={<PageIcon />} />;
           return null;
         })}
         <span className="gos-dock-glow" aria-hidden="true" style={{ ["--i" as string]: glowAt, opacity: glowAt < 0 ? 0 : undefined }} />

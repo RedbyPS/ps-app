@@ -156,7 +156,8 @@ ok("Tab layout: a setting the person changed here is theirs; a panel they remove
 
 // ---------- the phone layout ----------
 const phone = { phone: "gos", at: "2026-11-18T10:00:00.000Z", grid: { dense: true },
-  nav: { edge: "bottom", align: "full", items: ["plan", "list", "hologram", "page:pnotes1", "settings"], blur: 3 },
+  // given: a newer build's navbar has had the PS 1.73 Clients button put in once (core/phonelayout.ts ONE_TIME_NAV), and this one took it out.
+  nav: { edge: "bottom", align: "full", items: ["plan", "list", "hologram", "page:pnotes1", "settings"], blur: 3, given: ["clients", "holodeck"] },
   pages: [{ id: "plan", kind: "plan" }, { id: "list", kind: "list", pin: true }, { id: "inbox", kind: "inbox" },
     { id: "pnotes1", kind: "notes", name: "Notes" },
     { id: "pnl0phone", kind: "panels", name: "Mine", tiles: [{ id: "hologram.ab12cd34", c: 0, r: 0, w: 2, h: 2 }, { id: "sleep.zz11aa22", c: 2, r: 0, w: 2, h: 1 }, { id: "dnd.d1n2d3x4", c: 2, r: 1, w: 1, h: 1 }] }] };
@@ -172,6 +173,7 @@ ok("phone layout: a newer page kind, tile, navbar button and field survive a sav
   assert.ok(tiles.includes("hologram.ab12cd34") && tiles.includes("sleep.zz11aa22") && !tiles.includes("dnd.d1n2d3x4"));
   assert.deepEqual(out.nav.items, ["plan", "list", "hologram", "page:pnotes1", "settings"]);
   assert.equal(out.nav.blur, 3); assert.deepEqual(out.grid, { dense: true });
+  assert.deepEqual(out.nav.given, ["clients", "holodeck"], "a removed Clients stays removed; a newer build's own given one stays");
   const noPage = carryUnknownPhone(phone, { ...c, pages: c.pages.filter((p) => p.id !== "pnl0phone") }, false) as any;
   assert.ok(!noPage.pages.some((p: any) => p.id === "pnl0phone"), "a page of panels the person deleted stays deleted");
 });

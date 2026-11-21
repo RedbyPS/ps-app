@@ -164,7 +164,7 @@ export function DayCountdown() {
 
 // ---------- the Priority 1 timer on a task ----------
 /** inline: the copy under the task's name, shown instead of the right hand one on narrow screens (the phone). */
-export function P1Timer({ t, inline }: { t: Pick<Todo, "p1" | "p1At" | "done" | "type">; inline?: boolean }) {
+export function P1Timer({ t, inline }: { t: Pick<Todo, "p1" | "p1At" | "p1Since" | "done" | "type">; inline?: boolean }) {
   const s = useVault();
   const on = feature(CD_FEATURE) && cleanCd(settingsData(s).countdown).p1;
   const deadline = on ? p1Deadline(t, Date.now()) : null;
