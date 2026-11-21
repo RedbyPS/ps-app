@@ -1088,11 +1088,23 @@ export const reopenAgenda = (id: string) => updateAgenda(id, { endedAt: null });
 export const deleteAgenda = (id: string) => remove(id);
 
 // ---------- series map (month titles, notes per day, week and month) ----------
-export async function setJournal(key: string, patch: { title?: string | null; note?: string | null }) {
-  const ex = journal(vaultStore.get()).get(key);
-  const next: JournalEntry = { key, title: ex?.data.title ?? null, note: ex?.data.note ?? null, ...patch, updatedAt: now() };
-  if (!next.title?.trim() && !next.note?.trim()) { if (ex) await remove(ex.id); return; }
-  await put<JournalEntry>("journal", next, { id: ex?.id, ws: null });
+// PS 1.74: one journal save at a time, on the newest copy, so a month title and a note saved back to back (or two
+// titles from the Tab list's map) never start two records for one month; a second record left over is folded in.
+let journalLane: Promise<unknown> = Promise.resolve();
+export function setJournal(key: string, patch: { title?: string | null; note?: string | null }): Promise<void> {
+  const run = async () => {
+    const ex = journal(vaultStore.get()).get(key);
+    const extra = [...vaultStore.get().docs.values()].filter((d) => d.kind === "journal" && (d.data as JournalEntry)?.key === key && d.id !== ex?.id) as Doc<JournalEntry>[];
+    // A title or note only an older second record still has is kept, never removed with it.
+    const kept = (f: "title" | "note") => ex?.data[f] || extra.map((d) => d.data[f]).find((v) => !!v?.trim()) || null;
+    const next: JournalEntry = { key, title: kept("title"), note: kept("note"), ...patch, updatedAt: now() };
+    if (!next.title?.trim() && !next.note?.trim()) { if (ex) await remove(ex.id); }
+    else await put<JournalEntry>("journal", next, { id: ex?.id, ws: null });
+    for (const d of extra) await remove(d.id);
+  };
+  const p = journalLane.then(run, run);
+  journalLane = p.catch(() => {});
+  return p;
 }
 
 // ---------- screen time (PS on the Mac, PS GOS on the phone) ----------
