@@ -190,8 +190,8 @@ if (existsSync("dist/client/todolist-mobile/index.html")) {
   mkdirSync("dist/todolist-mobile", { recursive: true });
   const head = [
     `<link rel="manifest" href="/todolist-mobile/manifest.webmanifest" />`,
-    `<link rel="icon" href="/todolist-mobile/icon-192.png" type="image/png" />`,
-    `<link rel="apple-touch-icon" href="/todolist-mobile/apple-touch-icon.png" />`,
+    `<link rel="icon" href="/todolist-mobile/icon-cake-192.png" type="image/png" />`,   // PS 1.72: new names with each new icon, so no cache serves the old one
+    `<link rel="apple-touch-icon" href="/todolist-mobile/icon-cake-180.png" />`,
   ].join("\n    ");
   const html = readFileSync("dist/client/todolist-mobile/index.html", "utf8").replace(/\s*<!--psm-head:[\s\S]*?-->/, "").replace("</head>", `  ${head}\n  </head>`);
   if (!html.includes('rel="manifest"')) throw new Error("postbuild: the mobile page has no manifest");

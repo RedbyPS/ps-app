@@ -19,11 +19,13 @@ const AT = "2026-11-19T22:00:00.000Z";
 
 // ---------- 1. the rows ----------
 const TOP_RIGHT = ["afk", "screentime", "brief", "endday", "net", "activity", "lowpower", "mixer", "clipboard", "gear", "security", "second", "gsquad", "dnd", "pskeys"];
-ok("only Screen time and the gear stay on the page; every other top right button lives in the menu", () => {
+// PS 1.72 (Jan, 21 Nov 2026): The G Squad is the one addition on the page, its own button right beside the menu.
+const ON_PAGE = ["screentime", "gear", "gsquad"];
+ok("only Screen time, The G Squad and the gear stay on the page; every other top right button lives in the menu", () => {
   for (const id of TOP_RIGHT) {
     const s = L.slotInfo(id)!;
     assert.ok(s, id);
-    assert.equal(!!s.menu, id !== "screentime" && id !== "gear", id);
+    assert.equal(!!s.menu, !ON_PAGE.includes(id), id);
   }
   assert.ok(L.slotInfo("menu")?.keep, "the menu button can never be removed, so nothing in it can become unreachable");
   assert.ok(!L.canHide("menu") && !L.canHide("gear") && L.canHide("screentime"));
@@ -41,7 +43,18 @@ ok("plain names, Apple style: no description, no dashes, short; the developer's 
   const names = M.TOP_MENU.map((m) => m.label);
   assert.ok(names.includes("Network") && names.includes("Clear clipboard"));
   assert.deepEqual(names, ["AFK timer", "Morning brief", "End day", "Network", "Activity monitor", "Volume mixer", "Low power mode", "Clear clipboard",
-    "Do Not Disturb", "G Squad", "Second Computer", "Remote screen", "Tab overlay", "Security", "Lock"]);
+    "Do Not Disturb", "Second Computer", "Remote screen", "Tab overlay", "Security", "Lock"]);
+});
+ok("PS 1.72: The G Squad is out of the menu, its own button right after the menu's, named as Jan wrote it", () => {
+  assert.ok(!M.TOP_MENU.some((m) => m.id === ("gsquad" as never) || m.sel === ".gs-btn"), "no G Squad row");
+  assert.equal(L.slotInfo("gsquad")?.label, "The G Squad");
+  const t = src("views/TaskMap.tsx");
+  const menuAt = t.indexOf('<Slot id="menu"><TopMenu>{rest}</TopMenu></Slot>'), gsAt = t.indexOf('<Slot id="gsquad"><GSquadButton /></Slot>'), gearAt = t.indexOf('<Slot id="gear">');
+  assert.ok(menuAt > 0 && gsAt > menuAt && gearAt > gsAt, "menu, then The G Squad, then the gear");
+  assert.equal(t.slice(t.indexOf("const rest = ("), menuAt).includes("<GSquadButton"), false, "not inside the menu's dock");
+  const g = raw("views/GSquad.tsx");
+  assert.match(g, /data-tip="The G Squad"/);
+  assert.match(g, /aria-label=\{v\.in \? `The G Squad\. /);
 });
 ok("Clear clipboard says what the button does: it empties the clipboard (NSPasteboard clearContents, or an empty text on the web)", () => {
   assert.match(src("views/TaskMap.tsx"), /clearClipboard: async \(\) => \{ await navigator\.clipboard\.writeText\(""\); \}/);
@@ -76,16 +89,15 @@ ok("each row's state comes from its real button", () => {
   assert.deepEqual(M.rowLive("second", b({ label: "Second Computer" })), {});
   assert.deepEqual(M.rowLive("security", b({ cls: "sec-btn sec-warn" })), { dot: true });
   assert.deepEqual(M.rowLive("brief", b({ label: "Morning brief, new" })), { dot: true });
-  assert.deepEqual(M.rowLive("gsquad", b({}), "3"), { badge: "3" });
   assert.deepEqual(M.rowLive("clipboard", b({ cls: "tm-pill-btn icon ok" })), { value: "Cleared" });
   assert.deepEqual(M.rowLive("net", null), {});
 });
 ok("the mark on the menu button: needs a look first, then a mode that is on, and its label says which", () => {
   assert.deepEqual(M.menuMark([{ id: "net", live: {} }]), { mark: null, why: [] });
   assert.deepEqual(M.menuMark([{ id: "dnd", live: { value: "On" } }, { id: "lowpower", live: { on: false } }]), { mark: "on", why: ["Do Not Disturb is on"] });
-  const w = M.menuMark([{ id: "dnd", live: { value: "On" } }, { id: "gsquad", live: { badge: "2" } }, { id: "security", live: { dot: true } }]);
+  const w = M.menuMark([{ id: "dnd", live: { value: "On" } }, { id: "brief", live: { dot: true } }, { id: "security", live: { dot: true } }]);
   assert.equal(w.mark, "warn");
-  assert.deepEqual(w.why, ["G Squad, 2 new", "Security needs a look"]);
+  assert.deepEqual(w.why, ["Morning brief needs a look", "Security needs a look"]);
   assert.equal(M.menuMark([{ id: "afk", live: { value: "3:02" } }]).mark, "on");
 });
 ok("keyboard: up and down wrap, Home and End, a letter jumps to the next row with it", () => {

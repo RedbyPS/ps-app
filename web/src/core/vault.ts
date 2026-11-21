@@ -28,6 +28,7 @@ import { forgetPhoneKeys, readPhoneKeys, savePhoneKeys } from "./phonekeys";
 import { checkDue, phoneVerdict, setStay, shouldKeep, stayOn } from "./phonestay";
 import { feedOfAccount, isFeedSource, okFeedId } from "./calfeeds";
 import { lowPower } from "./lowpower.ts";
+import { heldLog, heldWords, isQuotaRefusal, nextTry, refusedAgain, sendable, type Held } from "./refused.ts";
 
 // The Supabase project: the build's own (the developer's vault), or in the PS Mac app the one this Mac was linked to
 // in PS's "Connect your own Supabase" setup (core/project.ts; the shell sets window.__psProject first).
@@ -896,7 +897,7 @@ export function lock() {
   linkCreds = null; phoneDevice = null; phoneCreds = null;
   stopLoops();
   VK = null; inboxPriv = null; WKS.clear(); meta = null; trustedAuthors = null; roleConfirmedFor = null;
-  rows = new Map(); outbox = new Map(); undecryptable = new Set();
+  rows = new Map(); outbox = new Map(); undecryptable = new Set(); held.clear();
   mailCache = new Map(); mailSkip = new Set(); mailGone = new Set(); sentCache = new Map();
   pkgQueue = []; importing.clear();
   seen = {}; lastResync = 0; inboxRetry = false;
@@ -1324,6 +1325,15 @@ function scheduleFlush() {
   if (flushTimer) clearTimeout(flushTimer);
   flushTimer = window.setTimeout(() => { flushTimer = null; void flush(); }, 400);
 }
+// PS 1.72: changes the server refused for the storage limit, waiting before their next try (core/refused.ts).
+const held = new Map<string, Held>();
+let heldTimer: number | null = null;
+function holdTimer() {
+  if (heldTimer) clearTimeout(heldTimer);
+  heldTimer = null;
+  const t = nextTry(held);
+  if (t !== null) heldTimer = window.setTimeout(() => { heldTimer = null; void flush(); }, Math.max(1000, t - Date.now()));
+}
 
 // A sync that started more than STUCK_MS ago is never waited on again (requests have a limit, this is
 // the second guard): the next sync runs instead of seeing "already running" forever.
@@ -1346,7 +1356,11 @@ async function flush() {
       const sentCt = new Map(list.map((r) => [r.id, r.ct]));
       return ((data || []) as Omit<Row, "ct">[]).map((r) => ({ ...r, ct: sentCt.get(r.id)! })) as Row[];
     };
-    const batch = [...outbox.values()].slice(0, 200);
+    // PS 1.72 (core/refused.ts): a change the server refused for the account's storage limit waits before its next try,
+    // so it never holds up the others; it stays in the outbox (never dropped, never cut down to fit).
+    const now0 = Date.now();
+    const batch = sendable(outbox.values(), held, now0).slice(0, 200);
+    if (!batch.length) { holdTimer(); emit({ pendingCount: outbox.size, syncError: heldWords(held) }); return; }
     const kinds = new Set(batch.map((r) => String(snap.docs.get(r.id)?.kind ?? "")));
     let data: Row[] = [];
     let dropped = 0;
@@ -1362,11 +1376,13 @@ async function flush() {
           if (isNetworkError(e2)) throw e2;
           const code = (e2 as { code?: string }).code;
           if ((row.workspace_id && !WKS.has(row.workspace_id)) || code === "42501" || code === "23503") { outbox.delete(row.id); dropped++; }
+          else if (isQuotaRefusal(e2)) { const h = refusedAgain(held.get(row.id), e2, Date.now()); held.set(row.id, h); console.warn(heldLog(row.id, h, Date.now())); }
         }
       }
     }
     if (dropped) console.warn(`vault: dropped ${dropped} change(s) the server refused`);
     for (const r of data) {
+      held.delete(r.id);   // it went up: the account has room again
       const sent = outbox.get(r.id);
       if (sent && sent.ct === r.ct) outbox.delete(r.id);
       rows.set(r.id, r);
@@ -1374,9 +1390,11 @@ async function flush() {
       if (d) d.updatedAt = r.updated_at, d.pending = outbox.has(r.id), d.author = r.author_id;
     }
     await persist();
-    emit({ pendingCount: outbox.size, syncError: null });
+    for (const id of [...held.keys()]) if (!outbox.has(id)) held.delete(id);   // sent another way, or deleted
+    emit({ pendingCount: outbox.size, syncError: heldWords(held) });
     if (data.length) pokeSaved(kinds);
-    if (outbox.size) scheduleFlush();
+    if (sendable(outbox.values(), held, Date.now()).length) scheduleFlush();
+    else holdTimer();
   } catch (e) {
     emit({ syncError: isNetworkError(e) ? "Offline. Changes are saved on this device and will sync." : String((e as Error).message || e) });
   } finally {

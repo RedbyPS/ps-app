@@ -1,4 +1,5 @@
 import Foundation
+import CoreGraphics
 
 // Unit tests for ClickMachine with made up event sequences. build.sh runs them before every
 // build and stops if one fails. Run alone: ./build.sh test
@@ -640,6 +641,49 @@ test("PS helper: never asks for Accessibility by itself, only when PS asks (on b
   check(!section("private func applyEmbedded()", "/// Embedded: the person clicked").contains("askAccessibility"), "no prompt when the standalone app quits")
   check(section("private func askedByPS()", "private var asked").contains("askAccessibility()"), "the prompt comes from PS's ask")
   check(start.contains("Helper.askNotice"), "listens for PS's ask")
+}
+
+// 21 Nov 2026, the developer: in Brave's save box only the sidebar (the colour tags) took clicks. Frames as measured on his Mac.
+test("save box sheet: a Brave window with the save panel service's frame passes clicks straight through") {
+  let sheet = CGRect(x: 169, y: 126, width: 1372, height: 830)       // Brave 1279, the sheet
+  let main = CGRect(x: 0, y: 38, width: 1710, height: 1007)          // Brave 143, the browser window behind it
+  let service = [sheet, CGRect(x: 0, y: 612, width: 500, height: 500), CGRect(x: 0, y: 0, width: 1, height: 1)]
+  check(PanelHost.hosts([(1279, sheet), (143, main)], panels: service) == [1279], "the sheet only, never the browser window behind it")
+  check(PanelHost.hosts([(1279, sheet), (143, main)], panels: []).isEmpty, "no panel service window: a centred second Brave window keeps middle clicks")
+  check(PanelHost.hosts([(1279, sheet.offsetBy(dx: 0.5, dy: -0.5))], panels: service) == [1279], "half a point off still matches")
+  check(PanelHost.hosts([(1279, sheet.offsetBy(dx: 3, dy: 0))], panels: service).isEmpty, "3 points off: another window")
+  check(PanelHost.hosts([(7, CGRect(x: 0, y: 0, width: 1, height: 1)), (8, CGRect(x: 0, y: 0, width: 80, height: 40))],
+                        panels: [CGRect(x: 0, y: 0, width: 1, height: 1), CGRect(x: 0, y: 0, width: 80, height: 40)]).isEmpty,
+        "tiny service windows never count")
+}
+
+test("save box sheet: only AppKit's out of process panel services count, never the Dock or the wallpaper") {
+  check(PanelHost.isPanelService("com.apple.appkit.xpc.openAndSavePanelService"), "the save panel service")
+  check(PanelHost.isPanelService("com.apple.appkit.xpc.TrustedUIService"), "AppKit's other UI services")
+  for id in ["com.apple.dock", "com.apple.WindowManager", "com.apple.ViewBridgeAuxiliary", "com.apple.notificationcenterui",
+             "com.brave.Browser", "com.google.Chrome", "com.electron.slack", "org.whispersystems.signal-desktop", "com.1password.1password"] {
+    check(!PanelHost.isPanelService(id), "\(id) is not a panel service")
+  }
+  check(!PanelHost.isPanelService(nil), "no bundle id: not one")
+  // A full screen Brave window has the Dock's and the wallpaper's frame, which are not panel services, so it keeps middle clicks.
+  let full = CGRect(x: 0, y: 0, width: 1710, height: 1112)
+  check(PanelHost.hosts([(9, full)], panels: []).isEmpty, "full screen browser window: still a browser window")
+}
+
+test("save box sheet: the window cache uses the rule, the tap trusts the cache, the golden rule comes first") {
+  let dir = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+  let win = (try? String(contentsOf: dir.appendingPathComponent("Sources/Windows.swift"), encoding: .utf8)) ?? ""
+  let tap = (try? String(contentsOf: dir.appendingPathComponent("Sources/Tap.swift"), encoding: .utf8)) ?? ""
+  check(win.contains("PanelHost.hosts(browserWins, panels: panels)") && win.contains("for id in hosts { fresh[CGWindowID(id)] = .other }"),
+        "panel hosts become 'other' (passed straight through)")
+  check(win.contains("app.panelService && layer == 0"), "only the services' normal level windows are panels")
+  check(win.contains("if app.kind == .browser"), "only browser windows are checked against them")
+  if let g = win.range(of: "if Protected.matches(id) { return App(kind: .other) }"), let p = win.range(of: "PanelHost.isPanelService(id)") {
+    check(g.lowerBound < p.lowerBound, "1Password and Signal are passed through before anything else is asked")
+  } else { check(false, "appInfo: golden rule and panel service check present") }
+  check(!win.contains("kCGWindowName") && !win.contains("kCGWindowOwnerName") && !win.contains("proc_pidpath"),
+        "never a window name, owner name or process path")
+  check(tap.contains("case .browser: return true") && tap.contains("case .other: return false"), "the tap holds browser windows only")
 }
 
 print("\(checks) checks, \(failures) failed")

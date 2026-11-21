@@ -1,8 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<!-- The PS 1.60 logo as layers (scripts/make-icon.py): its own light grey behind, the whole logo inside
-     the safe zone, and its PS strokes for themed icons. -->
-<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
-    <background android:drawable="@color/ic_launcher_back" />
-    <foreground android:drawable="@mipmap/ic_launcher_front" />
-    <monochrome android:drawable="@mipmap/ic_launcher_mono" />
-</adaptive-icon>

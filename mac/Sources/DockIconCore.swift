@@ -35,7 +35,20 @@ enum DockIconCore {
     guard let n = new, let o = old, !n.isEmpty, !o.isEmpty else { return false }
     return n != o
   }
-  static func icon(of app: URL) -> URL { app.appendingPathComponent("Contents/Resources/AppIcon.icns") }
+  /// PS 1.72: the bundle's icon file is what its Info.plist names (CFBundleIconFile). build.sh names it after its own
+  /// content (AppIcon-<hash>), so a new picture is a file Finder and the Dock have never cached; builds before 1.72 have
+  /// AppIcon. ".icns" is added when the name has none; a missing or odd name means AppIcon.icns.
+  static func iconFile(named name: String?) -> String {
+    let n = (name ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !n.isEmpty, !n.contains("/"), !n.hasPrefix(".") else { return "AppIcon.icns" }
+    return n.hasSuffix(".icns") ? n : n + ".icns"
+  }
+  /// The name in an Info.plist's bytes (read from the file each time: Bundle would cache it by path).
+  static func iconName(infoPlist: Data?) -> String? {
+    guard let d = infoPlist, let p = try? PropertyListSerialization.propertyList(from: d, format: nil) as? [String: Any] else { return nil }
+    return p["CFBundleIconFile"] as? String
+  }
+  static func icon(of app: URL, named name: String?) -> URL { app.appendingPathComponent("Contents/Resources/" + iconFile(named: name)) }
   static let lsregister = "/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
   /// How often to look while the update finishes, and for how long at most (the helper gives a new build 90 seconds).
   static let every: TimeInterval = 3, maxLooks = 200

@@ -155,11 +155,23 @@ export interface IslandInput {
   now?: number;
 }
 
+/** The pill the Mac draws. PS 1.72 (Jan, 21 Nov 2026: the island stayed black after he picked white, and its colour could
+ *  not be changed): with Around the notch chosen, the Mac still draws the pill wherever it cannot go round a notch (a
+ *  screen with none, the island moved off the top centre with its grab line, ps-mac Island.swift `pill`), and it painted
+ *  that pill in the Pill look's colours, so a Background or Accent picked for Around the notch never showed. Now that pill
+ *  takes the colours picked for Around the notch (each one only when picked), and keeps the Pill look's own style, size
+ *  and icon. With Pill below the notch chosen it is the Pill look, as always. */
+export function pillShown(prefs: Pick<IslandPrefs, "mode" | "pill" | "notch">): PillLook {
+  if (prefs.mode !== "notch") return prefs.pill;
+  const { fill, color } = prefs.notch;
+  return fill || color ? { ...prefs.pill, ...(fill ? { fill } : {}), ...(color ? { color } : {}) } : prefs.pill;
+}
+
 /** What the island shows now. Off still says so, so the native side hides it. */
 export function islandState(inp: IslandInput): IslandState {
   const prefs = islandPrefs(inp.settings.island);
   const priv = !!inp.settings.privateMode;
-  const { backs: _b, ...pill } = pillTones(prefs.pill);
+  const { backs: _b, ...pill } = pillTones(pillShown(prefs));
   const { backs: _n, ...notch } = notchTones(prefs.notch);
   const none: IslandState = { mode: prefs.mode, private: priv, task: null, more: 0, tasks: [], mail: 0, leads: 0, event: null, hide: prefs.hide, cards: prefs.cards, top: prefs.top, fsMove: prefs.fsMove, tickSide: prefs.tickSide, sounds: prefs.sounds, pill, notch };
   if (prefs.mode === "off") return none;

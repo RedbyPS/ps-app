@@ -6,21 +6,26 @@ import { sfx } from "../ui/sfx";
 import { settingsData } from "../core/select";
 import { isRedAccount } from "../core/account";
 import { allZones, DEVICE_TZ, HOME_COMMON, tzLabel } from "../core/tz";
+import { overdueZone } from "../core/overdue";
+import { resetAtOf } from "../core/resetday";
 import {
-  ANIMS, COLORS, DAY_NAMES, EVERY_CHOICES, FONTS, SIZE_MAX, SIZE_MIN, WEIGHTS, cdPatch, cdZone, cleanCd, clock, livelyStage, okHm, type CdPrefs,
+  ANIMS, COLORS, DAY_NAMES, EVERY_CHOICES, FONTS, SIZE_MAX, SIZE_MIN, WEIGHTS, WORDS, cdPatch, cdZone, cleanCd, clock, livelyStage, okHm, type CdPrefs,
 } from "../core/daycount";
 import { Choice, taskMapActions } from "./TaskMap";
-import { SetRow, type RowProps } from "./SettingsScreen";
+import { SetRow, openSettings, type RowProps } from "./SettingsScreen";
 import { Digits, cdClass, useDayView, useSecond } from "./DayCountdown";
 
 export type CdKey = "on" | "mode" | "tz" | "font" | "color" | "weight" | "size" | "anim" | "lively" | "island" | "remind" | "p1";
 
 function useCd() {
   const v = useVault();
-  const p = cleanCd(settingsData(v).countdown);
+  const st = settingsData(v);
+  const red = isRedAccount(v);
+  const p = cleanCd(st.countdown, red);
   const ready = v.status === "unlocked";
   const set = (change: Partial<CdPrefs>) => { if (ready) void taskMapActions.looks({ countdown: cdPatch(p, change) }); };
-  return { p, ready, set, red: isRedAccount(v) };
+  // PS 1.72: Day ends can follow the reset time (Settings, Time and reset, Reset automatically at), in the reset's own zone.
+  return { p, ready, set, red, resetAt: resetAtOf(st), resetTz: overdueZone(st.tmHomeTz) };
 }
 function Seg({ label, ready, children }: { label: string; ready: boolean; children: ReactNode }) {
   return <span className={`tm-ed-seg${ready ? "" : " gs-notyet"}`} role="radiogroup" aria-label={label}>{children}</span>;
@@ -57,7 +62,7 @@ function Sample({ p }: { p: CdPrefs }) {
 }
 
 export function CdSetting({ e, k }: RowProps & { k: CdKey }) {
-  const { p, ready, set, red } = useCd();
+  const { p, ready, set, red, resetAt, resetTz } = useCd();
   const [size, setSize] = useState<number | null>(null);
   switch (k) {
     case "on": return <SetRow e={e} right={<OnOff label={e.name} on={p.on} ready={ready} set={(on) => set({ on })} />} />;
@@ -79,11 +84,17 @@ export function CdSetting({ e, k }: RowProps & { k: CdKey }) {
       <SetRow e={e} open body={
         <div className="cds-mode">
           <Seg label={e.name} ready={ready}>
+            <Choice selected={p.mode === "reset"} onPick={() => { sfx.hover(); set({ mode: "reset" }); }}>{WORDS.sameAsReset(resetAt)}</Choice>
             <Choice selected={p.mode === "daily"} onPick={() => { sfx.hover(); set({ mode: "daily" }); }}>Every day at</Choice>
             <Choice selected={p.mode === "week"} onPick={() => { sfx.hover(); set({ mode: "week" }); }}>A time for each day</Choice>
           </Seg>
-          {p.mode === "daily" ? (
-            <div className="cds-line"><TimeBox value={p.at} ready={ready} label="Every day at" set={(at) => set({ at })} /></div>
+          {p.mode === "reset" ? (
+            <div className="cds-line">
+              <button type="button" className="cds-link" onClick={() => { sfx.click(); openSettings("time", { jump: "auto-reset" }); }}>Reset automatically at</button>
+            </div>
+          ) : p.mode === "daily" ? (
+            <div className="cds-line"><TimeBox value={p.at} ready={ready} label="Every day at" set={(at) => set({ at })} />
+              <button type="button" className="cds-link" onClick={() => { sfx.click(); openSettings("time", { jump: "auto-reset" }); }}>Reset automatically at</button></div>
           ) : (
             <div className="cds-week">
               {DAY_NAMES.map((d, i) => (
@@ -98,7 +109,7 @@ export function CdSetting({ e, k }: RowProps & { k: CdKey }) {
         </div>} />
     );
     case "tz": {
-      const def = cdZone({ tz: "" }, red, DEVICE_TZ);
+      const def = cdZone({ tz: "", mode: p.mode }, red, DEVICE_TZ, resetTz);
       const list = [...new Set([...(p.tz ? [p.tz] : []), ...HOME_COMMON, ...allZones()])];
       return (
         <SetRow e={e} right={

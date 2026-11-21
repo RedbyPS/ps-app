@@ -24,7 +24,8 @@ final class LocalCalendar {
   private var watchToken: NSObjectProtocol?
   private var changeTimer: DispatchWorkItem?
   private var reading = false
-  /// Asked once per Mac: a "Don't Allow" is never asked again by PS (the button opens System Settings instead).
+  /// Set when PS asks macOS (for the log and older builds only). A "Don't Allow" is never asked again: macOS keeps it as
+  /// "denied" and the button opens System Settings instead (CalAccessCore.swift).
   private let askedKey = "localCal.asked"
 
   static let days = 8                        // today plus the next 7 days
@@ -48,43 +49,29 @@ final class LocalCalendar {
     read(ask: msg["ask"] as? Bool == true)
   }
 
+  // PS 1.72 (Jan): the rules are in CalAccessCore.swift. "Not decided" is never "Calendar access is off" any more:
+  // macOS says it only when it has no answer for this copy of PS (a new signature, a privacy reset), and then a click
+  // on the Calendar switch or the refresh icon asks again. A real "Don't Allow" is macOS's "denied", never asked again.
   private func read(ask: Bool) {
-    switch Self.access(EKEventStore.authorizationStatus(for: .event)) {
-    case .allowed:
+    let raw = EKEventStore.authorizationStatus(for: .event).rawValue
+    let d = CalAccessCore.decide(status: raw, ask: ask)
+    switch d {
+    case .read:
       fetch()
-    case .refused:
-      reply(["status": "denied"])
-    case .unknown:
-      if ask && !UserDefaults.standard.bool(forKey: askedKey) {
-        UserDefaults.standard.set(true, forKey: askedKey)
-        psLog("PS calendar: asking macOS for Calendar access (Meetings panel)")
-        let done: (Bool, Error?) -> Void = { [weak self] ok, _ in
-          DispatchQueue.main.async {
-            psLog("PS calendar: Calendar access \(ok ? "allowed" : "refused")")
-            if ok { self?.fetch() } else { self?.reply(["status": "denied"]) }
-          }
+    case .askMacOS:
+      UserDefaults.standard.set(true, forKey: askedKey)
+      psLog("PS calendar: asking macOS for Calendar access (Meetings panel)")
+      let done: (Bool, Error?) -> Void = { [weak self] ok, _ in
+        DispatchQueue.main.async {
+          psLog("PS calendar: Calendar access \(ok ? "allowed" : "refused")")
+          if ok { self?.fetch() } else { self?.reply(["status": "denied"]) }
         }
-        if #available(macOS 14.0, *) { store.requestFullAccessToEvents(completion: done) }
-        else { store.requestAccess(to: .event, completion: done) }
-      } else {
-        reply(["status": UserDefaults.standard.bool(forKey: askedKey) ? "denied" : "ask"])
       }
-    }
-  }
-
-  enum Access { case allowed, refused, unknown }
-  static func access(_ s: EKAuthorizationStatus) -> Access {
-    if #available(macOS 14.0, *) {
-      switch s {
-      case .fullAccess: return .allowed
-      case .notDetermined: return .unknown
-      default: return .refused                 // denied, restricted, write only (cannot read events)
-      }
-    }
-    switch s.rawValue {
-    case 3: return .allowed                    // .authorized before macOS 14
-    case 0: return .unknown
-    default: return .refused
+      if #available(macOS 14.0, *) { store.requestFullAccessToEvents(completion: done) }
+      else { store.requestAccess(to: .event, completion: done) }
+    case .off, .notAsked:
+      if d == .off { psLog("PS calendar: Calendar access is off in macOS (status \(raw))") }
+      reply(["status": CalAccessCore.reply(d) ?? "ask"])
     }
   }
 

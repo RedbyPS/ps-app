@@ -42,6 +42,72 @@ html.gos body:has(.fi-layer, .gos-menu.open, .gs-win, .nu-layer, .dx-layer, .cs-
 @keyframes gos-isl-in { from { opacity: 0; transform: scale(.55); } 60% { opacity: 1; } to { opacity: 1; transform: none; } }
 @keyframes gos-isl-out { from { opacity: 1; transform: none; } to { opacity: 0; transform: scale(.5); } }
 @keyframes gos-isl-text { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: none; } }
+/* PS 1.72 (the developer, 21 Nov 2026), like the Mac's island. A reminder comes OUT: the pill springs wide with a squash and a glow in
+   its colour, then goes back in to the task, which keeps a small bell while the reminder waits. */
+.gos-isl.pop { box-shadow: 0 12px 34px rgba(0, 0, 0, .5), 0 0 0 1.5px color-mix(in srgb, var(--isl-acc) 70%, transparent), 0 0 26px color-mix(in srgb, var(--isl-acc) 45%, transparent); }
+.gos-isl.pop .gos-isl-b { animation: gos-isl-pop .7s var(--isl-spring) both; }
+.gos-isl.pop .gos-isl-ic { animation: gos-isl-ring 1.1s .25s ease-in-out 2; transform-origin: 50% 20%; }
+/* The bell sits on the icon's corner, so the task keeps all its room. */
+.gos-isl-ic { position: relative; }
+.gos-isl-bell { position: absolute; top: -4px; right: -6px; display: grid; place-items: center; width: 15px; height: 15px; border-radius: 50%; color: #111; background: #fbbf24; box-shadow: 0 0 0 2px #000; animation: gos-isl-bell-in .5s var(--isl-spring) both; }
+.gos-isl-bell svg { width: 10px; height: 10px; stroke-width: 2.6; }
+@keyframes gos-isl-bell-in { from { opacity: 0; transform: scale(.2); } to { opacity: 1; transform: none; } }
+@keyframes gos-isl-pop { 0% { transform: scale(.82, .7); } 45% { transform: scale(1.06, 1.08); } 70% { transform: scale(.98, .97); } 100% { transform: none; } }
+@keyframes gos-isl-ring { 0%, 100% { transform: rotate(0); } 20% { transform: rotate(16deg); } 40% { transform: rotate(-14deg); } 60% { transform: rotate(9deg); } 80% { transform: rotate(-5deg); } }
+
+/* The card a tap opens: it grows out of the island's place on the same spring and goes back into it. A tap on the dim
+   behind it, a swipe up, Esc or Back closes it. Above the dock, the thumb row and the round Add button (z 2147482700), under
+   the Add task sheet (2147482800); whatever it opens closes it first. */
+.gos-isl-dim { position: fixed; inset: 0; z-index: 2147482780; background: rgba(0, 0, 0, .34); animation: gos-isl-dim-in .25s ease both; }
+.gos-isl-dim.out { animation: gos-isl-dim-out .24s ease both; pointer-events: none; }
+.gos-isl-card {
+  --isl-spring: cubic-bezier(.34, 1.3, .5, 1);
+  position: fixed; z-index: 2147482790; top: calc(var(--gos-top, 0px) + 8px); left: 50%; width: min(380px, calc(100vw - 24px)); margin-left: calc(min(380px, calc(100vw - 24px)) / -2);
+  max-height: calc(100dvh - var(--gos-top, 0px) - 24px); overflow: auto; overscroll-behavior: contain;
+  display: grid; gap: 8px; padding: 10px 10px 18px; border-radius: 30px; background: #000; color: #f5f5f7;
+  box-shadow: 0 18px 50px rgba(0, 0, 0, .55), 0 0 0 1px rgba(255, 255, 255, .07);
+  transform-origin: 50% 0; touch-action: pan-x; transition: transform .3s var(--isl-spring);
+  animation: gos-isl-open .52s var(--isl-spring) both;
+  font-family: var(--k-font, "Inter Variable", Inter, system-ui, -apple-system, sans-serif);
+}
+.gos-isl-card.under-native { top: calc(var(--gos-top, 0px) + 64px); }   /* the GrapheneOS island sits just below the status bar */
+.gos-isl-card.out { animation: gos-isl-close .24s cubic-bezier(.5, 0, .75, .3) both; pointer-events: none; }
+.gos-isl-card > * { animation: gos-isl-text .34s .12s ease both; }
+.gos-isl-grip { justify-self: center; width: 36px; height: 4px; border-radius: 99px; background: rgba(255, 255, 255, .22); margin-top: 2px; }
+/* The reminder: its own colours, the ring card's order (pill, words, the box to type in, confirm, Remind me in, Open task). */
+.gos-isl-rem { display: grid; gap: 10px; padding: 16px 14px 14px; border-radius: 22px; text-align: center; background: var(--ir-bg, #28121e); color: var(--ir-ink, #fff); }
+.gos-isl-rem-pill { justify-self: center; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 6px 14px; border-radius: 99px; background: var(--ir-acc); color: var(--ir-on, #000); font-size: 12px; font-weight: 800; letter-spacing: .16em; text-transform: uppercase; }
+.gos-isl-rem-q { margin: 6px 0 4px; font-size: 21px; font-weight: 750; line-height: 1.25; overflow-wrap: anywhere; }
+.gos-isl-rem-type { font: inherit; font-size: 17px; text-align: center; padding: 12px; border-radius: 16px; border: 2px solid var(--ir-acc); background: transparent; color: inherit; outline: none; }
+.gos-isl-rem-type::placeholder { color: var(--ir-sub); }
+.gos-isl-rem-wrong { margin: -2px 0 0; font-size: 14px; color: var(--ir-sub); }
+.gos-isl-rem-yes, .gos-isl-rem-later, .gos-isl-rem-open { font: inherit; font-weight: 750; border-radius: 99px; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.gos-isl-rem-yes { min-height: 56px; font-size: 19px; border: 0; background: var(--ir-acc); color: var(--ir-on, #000); }
+.gos-isl-rem-later { min-height: 48px; font-size: 16px; border: 2px solid var(--ir-acc); background: transparent; color: var(--ir-sub); }
+.gos-isl-rem-open { min-height: 42px; font-size: 15px; border: 0; background: transparent; color: var(--ir-ink); text-decoration: underline; text-underline-offset: 3px; }
+.gos-isl-rem button:active { transform: scale(.97); }
+/* A timer or meeting that shows, and the task with its tick (the Mac's open island). */
+.gos-isl-row { all: unset; box-sizing: border-box; display: flex; align-items: center; gap: 10px; min-height: 52px; padding: 6px 14px 6px 10px; border-radius: 20px; background: rgba(255, 255, 255, .06); cursor: pointer; }
+.gos-isl-row.t-rem { --isl-acc: #fbbf24; } .gos-isl-row.t-fit { --isl-acc: #facc15; } .gos-isl-row.t-meet { --isl-acc: #4ade80; } .gos-isl-row.t-calm { --isl-acc: #fb7185; } .gos-isl-row.t-plain { --isl-acc: #f5f5f7; }
+.gos-isl-task { display: flex; align-items: center; gap: 8px; min-height: 56px; padding: 4px 6px 4px 14px; border-radius: 20px; background: rgba(255, 255, 255, .06); }
+.gos-isl-task-b { all: unset; box-sizing: border-box; flex: 1; min-width: 0; display: grid; gap: 2px; padding: 6px 0; cursor: pointer; }
+.gos-isl-task-b em { font-style: normal; font-size: 10.5px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; color: rgba(245, 245, 247, .55); }
+.gos-isl-task-b b { font-size: 15px; font-weight: 700; line-height: 1.3; overflow-wrap: anywhere; }
+.gos-isl-task-b s { font-size: 14px; color: rgba(245, 245, 247, .55); }
+.gos-isl-task-day { display: flex; }
+.gos-isl-tick, .gos-isl-undo { all: unset; flex: none; display: grid; place-items: center; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.gos-isl-tick { width: 44px; height: 44px; border-radius: 50%; color: #4ade80; box-shadow: inset 0 0 0 2px rgba(74, 222, 128, .55); }
+.gos-isl-tick:active { transform: scale(.9); background: rgba(74, 222, 128, .18); }
+.gos-isl-undo { height: 36px; padding: 0 16px; border-radius: 99px; font-size: 14px; font-weight: 700; background: rgba(255, 255, 255, .12); }
+.gos-isl-task.done { min-height: 48px; }
+.gos-isl-task.dim .gos-isl-task-b b { color: rgba(245, 245, 247, .72); }
+.gos-isl-card :focus-visible { outline: 2px solid rgba(255, 255, 255, .7); outline-offset: 2px; }
+@keyframes gos-isl-open { from { opacity: 0; transform: scale(.5, .16); border-radius: 999px; } 55% { opacity: 1; } to { opacity: 1; transform: none; } }
+@keyframes gos-isl-close { from { opacity: 1; transform: none; } to { opacity: 0; transform: scale(.55, .2); } }
+@keyframes gos-isl-dim-in { from { opacity: 0; } }
+@keyframes gos-isl-dim-out { to { opacity: 0; } }
+
 @media (prefers-reduced-motion: reduce) {
-  .gos-isl, .gos-isl.out, .gos-isl-txt { animation: none; transition: none; }
+  .gos-isl, .gos-isl.out, .gos-isl-txt, .gos-isl.pop .gos-isl-b, .gos-isl.pop .gos-isl-ic, .gos-isl-bell,
+  .gos-isl-card, .gos-isl-card.out, .gos-isl-card > *, .gos-isl-dim, .gos-isl-dim.out { animation: none; transition: none; }
 }

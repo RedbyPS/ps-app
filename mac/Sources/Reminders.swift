@@ -212,7 +212,8 @@ final class Reminders: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
     let c = WKWebViewConfiguration()
     c.websiteDataStore = .nonPersistent()
     c.userContentController.add(self, name: "fu")
-    let w = WKWebView(frame: NSRect(x: 0, y: 0, width: Reminders.width, height: 170), configuration: c)
+    // The panel is non activating and not key while it waits: a plain WKWebView dropped the first click (main.swift).
+    let w = ClickThroughWebView(frame: NSRect(x: 0, y: 0, width: Reminders.width, height: 170), configuration: c)
     w.setValue(false, forKey: "drawsBackground")
     w.navigationDelegate = self
     let p = FuPanel(contentRect: NSRect(x: 0, y: 0, width: Reminders.width, height: 170), styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)

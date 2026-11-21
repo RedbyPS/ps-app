@@ -42,14 +42,21 @@ export type NavItem = string;
 export type PhoneNav = { edge: NavEdge; align: NavAlign; items: NavItem[] };
 export type PhoneLayout = { phone: PhoneKind; at: string; pages: PhonePage[]; nav: PhoneNav; bg?: string; look?: string };
 
-/** The navbar buttons a phone has (the dock in gos/GosLayer.tsx). keep: never taken out. red: the developer's account only. */
-export type NavInfo = { id: string; label: string; keep?: boolean; red?: boolean };
+/** The navbar buttons a phone has (the dock in gos/GosLayer.tsx). keep: never taken out. red: the developer's account only.
+ *  optIn (PS 1.72, like the Tab list's Pomodoro in 1.70): not in the navbar by default; Edit mode's navbar list adds it, and
+ *  it goes back in its own place in this order (toggleNav). add: its name in that list, when it differs from the button's.
+ *  The order here is each button's place: a new default button goes where it should sit. */
+export type NavInfo = { id: string; label: string; keep?: boolean; red?: boolean; optIn?: boolean; add?: string };
 export const NAV_ITEMS: readonly NavInfo[] = [
   { id: "plan", label: "Plan" },
   { id: "list", label: "List" },
   { id: "inbox", label: "Inbox" },
   { id: "gym", label: "Gym" },
-  { id: "sounds", label: "Sounds" },
+  // PS 1.72 (the developer, 21 Nov 2026): the Soundboard leaves the navbar by default, here and on the Mac's Tab list. Its own id, so a
+  // navbar saved before 1.72 with the old "sounds" button no longer draws it (cleanNavItems drops ids it does not know;
+  // carryUnknownPhone keeps the stored word for an older PS). Edit mode adds it back, in this place. This is the place a
+  // new default button between Gym and Vault takes (the Clients workspace the developer has planned).
+  { id: "soundboard", label: "Sounds", add: "Soundboard", optIn: true },
   { id: "vault", label: "Vault" },
   { id: "rules", label: "Rules", red: true },
   { id: "settings", label: "Settings", keep: true },
@@ -102,7 +109,7 @@ export function phoneGallery(l: PhoneLayout, page: string, red: boolean): { kind
 }
 
 /** The navbar a phone had before V1.56 (gos/GosLayer.tsx): every button, Rules only on the developer's account. */
-export const defaultNavItems = (red: boolean): NavItem[] => NAV_ITEMS.filter((n) => red || !n.red).map((n) => n.id);
+export const defaultNavItems = (red: boolean): NavItem[] => NAV_ITEMS.filter((n) => (red || !n.red) && !n.optIn).map((n) => n.id);
 export function defaultPhoneLayout(phone: PhoneKind, red = false): PhoneLayout {
   return { phone, at: "", pages: BUILT_IN.map((k) => ({ id: k, kind: k })), nav: { edge: "bottom", align: "full", items: defaultNavItems(red) } };
 }
@@ -406,13 +413,17 @@ export function toggleNav(l: PhoneLayout, item: NavItem, red: boolean, at: strin
   if (l.nav.items.includes(item)) return NAV.get(item)?.keep ? l : setNavItems(l, l.nav.items.filter((x) => x !== item), red, at);
   if (l.nav.items.length >= MAX_NAV) return l;
   const items = [...l.nav.items];
+  // An opt in button goes back in its own place: before the first button that comes after it in NAV_ITEMS.
+  const rank = (x: NavItem) => NAV_ITEMS.findIndex((n) => n.id === x);
+  const mine = NAV.get(item)?.optIn ? rank(item) : -1;
+  const after = mine < 0 ? -1 : items.findIndex((x) => rank(x) > mine);
   const s = items.indexOf("settings");
-  items.splice(s < 0 ? items.length : s, 0, item);
+  items.splice(after >= 0 ? after : s < 0 ? items.length : s, 0, item);
   return setNavItems(l, items, red, at);
 }
 /** Every button this account can put in the navbar: the phone's own and one per page of panels. */
 export function navChoices(l: PhoneLayout, red: boolean): { id: NavItem; label: string; keep: boolean; on: boolean }[] {
-  const own = NAV_ITEMS.filter((n) => red || !n.red).map((n) => ({ id: n.id, label: n.label, keep: !!n.keep }));
+  const own = NAV_ITEMS.filter((n) => red || !n.red).map((n) => ({ id: n.id, label: n.add ?? n.label, keep: !!n.keep }));
   const pages = l.pages.filter((p) => p.kind === "panels").map((p) => ({ id: `page:${p.id}`, label: p.name || "Page", keep: false }));
   return [...own, ...pages].map((x) => ({ ...x, on: l.nav.items.includes(x.id) }));
 }

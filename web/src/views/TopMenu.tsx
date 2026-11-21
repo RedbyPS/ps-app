@@ -12,7 +12,7 @@
 //   letter move; Enter or Space picks; Right on Do Not Disturb reaches its settings; Esc closes it (core/escape.ts: the
 //   key is marked as used, so PS keeps the list) and puts the focus back on the button. A click outside closes it too.
 // - While it is open the list stays when Tab is let go, and takes the keyboard (PS: "dimx", like the other screens).
-// - A mark on the button: pink when something needs a look (Security, new G Squad messages, a new Morning brief), soft
+// - A mark on the button: pink when something needs a look (Security, a new Morning brief), soft
 //   blue while a mode runs (Do Not Disturb, Low power mode, an AFK timer, the Remote screen). Its label says which.
 import { useEffect, useId, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { PS, psPost, useOverlayShown } from "../ps";
@@ -35,8 +35,7 @@ function readRows(dock: HTMLElement | null): Row[] {
     const b = q(item.sel)!;
     const p = b.getAttribute("aria-pressed");
     const real = { pressed: p === null ? null : p === "true", label: b.getAttribute("aria-label") || "", text: b.textContent || "", cls: typeof b.className === "string" ? b.className : "" };
-    const badge = item.id === "gsquad" ? (b.querySelector(".gc-badge")?.textContent || "").trim() : "";
-    return { item, live: rowLive(item.id, real, badge), disabled: (b as HTMLButtonElement).disabled === true };
+    return { item, live: rowLive(item.id, real), disabled: (b as HTMLButtonElement).disabled === true };
   });
 }
 const rowsKey = (rows: Row[]) => JSON.stringify(rows.map((r) => [r.item.id, r.live, r.disabled]));

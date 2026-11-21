@@ -4,6 +4,7 @@
 // are placeholders the later V1.40 chats fill in through squad/tabs.ts. Everything the squad sees is opened on
 // the main page and arrives here as a plain view (squad/mirror.ts); this window holds no key.
 // Every account sees it in PS (public too), and every sharing switch is here, so a stranger's PS shows them all.
+import { TopIcon } from "./topicons";
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { shareOn, type SharePiece } from "../core/squadshare";
 import { useOverlayShown } from "../ps";
@@ -74,10 +75,10 @@ export function GSquadButton() {
   return (
     <span className="gs-wrap">
       <button ref={btn} type="button" className={`gs-btn${open ? " open" : ""}${live ? " live" : ""}${v.in ? "" : " gs-none"}`} aria-haspopup="dialog" aria-expanded={open}
-        aria-label={v.in ? `G Squad. ${workingLine(n)}${chat.unread ? `. ${chat.unread} new ${chat.unread === 1 ? "message" : "messages"}` : ""}` : `G Squad. ${outLine}`}
-        data-tip="G Squad" data-tip-line={v.in ? workingLine(n) : outLine}
+        aria-label={v.in ? `The G Squad. ${workingLine(n)}${chat.unread ? `. ${chat.unread} new ${chat.unread === 1 ? "message" : "messages"}` : ""}` : `The G Squad. ${outLine}`}
+        data-tip="The G Squad" data-tip-line={v.in ? workingLine(n) : outLine}
         onClick={() => { sfx.click(); setPop(!open); }}>
-        <SquadIcon />
+        <TopIcon id="gsquad" />   {/* PS 1.72: the two people its menu row had (Jan saw it there) */}
         {live && <b className="gs-n num" aria-hidden="true">{n}</b>}
         {!v.in && <i className="gs-plus" aria-hidden="true" />}
         {v.waiting > 0 && <i className="gs-wait" aria-hidden="true" />}

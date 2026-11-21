@@ -225,6 +225,7 @@ object Gym {
             if (can(c)) nm(c).notify(RING_ID, ringNotice(c))
             Buzz.once(c)
         }
+        RingScreen.bring(c, GymRingActivity::class.java, RING, "gym")   // 1.72: the card at once, over other apps and the lock screen
     }
     /** Quiet now: no sound, no ring card. The ring itself is kept (Later). */
     private fun silence(c: Context) {

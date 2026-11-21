@@ -4,7 +4,7 @@
 // background and look; the record and the PS Tab list's op.
 import assert from "node:assert/strict";
 import {
-  COLS, HOME, MAX_NAV, MAX_PAGES, PHONE_PANELS, addPage, addTile, cleanNavItems, cleanPhoneLayout, cleanPhoneLayoutOp, defaultPhoneLayout, freeSpot,
+  COLS, HOME, MAX_NAV, MAX_PAGES, PHONE_PANELS, addPage, addTile, cleanNavItems, defaultNavItems, cleanPhoneLayout, cleanPhoneLayoutOp, defaultPhoneLayout, freeSpot,
   isDefaultPhone, lookOf, moveTile, navChoices, navLabel, orderPages, phoneCan, phoneGallery, pickPhoneLayout, removePage, removeTile, renamePage,
   resizeTile, samePhoneLayout, cellAt, cellBox, cellsFor, ROW_H, setLook, setNavAlign, setNavEdge, setNavItems, settle, shiftPage, tileToPage, toggleNav, type PhoneLayout, type Tile,
 } from "../src/core/phonelayout.ts";
@@ -19,10 +19,10 @@ const overlaps = (ts: Tile[]) => ts.some((a, i) => ts.some((b, j) => i !== j && 
 const inGrid = (ts: Tile[]) => ts.every((t) => t.c >= 0 && t.c + t.w <= COLS && t.r >= 0 && t.w >= 1 && t.h >= 1);
 
 // ---------- the default and storage per phone ----------
-ok("a phone with no record looks exactly as before V1.56: Plan, List, Inbox and every dock button at the bottom", () => {
+ok("a phone with no record: Plan, List, Inbox and every dock button at the bottom but the Soundboard (PS 1.72)", () => {
   const g = defaultPhoneLayout("gos", false);
   assert.deepEqual(g.pages.map((p) => p.id), ["plan", "list", "inbox"]);
-  assert.deepEqual(g.nav, { edge: "bottom", align: "full", items: ["plan", "list", "inbox", "gym", "sounds", "vault", "settings"] });
+  assert.deepEqual(g.nav, { edge: "bottom", align: "full", items: ["plan", "list", "inbox", "gym", "vault", "settings"] });
   assert.ok(defaultPhoneLayout("gos", true).nav.items.includes("rules"), "The developer's dock has Rules");
   assert.ok(isDefaultPhone(g));
   assert.equal(HOME, "list");
@@ -190,7 +190,6 @@ ok("navbar: top or bottom, full, left, centre or right; buttons in and out in an
   l = setNavAlign(l, "center", AT);
   assert.deepEqual([l.nav.edge, l.nav.align], ["top", "center"]);
   l = toggleNav(l, "vault", false, AT);
-  l = toggleNav(l, "sounds", false, AT);
   assert.deepEqual(l.nav.items, ["plan", "list", "inbox", "gym", "settings"]);
   assert.equal(toggleNav(l, "settings", false, AT), l, "Settings never leaves");
   l = toggleNav(l, "vault", false, AT);
@@ -199,7 +198,7 @@ ok("navbar: top or bottom, full, left, centre or right; buttons in and out in an
   assert.deepEqual(l.nav.items, ["settings", "list", "gym"], "any order, Settings too");
   assert.deepEqual(setNavItems(l, ["list"], false, AT).nav.items, ["list", "settings"]);
   assert.ok(!setNavItems(l, ["rules", "list"], false, AT).nav.items.includes("rules"), "Rules only on the developer's account");
-  assert.equal(cleanNavItems(["plan", "list", "inbox", "gym", "sounds", "vault", "rules", "x", "page:a", "list"], l.pages, true).length, 8);
+  assert.equal(cleanNavItems(["plan", "list", "inbox", "gym", "soundboard", "vault", "rules", "x", "page:a", "list"], l.pages, true).length, 8);
   assert.ok(cleanNavItems(Array(20).fill(0).map((_, i) => `n${i}`), l.pages, true).length <= MAX_NAV);
 });
 ok("navbar: a page of panels can have its own button, named after the page", () => {
@@ -255,4 +254,23 @@ ok("the grid on screen: tiles land on whole cells, the inverse finds the same ce
   assert.deepEqual(cellsFor(5, 5, W), { w: 1, h: 1 });
 });
 
+// ---------- PS 1.72: the Soundboard off the navbar by default (the developer, 21 Nov 2026), like Pomodoro on the Tab list in 1.70 ----------
+ok("the Soundboard: not in a new navbar, and a navbar saved before 1.72 with the old Sounds button no longer draws it", () => {
+  assert.ok(!defaultNavItems(false).includes("soundboard") && !defaultNavItems(true).includes("soundboard"));
+  const old = cleanPhoneLayout({ phone: "gos", pages: [], nav: { edge: "bottom", align: "full", items: ["plan", "list", "inbox", "gym", "sounds", "vault", "settings"] } }, "gos", false);
+  assert.deepEqual(old.nav.items, ["plan", "list", "inbox", "gym", "vault", "settings"]);
+});
+ok("the Soundboard: Edit mode's navbar list offers it by its Soundboard name, and it goes back in its own place, between Gym and Vault", () => {
+  let l = defaultPhoneLayout("gos");
+  const c = navChoices(l, false).find((x) => x.id === "soundboard")!;
+  assert.equal(c.label, "Soundboard"); assert.equal(c.on, false);
+  l = toggleNav(l, "soundboard", false, AT);
+  assert.deepEqual(l.nav.items, ["plan", "list", "inbox", "gym", "soundboard", "vault", "settings"]);
+  assert.equal(navLabel(l, "soundboard"), "Sounds", "the button keeps its word");
+  l = toggleNav(l, "soundboard", false, AT);
+  assert.ok(!l.nav.items.includes("soundboard"));
+  // A button that is not opt in still comes back before Settings.
+  l = toggleNav(toggleNav(l, "gym", false, AT), "gym", false, AT);
+  assert.deepEqual(l.nav.items, ["plan", "list", "inbox", "vault", "gym", "settings"]);
+});
 console.log(`\n${n} passed`);

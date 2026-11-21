@@ -38,7 +38,8 @@ export interface IslandIn {
   fit?: { moment: { id: string; title: string; sub: string; until: number } | null; rest: { endsAt: number; exercise: string; set: number; of: number; over: boolean; overAt: number } | null } | null;
 }
 export interface NoteIn { id: string; title: string; body: string; at: string }
-export interface RemIn { id: string; text: string; task: string }
+/** A reminder showing now. `snooze`: its own length in minutes (it comes out of the island again at that rhythm). */
+export interface RemIn { id: string; text: string; task: string; snooze?: number }
 
 /** How long a new squad message stays on the island (the Mac's event time). */
 export const NOTE_MS = 12_000;
@@ -144,4 +145,79 @@ export function nextLook(m: PhoneMoment | null, st: IslandIn | null | undefined,
   if (st?.stand) t.push(st.stand.at - STAND_EARLY_MS);
   const next = t.filter((x) => x > now).map((x) => x - now + 20);
   return Math.max(250, Math.min(30_000, ...next));
+}
+
+// ---------- PS 1.72: like the Mac's island (the developer, 21 Nov 2026) ----------
+// "By default the island shows my current task. Reminders and other moments come OUT of the island with a fancy animation.
+// Tapping it does something." Before this a reminder sat on the island until it was answered and a tap only went to the
+// list, so nothing happened. Now a reminder comes out for POP_MS, goes back in to the task with a small bell while it
+// waits, and comes out again at its own snooze rhythm (the ring's) and each time PS comes to the front. A tap opens the
+// card (gos/PhoneIsland.tsx) with the reminder's real buttons, the same rules as the ring card and the Mac card.
+
+/** How long a reminder stays out of the island before it goes back in to the task. */
+export const POP_MS = 8_000;
+
+/** When each reminder showing now was first seen while the island was up. Answered ones drop out; new ones start now. */
+export function remSeen(prev: Readonly<Record<string, number>>, rems: RemIn[], now: number): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const r of rems) out[r.id] = prev[r.id] ?? now;
+  return out;
+}
+const everyOf = (snooze: number | undefined) => Math.max(1, Math.min(240, Number.isFinite(snooze) ? Number(snooze) : 15)) * 60_000;
+/** Out of the island now: for POP_MS from when it came, then again every snooze length until it is answered. */
+export function remOut(since: number | undefined, snooze: number | undefined, now: number): boolean {
+  if (since === undefined || !Number.isFinite(since) || now < since) return false;
+  return (now - since) % everyOf(snooze) < POP_MS;
+}
+/** The next moment a reminder comes out or goes back in (epoch ms), or null when none waits. */
+export function remTurn(rems: RemIn[], seen: Readonly<Record<string, number>>, now: number): number | null {
+  let best: number | null = null;
+  for (const r of rems) {
+    const since = seen[r.id];
+    if (since === undefined) continue;
+    const every = everyOf(r.snooze), into = Math.max(0, now - since) % every;
+    const at = now - into + (into < POP_MS ? POP_MS : every);
+    if (best === null || at < best) best = at;
+  }
+  return best;
+}
+
+/** What the island shows. `face`: the pill (as before, but a reminder only while it is out), `waiting`: the reminders not
+ *  answered yet and not on the face (the small bell), `out`: a reminder is out right now (the pop). */
+export interface IslandLook { face: PhoneMoment | null; waiting: RemIn[]; out: boolean }
+export function islandLook(st: IslandIn | null | undefined, notes: NoteIn[], rems: RemIn[], seen: Readonly<Record<string, number>>, now: number): IslandLook {
+  const outs = rems.filter((r) => remOut(seen[r.id], r.snooze, now));
+  let face = pickMoment(st, notes, outs, now);
+  // Nothing else to show (no task): the waiting reminder stays as a small pill, so a tap can still reach its buttons.
+  if (!face && rems.length) { const m = pickMoment({ private: st?.private }, [], [rems[0]], now); if (m) face = { ...m, big: false }; }
+  const onFace = face?.kind === "rem" ? face.id.slice(2) : "";
+  return { face, waiting: rems.filter((r) => r.id !== onFace), out: face?.kind === "rem" && face.big };
+}
+
+/** What a tap does. New messages, emails, AI chats and Fitness moments open their own screen, as they always did (their
+ *  own action). The task, a reminder and the timers open the card. Nothing to put in a card: the old direct open. */
+export type IslandTap = "open" | "card";
+const DIRECT: MomentKind[] = ["squad", "mail", "lead", "chat", "fit"];
+export function tapDoes(look: IslandLook, st: IslandIn | null | undefined): IslandTap {
+  const f = look.face;
+  if (!f) return "open";
+  if (DIRECT.includes(f.kind)) return "open";
+  const c = cardOf(look, st, null, look.waiting);
+  return c.rem || f.kind === "rem" || c.task || c.moment ? "card" : "open";
+}
+
+/** The card a tap opens: the reminder with its buttons (the one asked for, else the one on the face, else the first one
+ *  waiting), the timer or meeting that shows (a tap on it opens its screen), and the task being worked on with its tick.
+ *  Private mode: no task row (its name stays hidden, as on the Mac). */
+export interface IslandCard { rem: RemIn | null; moment: PhoneMoment | null; task: { id: string; title: string; dim: boolean } | null }
+export function cardOf(look: IslandLook, st: IslandIn | null | undefined, pick: string | null, rems: RemIn[]): IslandCard {
+  const f = look.face;
+  const rem = (pick ? rems.find((r) => r.id === pick) : undefined)
+    ?? (f?.kind === "rem" ? rems.find((r) => `r:${r.id}` === f.id) : undefined)
+    ?? look.waiting[0] ?? null;
+  const moment = f && f.kind !== "task" && f.kind !== "rem" && !DIRECT.includes(f.kind) ? f : null;
+  const t = st?.task;
+  // dim: nothing is marked as working, so this is the next Priority 1 task (the Mac's dimmed row): no "Working on" over it.
+  const task = t && !st?.private && clip(t.title, 1) ? { id: t.id, title: clip(t.title, 120), dim: !!t.dim } : null;
+  return { rem, moment, task };
 }

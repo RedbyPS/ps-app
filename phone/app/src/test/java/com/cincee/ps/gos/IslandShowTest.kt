@@ -101,4 +101,12 @@ class IslandShowTest {
         assertEquals("A message from an AI", priv.event!!.title); assertEquals("", priv.event!!.sub)
         assertTrue(!IslandShow.page(JSONObject("""{"mode":"off"}"""), T).on)
     }
+
+    /** PS 1.72: a tap on a reminder's pop opens PS on the island's card for that reminder (web GosLayer "rem:"). */
+    @Test fun aReminderPopOpensItsCard() {
+        assertEquals("rem:ab12", IslandShow.remOpen("ab12"))
+        val pop = IslandShow.Pop("rem:ab12", IslandShow.Tone.AMBER, "Daily reminder", "Drink water", IslandShow.remOpen("ab12"), T + 10_000)
+        val big = IslandShow.look(page(working = true), listOf(pop), T, emptyMap()) as IslandShow.Look.Big
+        assertEquals("rem:ab12", big.open)
+    }
 }

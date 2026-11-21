@@ -16,6 +16,9 @@ object IslandShow {
     const val MEET_JOIN_MS = 120_000L     // core/meetbubble.ts
     const val EVENT_MS = 8_000L           // a pop on the phone (the Mac's is 12 s; a phone's heads up says it too)
     const val REMINDER_MS = 10_000L
+    /** PS 1.72 (the developer, 21 Nov 2026: a tap on the reminder did nothing useful): a tap on a reminder's pop opens PS on the
+     *  island's card for that reminder, with its real buttons (web gos/PhoneIsland.tsx, GosLayer "rem:"). */
+    fun remOpen(id: String): String = "rem:$id"
     const val REST_OVER_MS = 3_000L       // web core/fitisland.ts REST_OVER_MS: "Rest over" holds this long
 
     enum class Tone { PINK, GREEN, AMBER, BLUE, CORAL }

@@ -256,6 +256,26 @@ object Notifier {
         c.getSystemService(NotificationManager::class.java).notify("updated", 8, n)
     }
 
+    /** PS 1.72 (the developer: after an update the old icon lingered on the notifications; RepostCore.kt has the rules): right
+     *  after an update every PS notification still showing is posted again by this build, silently (no sound, no buzz,
+     *  no pop up), with this build's icon, so the shade and the status bar show the new picture at once. */
+    fun repostAfterUpdate(c: Context) {
+        if (!can(c)) return
+        val nm = c.getSystemService(NotificationManager::class.java)
+        val live = runCatching { nm.activeNotifications.toList() }.getOrDefault(emptyList()).filter { it.packageName == c.packageName }.map {
+            RepostCore.Live(it.id, it.tag, (it.notification.flags and Notification.FLAG_FOREGROUND_SERVICE) != 0, it.notification.fullScreenIntent != null)
+        }
+        val h = android.os.Handler(android.os.Looper.getMainLooper())
+        RepostCore.pick(live, setOf("updated")).forEachIndexed { i, l ->
+            h.postDelayed({
+                runCatching {
+                    val s = nm.activeNotifications.firstOrNull { it.id == l.id && it.tag == l.tag } ?: return@runCatching   // gone meanwhile: stays gone
+                    nm.notify(l.tag, l.id, Notification.Builder.recoverBuilder(c, s.notification).setSmallIcon(R.drawable.ic_stat_ps).setOnlyAlertOnce(true).build())
+                }
+            }, RepostCore.delay(i))
+        }
+    }
+
     fun update(c: Context, version: String, keyword: String = "") {
         if (!can(c)) return
         val n = Notification.Builder(c, UPDATES).setSmallIcon(R.drawable.ic_stat_ps).setColor(Color.parseColor("#EC4E86"))

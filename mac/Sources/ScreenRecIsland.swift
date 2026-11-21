@@ -1,6 +1,5 @@
 import AppKit
 import SwiftUI
-import CoreAudio
 import Darwin
 
 // Screen recorder, the island side on screen (PS 1.60, pull request 12b). The rules are in ScreenRecIslandCore.swift (tested without
@@ -122,7 +121,7 @@ final class ScreenRecIsland {
     if IslandQueue.shared.isActive("private-ask") || IslandQueue.shared.isWaiting("private-ask") { pending = true }
     if f.calendarName == nil {
       f.appWindows = Self.meetingWindows()
-      f.micInUse = !f.appWindows.isEmpty && Self.micInUse()
+      f.micInUse = !f.appWindows.isEmpty && Mic.inUse   // last known state from the audio queue, never waits on Core Audio
     }
     b.meetingTick(f, privateAskPending: pending)
   }
@@ -138,16 +137,6 @@ final class ScreenRecIsland {
     }
     return out.sorted()
   }
-  /// The default microphone is running for some app.
-  static func micInUse() -> Bool {
-    var a = AudioObjectPropertyAddress(mSelector: kAudioHardwarePropertyDefaultInputDevice, mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
-    var dev = AudioDeviceID(0), size = UInt32(MemoryLayout<AudioDeviceID>.size)
-    guard AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &a, 0, nil, &size, &dev) == noErr, dev != 0 else { return false }
-    a.mSelector = kAudioDevicePropertyDeviceIsRunningSomewhere
-    var run: UInt32 = 0; size = UInt32(MemoryLayout<UInt32>.size)
-    return AudioObjectGetPropertyData(dev, &a, 0, nil, &size, &run) == noErr && run != 0
-  }
-
   // ----- the performance watch's sampler (every few seconds, only while recording) -----
   private func startMemory() {
     guard memSource == nil else { return }

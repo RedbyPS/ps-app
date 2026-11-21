@@ -375,6 +375,7 @@ object Sleep {
         runCatching { c.startForegroundService(Intent(c, SleepService::class.java).setAction("ring")) }
             .onFailure { Gym.Buzz.once(c) }
         if (can(c)) nm(c).notify(RING_ID, ringNotice(c))
+        RingScreen.bring(c, SleepActivity::class.java, RING, "sleep")   // 1.72: the clock at once, over other apps and the lock screen
         main.post { SleepActivity.refreshAll() }
     }
     /** The alarm loudness (V1.44; V1.43: Loud only, to full): the alarm volume to its step for the alarm; what it was is

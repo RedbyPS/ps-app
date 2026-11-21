@@ -1,0 +1,18 @@
+/* What the phone menu launches (gos/launch.ts; the wheel's in PS 1.67, the top left menu's since 1.72, gos/navitems.ts).
+   Scoped to html.gos[data-gos-launch], set by gos/GosLayer.tsx on the phone, so the Mac and the website never see it. */
+
+/* The card that zooms a closing screen back into its spot. */
+.gos-launch-ghost { position: fixed; z-index: 2147483250; pointer-events: none; will-change: transform, opacity; box-shadow: 0 20px 50px -20px rgba(0, 0, 0, .8); }
+
+/* Screens open full screen on the phone (the Mac keeps its windows). Edge to edge from under the status bar to above the home
+   indicator, square corners, no card floating over a dim. A docked (minimised) window keeps its own shape. */
+html.gos[data-gos-launch] :is(.dx-win, .cs-win, .bf-win, .ms-win, .nu-win, .sp-win):not(.docked, .docked *) {
+  top: var(--sat, 0px) !important; bottom: var(--gos-bottom, 0px) !important; left: 0 !important; right: 0 !important; border-radius: 0 !important; }
+html.gos[data-gos-launch] .tl-layer:not(.out) { padding: var(--sat, 0px) 0 var(--gos-bottom, 0px) !important; }
+html.gos[data-gos-launch] .tl-layer .tl-win { width: 100% !important; height: 100% !important; border-radius: 0 !important; }
+html.gos[data-gos-launch] .gt-scrim { padding: var(--sat, 0px) 0 var(--gos-bottom, 0px) !important; }
+html.gos[data-gos-launch] .gt-scrim .gt-win { width: 100% !important; height: 100% !important; max-width: none !important; max-height: none !important; border-radius: 0 !important; }
+
+/* The menu's own Do Not Disturb button (GosLayer.tsx): out of sight, it only carries the sheet on every page, Vault included. */
+.gos-menu-dnd { position: fixed; left: 0; top: 0; width: 0; height: 0; z-index: 2147482650; }
+.gos-menu-dnd :is(.dnd-btn, .dnd-cog) { position: fixed; left: -300px; top: -300px; opacity: 0; pointer-events: none; }

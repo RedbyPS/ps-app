@@ -73,6 +73,7 @@ import { calendarFor, feedOfAccount, panelCal } from "../core/calfeeds";
 import { cleanLayout, emptyLayout, layoutReady, onPage, pageOf, MENU_SLOT_IDS } from "../core/tablayout";
 /** PS 1.70: Pomodoro's copies (it is only ever added in Edit mode now) are drawn where it always sat. */
 const POMODORO_SLOT = ["pomodoro"] as const;
+const SOUNDBOARD_SLOT = ["soundboard"] as const;
 import { mailPanelId, newestOf, onMailOpen, peekMailOpen, takeMailOpen } from "../core/mailopen";
 import { PS, cleanLooks, useBgVideos as usePsBgVideos, useOverlayShown, firstSentences, askMic, askPresence, askTimeline, chooseMic, psIsOpen, psPost, useAppIcons, usePresence, usePsMic, usePsSettings, useTimeline } from "../ps";
 import { primeSfx, setEditSoundCtx, setSfxVolume, setTickSound, sfx } from "../ui/sfx";
@@ -1402,8 +1403,11 @@ export function Overlay({ onClose, controls, docked, web, footer }: { onClose: (
           <Slot id="dimx"><DimensionX prio={prio} aware={st.aware || []} dimx={st.dimx || []} docked={docked} inbox={aiInbox} /></Slot>
           {red && <Slot id="rules"><PsRuleButton docked={docked} /></Slot>}
           <Slot id="fitness"><FitnessButton docked={docked} /></Slot>
-          {/* The Soundboard (V1.47, src/soundboard/): audio and video, the player, the queue, timed plays. */}
+          {/* The Soundboard (V1.47, src/soundboard/): audio and video, the player, the queue, timed plays. PS 1.72 (the developer, 21 Nov
+              2026): off the main screen for everyone; added from Edit mode's Add panel, it is drawn right here, as before
+              (core/tablayout.ts soundboard: optIn, inPlace). */}
           <Slot id="soundboard"><SoundboardButton docked={docked} /></Slot>
+          <InlineCopies kinds={SOUNDBOARD_SLOT} />
         </div>
       </div>
       {/* The gear's full screen Settings (views/SettingsScreen.tsx, V1.32): General, Looks and Mac settings. */}
@@ -1436,8 +1440,6 @@ export function Overlay({ onClose, controls, docked, web, footer }: { onClose: (
               <Slot id="clipboard"><ClearClipboard /></Slot>
               {/* Do Not Disturb (views/Dnd.tsx). The phone has it in its thumb row (gos/GosLayer.tsx). */}
               {import.meta.env.MODE !== "gos" && <Slot id="dnd"><DndButton st={st} s={s} act={(o: DndOp) => taskMapActions.dnd(o)} homeTz={st.tmHomeTz || undefined} /></Slot>}
-              {/* G Squad (V1.40, views/GSquad.tsx): PS on a Mac, every account, and the website's To-do page. */}
-              {((PS && !docked) || web) && <Slot id="gsquad"><GSquadButton /></Slot>}
               {/* G Squad chat on the website (views/GSquadChat.tsx): only for someone in a squad; PS has it in the G Squad pop-up. */}
               {!PS && !web && !isPhoneBuild() && <GSquadChatWeb />}
               {/* Second Computer (views/Second.tsx): PS on a Mac, once it is switched on (PS 1.65, core/secondswitch.ts), with the
@@ -1453,6 +1455,9 @@ export function Overlay({ onClose, controls, docked, web, footer }: { onClose: (
           );
           return isPhoneBuild() ? rest : <Slot id="menu"><TopMenu>{rest}</TopMenu></Slot>;
         })()}
+        {/* The G Squad (V1.40, views/GSquad.tsx): PS on a Mac, every account, and the website's To-do page. PS 1.72 (Jan, 21 Nov
+            2026): out of the menu, its own button right beside it, the one addition to Screen time, the menu and the gear. */}
+        {((PS && !docked) || web) && <Slot id="gsquad"><GSquadButton /></Slot>}
         <InlineCopies kinds={MENU_SLOT_IDS} />
         {/* The gear: on the floating list a click opens the full screen Settings (V1.32); the phone keeps its sheet
             and the website's To-do page its small menu. */}

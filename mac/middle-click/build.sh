@@ -22,7 +22,7 @@ if [ -z "$SIGNING" ]; then
 fi
 mkdir -p "$HERE/build"
 
-swiftc -swift-version 5 -O "$HERE/Sources/ClickMachine.swift" "$HERE/Sources/Recovery.swift" "$HERE/Tests/main.swift" -o "$HERE/build/tests"
+swiftc -swift-version 5 -O "$HERE/Sources/ClickMachine.swift" "$HERE/Sources/Recovery.swift" "$HERE/Sources/PanelHost.swift" "$HERE/Tests/main.swift" -o "$HERE/build/tests"
 "$HERE/build/tests"
 [ "${1:-}" = test ] && exit 0
 

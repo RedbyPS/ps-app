@@ -50,7 +50,7 @@ ok("the installed icon and name: PS app, the pink icon, dark theme colour, the m
   assert.match(h, /theme-color" content="#0D0A0E"/); assert.match(h, /apple-mobile-web-app-capable" content="yes"/);
   const pb = read("scripts/postbuild.mjs");
   assert.match(pb, /rel="manifest" href="\/todolist-mobile\/manifest\.webmanifest"/);
-  assert.match(pb, /rel="apple-touch-icon" href="\/todolist-mobile\/apple-touch-icon\.png"/);
+  assert.match(pb, /rel="apple-touch-icon" href="\/todolist-mobile\/icon-cake-180\.png"/);
   assert.ok(!/G Squad/.test(JSON.stringify(m) + h), "no old name left on the Home Screen");
 });
 ok("the pictures stand still for people who turned motion off", () => {

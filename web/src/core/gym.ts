@@ -1,4 +1,4 @@
-// The gym reminder (the developer, 2 Nov 2026): every day at 08:00 by default; Fitness settings change the time, the
+// The gym reminder (the developer, 2 Nov 2026): every day at 08:00 by default (since 1.72 only once saved); Fitness settings change the time, the
 // days and on/off. Mac PS shows one card 2 h, 1 h, 30 min and 10 min before (the same card, its words move
 // on); the phone gets a notification at the same four times and RINGS at gym time minus 16 minutes, full
 // screen, until the developer taps Yes (ps-gos Gym.kt). Yes (it said Acknowledge until V1.57) on either device is saved
@@ -60,7 +60,14 @@ export const gymRingAt = (p: Pick<GymPrefs, "time" | "ringAt">) => p.ringAt || h
  *  settings (7 Nov 2026: the public PS has the gym reminder too, but it never rings a stranger's phone uninvited).
  *  Settings saved before V1.57 (on, time, days only) load with nag mode off, no end time and no ring time, so they
  *  work exactly as before. */
+/** PS 1.72 (the developer, 21 Nov 2026: "at like seven forty four AM I still get the calls on my phone telling me to go to the gym
+ *  ... I don't even go to the gym in the morning now. So I want you to remove that"): a gym reminder that was NEVER saved
+ *  (no gym record in the settings at all) is OFF, the developer's too. Before, the developer's unsaved reminder was on at the 08:00 default,
+ *  so the phone rang at 07:44 (08:00 minus 16 minutes) every morning and the Mac showed its 06:00 to 07:50 cards, for a
+ *  gym time nobody picked. The reminder now rings only for a time saved in Fitness settings. A saved record (even an
+ *  old one without `on`) keeps `defOn` as before. */
 export function gymPrefs(raw: unknown, defOn: boolean = GYM_DEFAULTS.on): GymPrefs {
+  if (!raw || typeof raw !== "object") defOn = false;
   const r = (raw && typeof raw === "object" ? raw : {}) as Partial<Record<keyof GymPrefs, unknown>>;
   const time = okHm(r.time) ? r.time : GYM_DEFAULTS.time;
   const days = Array.isArray(r.days) ? [...new Set(r.days.filter((d): d is number => Number.isInteger(d) && (d as number) >= 0 && (d as number) <= 6))].sort((a, b) => a - b) : GYM_DEFAULTS.days;

@@ -63,7 +63,10 @@ export const SLOTS: readonly SlotInfo[] = [
   { id: "dimx", label: "Dimension X" },
   { id: "rules", label: "Rule book", red: true },
   { id: "fitness", label: "Fitness" },
-  { id: "soundboard", label: "Soundboard" },
+  // PS 1.72 (the developer, 21 Nov 2026): off the main screen for everyone, the developer too, like Pomodoro in 1.70: added from Edit mode's Add
+  // panel, it is drawn right here, at the end of the row under Dimension X (TaskMap.tsx InlineCopies). The feature, its
+  // sounds, settings and every ring that uses them stay. This place is where a new default panel goes (the developer's Clients workspace).
+  { id: "soundboard", label: "Soundboard", optIn: true, inPlace: true },
   { id: "glass", label: "Transparency slider, Keep overlay and Hover mode" },
   // The top right (PS 1.70): only Screen time, the menu and the gear stay on the page. Every other button there lives in
   // the menu (menu: true); the Add panel gallery still offers each one as a button of its own.
@@ -80,7 +83,7 @@ export const SLOTS: readonly SlotInfo[] = [
   { id: "gear", label: "Settings", keep: true },
   { id: "security", label: "Security", menu: true },
   { id: "second", label: "Second Computer", menu: true },   // PS 1.65: everyone's, once Second Computer is switched on (slotOk)
-  { id: "gsquad", label: "G Squad", menu: true },
+  { id: "gsquad", label: "The G Squad" },   // PS 1.72 (Jan): its own button beside the menu, no longer in it
   { id: "dnd", label: "Do Not Disturb", menu: true },
   { id: "pskeys", label: "Tab and Lock", keep: true, menu: true },
   { id: "mail", label: "Client emails", mail: true },

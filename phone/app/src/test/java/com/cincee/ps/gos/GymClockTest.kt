@@ -300,4 +300,15 @@ class GymClockTest {
         assertEquals(fired, GymClock.forgetMoved(plan(), plan(), fired))       // same time: nothing forgotten
         assertEquals(fired, GymClock.forgetMoved(null, nightPlan(), fired))    // no older plan: nothing to compare
     }
+    /** PS 1.72: a gym reminder never saved now reaches the phone as an empty, switched off plan (web core/gym.ts).
+     *  It replaces the old 08:00 one: nothing rings at 07:44 any more, and a 07:44 ring already going stops. */
+    @Test fun aSwitchedOffPlanStopsTheMorningRing() {
+        val off = GymClock.from(JSONObject().put("on", false).put("time", "08:00").put("items", JSONArray()))
+        assertTrue(GymClock.steps(off).isEmpty())
+        assertTrue(GymClock.dueNow(off, hm(7, 44), emptySet()).isEmpty())
+        assertNull(GymClock.next(off, hm(6, 0), emptySet()))
+        val r = GymRing(day, gym, hm(7, 44))
+        assertEquals(RingNow.RINGING, GymClock.ringNow(r, plan(), hm(7, 45), emptySet()))
+        assertEquals(RingNow.DONE, GymClock.ringNow(r, off, hm(7, 45), emptySet()))
+    }
 }

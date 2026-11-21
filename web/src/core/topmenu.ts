@@ -1,6 +1,8 @@
 // The top right menu of the Tab list (PS 1.70, the developer 19 Nov 2026: "all these different buttons and options everywhere,
 // they're all very unclear... simplify it, kind of like Apple does"). Only Screen time and the Settings gear stay on the
 // page; every other button that sat in the top right is a row here, with a clear icon and a plain name.
+// PS 1.72 (Jan, 21 Nov 2026: "take the g squad out of here ... it should be the g squad ... right next to it"): The G
+// Squad is the one other button on the page, right beside this menu's button (views/TaskMap.tsx), not a row here.
 //
 // How it opens each thing: the real buttons still render, hidden, inside the menu (views/TopMenu.tsx, the dock), so each
 // screen and pop-up opens exactly as before and grows out of the menu button. A row names the real button it presses
@@ -11,7 +13,7 @@
 export type TopMenuId =
   | "afk" | "brief" | "endday"
   | "net" | "activity" | "mixer" | "lowpower" | "clipboard"
-  | "dnd" | "gsquad" | "second" | "screen"
+  | "dnd" | "second" | "screen"
   | "tab" | "security" | "lock";
 
 /** What a row does when picked. open: presses the button, the menu closes (its screen or pop-up opens). toggle: presses
@@ -46,7 +48,6 @@ export const TOP_MENU: readonly TopMenuItem[] = [
   { id: "lowpower", label: "Low power mode", group: 1, kind: "toggle", sel: ".lp-btn", slot: "lowpower", was: "Low power mode: put the background to sleep, keep your list" },
   { id: "clipboard", label: "Clear clipboard", group: 1, kind: "action", sel: "[aria-label='Clear the clipboard']", slot: "clipboard", was: "Clear the clipboard (copies nothing)" },
   { id: "dnd", label: "Do Not Disturb", group: 2, kind: "moon", sel: ".dnd-btn", slot: "dnd", more: { sel: ".dnd-cog", label: "Do Not Disturb settings" }, was: "Do Not Disturb (the moon) and its small cog" },
-  { id: "gsquad", label: "G Squad", group: 2, kind: "open", sel: ".gs-btn", slot: "gsquad", was: "G Squad" },
   { id: "second", label: "Second Computer", group: 2, kind: "open", sel: ".sc-btn[aria-haspopup]", slot: "second", was: "Second Computer" },
   // Its click opens the other Mac's screen and the Tab list steps aside, so the menu closes too (it says On while open).
   { id: "screen", label: "Remote screen", group: 2, kind: "open", sel: ".sc-btn[aria-pressed]", slot: "second", was: "Remote screen switch" },
@@ -78,14 +79,14 @@ export interface RowLive {
   value?: string;
   /** The switch on the right (toggle rows). */
   on?: boolean;
-  /** A small number badge (new G Squad messages). */
+  /** A small number badge (none since The G Squad left the menu in PS 1.72; kept for a row that needs one). */
   badge?: string;
   /** Something needs a look (Security, a new Morning brief). */
   dot?: boolean;
   /** The row's name for now (the AFK row says Watcher while Watcher mode runs). */
   label?: string;
 }
-export function rowLive(id: TopMenuId, b: RealButton | null, badge = ""): RowLive {
+export function rowLive(id: TopMenuId, b: RealButton | null): RowLive {
   if (!b) return {};
   switch (id) {
     case "afk": {
@@ -97,7 +98,6 @@ export function rowLive(id: TopMenuId, b: RealButton | null, badge = ""): RowLiv
     case "dnd": case "screen": return b.pressed ? { value: TOP_MENU_WORDS.on } : {};
     case "lowpower": case "tab": return { on: !!b.pressed };
     case "security": return { dot: /\bsec-warn\b/.test(b.cls) };
-    case "gsquad": return badge ? { badge } : {};
     case "second": {
       const m = /:\s*(online|offline|working)\s*$/i.exec(b.label);
       if (!m) return {};
@@ -109,7 +109,7 @@ export function rowLive(id: TopMenuId, b: RealButton | null, badge = ""): RowLiv
   }
 }
 
-/** The small mark on the menu button: "warn" when something needs a look (Security, new messages, a new brief), "on"
+/** The small mark on the menu button: "warn" when something needs a look (Security, a new brief), "on"
  *  when a mode is running (Do Not Disturb, Low power mode, an AFK timer, the Remote screen), else none. */
 export function menuMark(rows: { id: TopMenuId; live: RowLive }[]): { mark: "warn" | "on" | null; why: string[] } {
   const warn = rows.filter((r) => r.live.dot || r.live.badge);

@@ -55,3 +55,11 @@
 .sqb-grip:focus-visible { outline: none; }
 @keyframes sqb-in { 0% { opacity: 0; transform: scaleY(.92); } 100% { opacity: 1; transform: none; } }
 @media (prefers-reduced-motion: reduce) { .sqb .sqb-tasks { animation: none; } .sqb-grip i { transition: none; } }
+
+/* PS 1.72 (Jan): the way into The G Squad, right after the heading (views/SquadP1Panel.tsx OpenSquad). */
+.sqp1-h { display: flex; align-items: center; gap: 6px; }
+.sqp1-open { display: inline-grid; place-items: center; width: 22px; height: 22px; margin: -4px 0; padding: 0; border: 0; border-radius: 7px; background: none; color: inherit; cursor: pointer; opacity: .85; transition: background .15s ease, opacity .15s ease, transform .15s ease; }
+.sqp1-open:hover { opacity: 1; background: color-mix(in srgb, var(--k-fg, #FFFFFF) 10%, transparent); }
+.sqp1-open:active { transform: scale(.92); }
+.sqp1-open:focus-visible { outline: 2px solid var(--k-acc, #EC4899); outline-offset: 1px; }
+@media (prefers-reduced-motion: reduce) { .sqp1-open { transition: none; } .sqp1-open:active { transform: none; } }

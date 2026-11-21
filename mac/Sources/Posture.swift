@@ -18,6 +18,11 @@ final class PosturePanel: NSPanel {
   override var canBecomeKey: Bool { true }
   override var canBecomeMain: Bool { false }
 }
+/// The card's page. The panel is non activating and not key while it waits, so a plain WKWebView spent the first click on
+/// making the card key and dropped it; OK then needed more clicks (the developer, 21 Nov 2026). The first click now presses the button.
+final class PostureWebView: WKWebView {
+  override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }   // the first click on a button counts
+}
 
 final class Posture: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
   static let shared = Posture()
@@ -31,7 +36,7 @@ final class Posture: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
 
   private var timer: Timer?
   private var panel: PosturePanel?
-  private var web: WKWebView?
+  private var web: PostureWebView?
   private var ready = false
   private var height: CGFloat = 330
   private var pending: [String: Any]?
@@ -74,7 +79,7 @@ final class Posture: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
     let c = WKWebViewConfiguration()
     c.websiteDataStore = .nonPersistent()
     c.userContentController.add(self, name: "pf")
-    let w = WKWebView(frame: NSRect(x: 0, y: 0, width: Posture.width, height: height), configuration: c)
+    let w = PostureWebView(frame: NSRect(x: 0, y: 0, width: Posture.width, height: height), configuration: c)
     w.setValue(false, forKey: "drawsBackground")
     w.navigationDelegate = self
     let p = PosturePanel(contentRect: NSRect(x: 0, y: 0, width: Posture.width, height: height), styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)

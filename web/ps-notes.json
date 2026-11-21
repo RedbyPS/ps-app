@@ -358,5 +358,15 @@
    "Developers' own builds now stay their own: another person's release never replaces them.",
    "Holding Tab and the island over 1Password and Signal follow your build's setting again, whoever is signed in."
   ]
+ },
+ "1.72": {
+  "en": [
+   "A new app icon, switched everywhere at once after the update.",
+   "If the island goes missing after your Mac wakes, PS brings it back by itself, and PS no longer freezes when macOS's sound stops answering.",
+   "Browser save and download boxes can be clicked again with Force Touch middle click on, and every PS card closes on the first click.",
+   "Phone: tap the island to open what it shows, a menu at the top left replaces the wheel, and calls ring full screen.",
+   "Your countdown's day end now sits next to the reset time and follows it until you pick your own.",
+   "The G Squad has its own button, goals can be added through the task API, and a click on the Timeline no longer makes a goal."
+  ]
  }
 }
