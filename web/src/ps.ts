@@ -17,6 +17,7 @@ import { __mirrorLoad, lock, nudge, put, reconnect, refreshGmail, remove, saveLo
 import { calendarSnap, campaignStats, latestBrief, openReplies, settingsData } from "./core/select";
 import { DIMX_COLORS, DIMX_FX, DIMX_SIZES, type ClientRec, type DimxItem, type DimxStyle, type Doc, type Goal, type Reply, type Settings, type TimelineItem, type Todo } from "./core/model";
 import { addTodo, approveSuggestion, awareDone, awareToList, awareUndone, suggestionToAware, suggestionToDimx, resetTodos, saveScreenTime, saveScreenLine, deleteTodo, dismissSuggestion, saveSettings, setReplyHandled, setTodoOrder, setWorkingOn, subtaskOp, toggleTodo, setTodoDone, setTodosDone, clearTodos, reviveTodos, buryTodos, restoreTodo, updateTodo, addMatchAddr, setMailRule, saveDraft, moveTasks, ungroupTasks, moveTaskToIdea, moveIdeaToTask, tidyMoves, setDnd, setJournal, saveTabLayout, saveRemind, savePhoneLayout } from "./core/actions";
+import { resetUndoSlot } from "./core/resetsave";
 import { cleanDimxOp } from "./core/dimxmove";
 import { cleanMailRuleOp } from "./core/mailrules";
 import { cleanGroups, cleanSecOrder, type TaskMove } from "./core/groups";
@@ -208,6 +209,8 @@ import { cleanUpdateEvery } from "./core/updateevery";
 import { presenceOn } from "./core/offswitches";   // "Tell the website PS app is open": off = no ps-presence channel, the website no longer leaves Tab to PS app
 import { startExamples } from "./examples";
 import { deleteExamples, undoExamples, renameDevice } from "./core/actions";
+import { runClientsOp, setClientsRelay } from "./core/clientsact";
+import { cleanClientsOp } from "./core/clientsop";
 import { recentPrivate } from "./core/privatenotes";
 import { cleanTzOp } from "./core/tzpeople";
 import { cleanTzZonesOp } from "./core/tzzones";
@@ -410,7 +413,8 @@ function cleanDimx(list: unknown[]): DimxItem[] {
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** The last Reset made from the Tab list, so its Undo can put the list back. */
-let psResetUndo: (() => Promise<void>) | null = null;
+// Break-it 1.74 round 2 (core/resetsave.ts resetUndoSlot): an Undo that comes while its Reset still saves waits for it.
+const psReset = resetUndoSlot();
 
 /** Only the fields the floating list can edit, with the right types. */
 /** A series map note or month title from the Tab list window (views/SeriesMap.tsx): a day, week or
@@ -514,6 +518,8 @@ export function startPsOverlay() {
   overlayPage = true;
   startLowPowerMirror();   // PS 1.65 Low power mode: the main page decides, the Tab list shows it (src/lowpower.ts)
   startLineShare();
+  // PS 1.74: Clients saves go to the main page as ops (core/clientsop.ts), run there on the newest copy.
+  setClientsRelay((op) => psPost({ type: "looks", patch: { clientsOp: op } }));
   // Fitness writes go to the main page (runFitOp checks them again there).
   setMirrorWriter((w) => {
     // People on the Time zones screen (core/tzpeople.ts): their own op, run by runTzOp on the main page.
@@ -760,6 +766,8 @@ export function startPsBridge() {
         if (CAMPAIGNS_ON && patch.campLive === true) void refreshCampaignsLive(true);
         // The gym reminder acknowledged from the Tab list (Fitness).
         if (typeof patch.gymAck === "string") ackGymDay(patch.gymAck);
+        // PS 1.74 Clients in the Tab list (core/clientsop.ts): a client, project, stage, checklist step, notes, task or template.
+        { const o = cleanClientsOp(patch.clientsOp); if (o) void runClientsOp(o).catch(() => psPost({ type: "log", text: "clients: a save from the Tab list failed" })); }
         // Fitness in the Tab list: a program, workout or Fitness setting saved, and the rest timer's card.
         if (patch.fitOp) void runFitOp(patch.fitOp).catch(() => psPost({ type: "log", text: "fitness: a save from the Tab list failed" }));
         if (patch.fitCard) fitCard(patch.fitCard);
@@ -918,8 +926,8 @@ export function startPsBridge() {
       else if (m.type === "backdrop" && Number.isFinite(m.v)) void saveSettings({ tmBackdrop: Math.max(0, Math.min(100, Math.round(m.v))) });
       else if (m.type === "stHours" && Number.isFinite(m.v)) void saveSettings({ tmStHours: Math.max(1, Math.min(24, Math.round(m.v))) });
       else if (m.type === "workStyle") void saveSettings({ tmWorkStyle: workStyle(m.style) });
-      else if (m.type === "reset") void resetTodos().then((u) => { psResetUndo = u; });
-      else if (m.type === "resetUndo") { const u = psResetUndo; psResetUndo = null; void u?.(); }
+      else if (m.type === "reset") void psReset.reset(() => resetTodos()).catch(() => {});
+      else if (m.type === "resetUndo") void psReset.undo();
       else if (m.type === "notifyPref") void saveSettings({ tmNotify: m.on !== false });
       else if (m.type === "screentime") saveScreenTimeMsg(m);
       else if (m.type === "sync") { void sync(); void refreshGmail(); calRefreshIfStale(); }   // Tab held: the latest, Gmail included, the calendar when over a minute old (never asks macOS: only the Calendar switch does)
@@ -979,6 +987,7 @@ export function startPsBridge() {
       || d.kind === "phonelayout" || d.kind === "phonedev" || d.kind === "bgdev"   // V1.56 the phone layout editor: each phone's layout, and which phones you have
       || d.kind === "remind"    // Settings > Annoying 15 min reminder: the reminders and their answers (a few KB)
       || d.kind === "ttime"     // Time spent (PS 1.65, core/timeest.ts): the clocks and each month's finished times, for Edit's past times and the overload line (a few KB)
+      || d.kind === "project" || d.kind === "pprivate" || d.kind === "ptpl"   // PS 1.74 Clients in the Tab list: projects, their checklist and notes, templates (core/clientsop.ts)
       || d.kind === "journal"   // PS 1.74: the Map pill's month titles and notes (views/SeriesMap.tsx). Left out before, so a title typed there was saved but looked deleted the next time the map opened
       || (d.kind === "stline" && Number((d.data as { hour?: number }).hour) > Date.now() - 25 * 3600_000)) : [];
     if (cal) docs.push(cal);

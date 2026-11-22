@@ -309,7 +309,7 @@ function Checklist({ id, pv }: { id: string; pv: ProjectView }) {
       <div className="clw-rows">
         {list.map((x) => (
           <div key={x.id} className={`clw-crow${x.done ? " done" : ""}`}>
-            <button type="button" className={`clw-ck sm${x.done ? " on" : ""}`} aria-label={x.done ? "Not done" : "Done"} onClick={() => void checkTick(id, x.id)} />
+            <button type="button" className={`clw-ck sm${x.done ? " on" : ""}`} aria-label={x.done ? "Not done" : "Done"} onClick={() => void checkTick(id, x.id, !x.done)} />
             <span className="tt">{x.text}</span>
             <button type="button" className="clw-rm" aria-label={`Remove ${x.text}`} onClick={() => void checkRemove(id, x.id)}>{I.x}</button>
           </div>
