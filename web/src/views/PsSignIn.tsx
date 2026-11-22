@@ -4,7 +4,7 @@
 // lock screen (Lock.tsx) with setup, the client invite and the demo.
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { psPost, rememberChoice, setRememberChoice } from "../ps";
-import icon from "../assets/ps-icon.png";
+import icon from "../assets/cake-icon.png";
 import "./pssignin.css";
 import { appName } from "../core/appname";
 import { SignInArt } from "./SignInArt";

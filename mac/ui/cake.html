@@ -18,6 +18,11 @@
   The page never plays a sound. Only transform and opacity move.
   The Mac calls window.__cake.play(o) / land(a) / skip(); the page answers {type:"ready"}, {type:"built"} (the neon island
   is built: is PS ready?), {type:"exit"} (the fade starts), {type:"done"} and {type:"click"}.
+  PS 1.74 (the developer, 22 Nov 2026: it built the island at the top centre although his island was moved): just before it
+  builds, the page asks {type:"aim"} and the Mac answers aimed({target, notch, from}) with the island's place as of then
+  (an old Mac that never answers: the place from play() is kept, after a short wait). When PS is ready, land(a) says where the
+  real island is: the outline glides onto it if it is somewhere else. Pieces fly in from the side facing the island
+  (from: x -1 from the left to 1 from the right, y 1 from below, -1 from above: Sources/IslandStartCore.swift approach).
 -->
 <style>
 @font-face{font-family:'Anton';src:url(cake-anton.ttf) format('truetype');font-display:block}
@@ -184,7 +189,7 @@ const stage = $('#stage'), win = $('#win'), host = $('#host'), fxL = $('#fx'), c
 const post = o => { try { window.webkit.messageHandlers.cake.postMessage(JSON.stringify(o)); } catch (e) {} };
 const SW = 1710, SH = 1112;   // the demo's Mac screen, the size everything is laid out for
 let K = 1, OX = 0, OY = 0, runId = 0, CUR = 1, MODE = 'boot', RM = false;
-let HEAD = 'CAKE', VER = 'PS', ISL = { x: 757, y: 0, w: 196, h: 34 }, NOTCH = true, SHOWN = true;
+let HEAD = 'CAKE', VER = 'PS', ISL = { x: 757, y: 0, w: 196, h: 34 }, NOTCH = true, SHOWN = true, FROM = { x: 0, y: 1 };
 
 // Animation helpers: transform and opacity only. Waits run on the animation clock, so a skip cancels them.
 const A = (el, kf, d, o = {}) => el.animate(kf, { duration: d, easing: o.e || E.out, delay: o.delay || 0, fill: 'both' });
@@ -201,6 +206,30 @@ function box(el) {
 /* The real island's place, in stage coordinates. */
 function islBox() { const { x, y, w, h } = ISL; return { x, y, w, h, cx: x + w / 2, cy: y + h / 2 }; }
 function toStage(t) { return t && t.w > 0 ? { x: (t.x - OX) / K, y: (t.y - OY) / K, w: t.w / K, h: t.h / K } : null; }
+/* PS 1.74: the side the pieces come in from (Sources/IslandStartCore.swift approach), checked. */
+function cleanFrom(f) {
+  const n = v => (typeof v === 'number' && isFinite(v) ? Math.max(-1, Math.min(1, v)) : 0);
+  return f && typeof f === 'object' ? { x: n(f.x), y: n(f.y) < 0 ? -1 : 1 } : { x: 0, y: 1 };
+}
+const apart = (a, b) => Math.abs(a.x - b.x) > 2 || Math.abs(a.y - b.y) > 2 || Math.abs(a.w - b.w) > 2 || Math.abs(a.h - b.h) > 2;
+function setNotch(v) { if (typeof v === 'boolean') { NOTCH = v; stage.classList.toggle('pill', !NOTCH); } }
+/* Asks the Mac where the island is now, just before the build (an answer, or the old place after 160 ms). */
+let aimRes = null;
+function aimed(a) { if (aimRes) { const r = aimRes; aimRes = null; r(a || {}); } }
+function reaim() {
+  const id = runId;
+  return new Promise(res => {
+    const done = a => {
+      clearTimeout(tm); aimRes = null;
+      const t = id === runId && a ? toStage(a.target) : null;
+      if (t) { ISL = t; setNotch(a.notch); if (a.from) FROM = cleanFrom(a.from); }
+      res();
+    };
+    const tm = setTimeout(() => done(null), 160);
+    aimRes = done;
+    post({ type: 'aim' });
+  });
+}
 function mk(cls, html = '', parent = fxL) { const d = document.createElement('div'); d.className = cls; if (html) d.innerHTML = html; parent.appendChild(d); return d; }
 function place(el, x, y, w, h) { Object.assign(el.style, { left: x + 'px', top: y + 'px', width: w + 'px', height: h + 'px' }); }
 function rng(seed) { return () => { seed |= 0; seed = seed + 0x6D2B79F5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
@@ -268,6 +297,16 @@ async function finishIsland(outs) {
   await wait(620);
   const a = await askLand(outs);
   const t = toStage(a.target), I = t ? { ...t, cx: t.x + t.w / 2, cy: t.y + t.h / 2 } : islBox();
+  // PS 1.74: the real island is somewhere else than the outline (it was moved, or its size changed): the outline glides onto it.
+  if (t && apart(t, ISL)) {
+    const O0 = outlineBox(ISL), O1 = outlineBox(t);
+    const to = `translate(${(O1.x - O0.x).toFixed(1)}px,${(O1.y - O0.y).toFixed(1)}px) scale(${(O1.w / O0.w).toFixed(4)},${(O1.h / O0.h).toFixed(4)})`;
+    stage.dataset.glide = '1';
+    outs.forEach(o => { o.style.transformOrigin = '0 0'; A(o, [{ transform: 'none' }, { transform: to }], 380); });
+    setNotch(a.notch);
+    ISL = t;
+    await wait(380);
+  }
   const g = mk('nglow'); place(g, I.cx - I.w, I.cy - I.w * .55, I.w * 2, I.w * 1.1);
   A(g, [{ opacity: 0, transform: 'scale(.6)' }, { opacity: 1, transform: 'scale(1)', offset: .3 }, { opacity: 0, transform: 'scale(1.3)' }], 900, { e: 'ease-out' });
   if (a.real) A(islRing(I), [{ opacity: 0 }, { opacity: 1 }], 500, { delay: 120 });
@@ -319,15 +358,17 @@ async function run1(rm) {
   // CAKE rises out of the horizon in chrome
   A(word, [{ opacity: 0, transform: 'translateY(45%) scale(.9)' }, { opacity: 1, transform: 'translateY(-3%) scale(1.01)', offset: .7 }, { opacity: 1, transform: 'none' }], 900);
   A(sub, [{ opacity: 0, transform: 'translateY(6px)' }, { opacity: 1, transform: 'none' }], 500, { delay: 600 });
+  const aim = reaim();
   await wait(1300);
+  await aim;
   // the island is built: two light streaks race along the horizon, then up to the top, and weld it
   const I = islBox(), P = box(win), hzY = box($('.b-hzline', s)).cy, O = outlineBox(I);
   const bw = I.w * .5, bh = 6;
   const beam = c => { const b = mk('beam ' + c); place(b, -bw / 2, -bh / 2, bw, bh); return b; };
   const path = (sx, ex) => [
     { transform: `translate(${sx}px,${hzY}px) scale(.2,1)`, opacity: 0 },
-    { transform: `translate(${(sx + P.cx) / 2}px,${hzY}px) scale(2.8,1)`, opacity: 1, offset: .38 },
-    { transform: `translate(${P.cx + (ex - P.cx) * 2.4}px,${(hzY + I.cy) / 2}px) scale(.28,5.5)`, opacity: 1, offset: .72 },
+    { transform: `translate(${(sx + I.cx) / 2}px,${hzY}px) scale(2.8,1)`, opacity: 1, offset: .38 },
+    { transform: `translate(${I.cx + (ex - I.cx) * 2.4}px,${(hzY + I.cy) / 2}px) scale(.28,5.5)`, opacity: 1, offset: .72 },
     { transform: `translate(${ex}px,${I.cy}px) scale(.3,1)`, opacity: 1 }];
   const bp = beam('p'), bc = beam('c');
   A(bp, path(P.x + 24, O.x + 10), 900, { e: 'cubic-bezier(.5,0,.6,1)' });
@@ -369,6 +410,16 @@ function build2() {
   for (let i = 0; i < 46; i++) { const w = (20 + r() * 60) * 1.6, y = 6 + Math.pow(r(), 1.6) * 220; g += `<i style="left:${(r() * W).toFixed(0)}px;top:${y.toFixed(0)}px;width:${w.toFixed(0)}px;height:2px;background:${cols[i % 4]};opacity:.8;animation-delay:${(-r() * 2.4).toFixed(2)}s"></i>`; }
   $('.bB .b-glints').innerHTML = g;
 }
+/* The four pieces' starting offsets, turned to come from the side facing the island: across, shifted towards the
+   screen's inside (FROM.x); an island in the lower half takes the top pieces from far above and the bottom ones from
+   just below, the mirror of the usual. */
+function approachPieces(Q) {
+  return Q.map((q, i) => {
+    const dx = q[1] + FROM.x * 560;
+    const dy = FROM.y < 0 ? -Q[i < 2 ? i + 2 : i - 2][2] : q[2];
+    return [q[0], dx, dy, q[3], q[4]];
+  });
+}
 async function run2(rm) {
   const s = $('.bB'), world = $('.b-world', s), beams = $$('.b-beam', s), letters = $$('.b-l', s), sub = $('.b-sub', s);
   if (rm) { beams.forEach(b => b.style.opacity = 1); return bootReduced(s); }
@@ -380,10 +431,13 @@ async function run2(rm) {
   // CAKE drops in, letter by letter
   letters.forEach((l, i) => A(l, [{ opacity: 0, transform: 'translateY(-120%) rotate(-7deg)' }, { opacity: 1, transform: 'translateY(6%) rotate(0deg)', offset: .62 }, { opacity: 1, transform: 'translateY(-3%)', offset: .82 }, { opacity: 1, transform: 'none' }], 600, { delay: i * 110, e: 'cubic-bezier(.4,0,.6,1)' }));
   A(sub, [{ opacity: 0, transform: 'translateY(6px)' }, { opacity: 1, transform: 'none' }], 500, { delay: 780 });
+  const aim = reaim();
   await wait(1200);
-  // four neon pieces fly in from the night and weld into the island
+  await aim;
+  // four neon pieces fly in from the night and weld into the island, from the side facing it (PS 1.74: an island at an
+  // edge or at the bottom takes its pieces from the screen's inside, never from beyond the edge)
   const I = islBox(), O = outlineBox(I), k = 1;
-  const Q = [['inset(-30px 50% 50% -30px)', -520, -40, -120, ''], ['inset(-30px -30px 50% 50%)', 520, -30, 140, ' cy'], ['inset(50% 50% -30px -30px)', -460, 380, 80, ' cy'], ['inset(50% -30px -30px 50%)', 480, 420, -110, '']];
+  const Q = approachPieces([['inset(-30px 50% 50% -30px)', -520, -40, -120, ''], ['inset(-30px -30px 50% 50%)', 520, -30, 140, ' cy'], ['inset(50% 50% -30px -30px)', -460, 380, 80, ' cy'], ['inset(50% -30px -30px 50%)', 480, 420, -110, '']]);
   const qs = Q.map(([clip, dx, dy, rot, cy], i) => {
     const q = mk('nisl' + cy); place(q, O.x, O.y, O.w, O.h); q.style.clipPath = clip;
     A(q, [{ transform: `translate(${dx * k}px,${dy * k}px) rotate(${rot}deg) scale(.6)`, opacity: 0 }, { opacity: 1, offset: .2 }, { transform: 'translate(0,0) rotate(0deg) scale(1.05)', opacity: 1, offset: .85 }, { transform: 'none', opacity: 1 }], 560, { delay: i * 150, e: 'cubic-bezier(.3,.6,.3,1)' });
@@ -435,7 +489,9 @@ async function run3(rm) {
   // CAKE powers on like an old screen
   A(word, [{ transform: 'scaleY(.02) scaleX(1.3)', opacity: 0 }, { transform: 'scaleY(.02) scaleX(1)', opacity: 1, offset: .3 }, { transform: 'scaleY(1.08)', opacity: 1, offset: .72 }, { transform: 'none', opacity: 1 }], 650);
   A(sub, [{ opacity: 0 }, { opacity: 1 }], 400, { delay: 520 });
+  const aim = reaim();
   await wait(900);
+  await aim;
   // the city lights lift off and swarm into the island's outline
   const I = islBox(), O = outlineBox(I), C = box(city), pts = perimeter(O, 64), r = rng(33);
   const cols = ['#ff5fae', '#5fe6ff', '#ffd25a', '#ffffff', '#b98cff'];
@@ -506,7 +562,8 @@ async function run4(rm) {
   // the island strikes the old icon twice: it jolts and cracks (the bolts leave the real island's lower edge)
   const I = islBox(), O = box(old);
   const strike = k => {
-    const b = bolt(I.cx, I.y + I.h - 2, O.cx + (k ? 22 : -14), O.y + O.h * .1, 90 + k);
+    // from the island's edge facing the icon (PS 1.74: an island in the lower half strikes up at its lower edge)
+    const b = FROM.y < 0 ? bolt(I.cx, I.y + 2, O.cx + (k ? 22 : -14), O.y + O.h * .9, 90 + k) : bolt(I.cx, I.y + I.h - 2, O.cx + (k ? 22 : -14), O.y + O.h * .1, 90 + k);
     A(b, [{ opacity: 0 }, { opacity: 1, offset: .1 }, { opacity: .2, offset: .3 }, { opacity: 1, offset: .45 }, { opacity: 0 }], 440, { e: 'linear' });
     A(old, [{ transform: 'none' }, { transform: 'translate(-5px,2px) rotate(-1.6deg)' }, { transform: 'translate(4px,-1px) rotate(1.1deg)' }, { transform: 'none' }], 280, { delay: 60, e: 'linear' });
     A(cracks[k], [{ opacity: 0 }, { opacity: 1 }], 120, { delay: 80 });
@@ -571,6 +628,9 @@ async function play(o) {
   SHOWN = !!o.shown || MODE === 'boot';
   const t = toStage(o.target);
   if (t) ISL = t;
+  FROM = cleanFrom(o.from);
+  if (aimRes) aimed(null);
+  stage.dataset.glide = '';
   NOTCH = o.notch !== false;
   stage.classList.toggle('pill', !NOTCH);
   stage.classList.toggle('rm', RM);
@@ -606,7 +666,7 @@ function skip() {
 }
 document.addEventListener('mousedown', () => post({ type: 'click' }));
 addEventListener('resize', fit);
-window.__cake = { play, land, skip };
+window.__cake = { play, land, skip, aimed };
 fit();
 // Ready once the fonts and pictures are in, so the clock never starts on a half drawn scene (at most 1.5 s).
 const pics = ['cake-old.webp', 'cake-new.webp'].map(src => { const i = new Image(); i.src = src; return (i.decode ? i.decode() : Promise.resolve()).catch(() => {}); });

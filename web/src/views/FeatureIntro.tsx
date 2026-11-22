@@ -38,7 +38,7 @@ import { calendarSnap } from "../core/select";
 import type { CalendarSnap } from "../core/model";
 import { GOS } from "../gos/bridge";
 import { accountOlderThan, LOCAL_KEY as WN_SEEN_KEY } from "../core/whatsnew";
-import { islandPrefs } from "../core/island";
+import { TASK_ONLY_FEATURE, islandPrefs } from "../core/island";
 import { saveSettings } from "../core/actions";
 import { cleanShareOpts } from "../core/squadshare";
 import { P1_FEATURE, p1Default } from "../core/squadp1";
@@ -47,7 +47,7 @@ import { squadNow, squadOp } from "../squad/mirror";
 import { isRedAccount } from "../core/account";
 import { JOIN_ASK_ID, joinAskProbe } from "../core/gsquadjoin";
 import type { Snapshot } from "../core/vault";
-import logoPng from "../assets/ps-icon.png";
+import logoPng from "../assets/cake-icon.png";
 import { sleepState } from "../sleepmode/engine";
 import { sentryUp } from "./Sentry";
 import { popupOn, tipOn, walkOn } from "./popupstate";
@@ -183,6 +183,8 @@ const DONE_PROBES: Record<string, (can: boolean, s: Snapshot) => Promise<"done" 
   "day-countdown-170": async (_can, s) => (feature(CD_FEATURE) && s.status === "unlocked" && s.role === "owner" ? "open" : "unknown"),
   // PS 1.68 streaks on repeating tasks: only while the feature is on, for an owner; Ok ends it for good.
   "task-streaks-168": async (_can, s) => (feature("task-streaks") && s.status === "unlocked" && s.role === "owner" ? "open" : "unknown"),
+  // PS 1.74 only the task on the closed island: only on a Mac (the island is the Mac's), while the feature is on for an owner; Ok ends it for good.
+  "island-task-only-174": async (_can, s) => (PS && feature(TASK_ONLY_FEATURE) && s.status === "unlocked" && s.role === "owner" ? "open" : "unknown"),
   screenrec: async () => { askScreenRec(); return introAudience({ mac: PS, st: screenRecNow() }); },
   whatsapp: async (can) => {
     if (!can) return "unknown";   // no own Supabase project to link (yet): wait and look again, never retire for good on what may be a still loading vault

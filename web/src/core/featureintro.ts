@@ -291,6 +291,17 @@ export const INTROS: IntroDef[] = [
     mark: "spark",
     choice: true,
   },
+  {
+    // PS 1.74 (the developer, 22 Nov 2026: "I should ONLY be able to see the task at hand on the dynamic island"): the closed island shows only
+    // the task (core/island.ts TASK_ONLY_FEATURE). One Ok ends it for good. Only on a Mac, while the feature is on for an owner
+    // (views/FeatureIntro.tsx DONE_PROBES). Words wait for the owner's approval.
+    id: "island-task-only-174",
+    headline: "The island now shows just your task.",
+    ask: "Point at it to see your timers, counts and the rest. Want everything back? Settings, Dynamic Island, Only the task when closed.",
+    show: "Ok",
+    mark: "spark",
+    choice: true,
+  },
 ];
 
 /** The widths of the intro card and the guide grown out of the island (points). */

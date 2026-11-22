@@ -344,7 +344,7 @@ final class Hatch: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
   private func targetNow(_ sc: NSScreen) -> [String: Double] {
     HatchCore.aim(shown: HatchCore.pageRect(Island.shared.shapeOnScreen(), screen: sc.frame),
                   rest: HatchCore.pageRect(Island.shared.restShape(), screen: sc.frame),
-                  spot: HatchCore.pageRect(Island.shared.hatchSpot(), screen: sc.frame),
+                  spot: HatchCore.pageRect(Island.shared.startShape(), screen: sc.frame),   // PS 1.74: also before the island has a window
                   fallback: fallbackTarget(sc))
   }
   /// Where the island will be when it is not on screen yet (a start: the page has not sent it anything): around the

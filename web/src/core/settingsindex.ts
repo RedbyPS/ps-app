@@ -287,6 +287,9 @@ export const SETTINGS: SetEntry[] = [
 
   // ---------- Mac ----------
   { id: "island", group: "island", name: "Dynamic Island", line: "Its shape or Off, where it sits, how long its line hides it, notifications and full screen.", on: MAC, words: ["island", "notch", "pill", "position", "move", "hide", "dynamic", "notifications", "cards", "pop-ups", "popups", "top right", "corner", "come from", "animation", "full screen", "fullscreen", "top left", "top bar", "black bar", "menu bar", "tick", "circle", "side", "left", "right", "off", "turn off", "disable"] },
+  // PS 1.74 (the developer, 22 Nov 2026: "I should ONLY be able to see the task at hand on the dynamic island"): the closed island shows only
+  // the task; everything else on hover (core/island.ts TASK_ONLY_FEATURE, ps-mac IslandCloseCore.swift). The same switch as in From the squad.
+  { id: "island-task-only", group: "island", name: "Only the task when closed", line: "The closed island shows just your task. Point at it to see the timers, counts and the rest.", on: MAC, words: ["island", "closed", "task", "only", "simple", "clean", "timers", "counts", "badges", "circle", "tick", "+1", "clutter", "busy", "full", "hover", "minimal"] },
   // PS 1.67 Hatch: the start animation (ps-mac Hatch.swift, views/PsSettings.tsx StartAnimationSection). This Mac, on unless switched off.
   // PS Cake (the developer, 21 Nov 2026): the switch now governs the boot animation (ps-mac Cake.swift), one of three scenes at random.
   { id: "start-animation", group: "island", name: "Start animation", line: "Each time the app opens, one of three Cake scenes plays and builds the island. Esc skips it.", on: MAC, words: ["start", "startup", "launch", "opens", "animation", "intro", "hatch", "icon", "logo", "splash", "off", "turn off", "disable", "boot", "cake", "night drive", "harbor", "city"] },

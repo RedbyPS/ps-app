@@ -31,7 +31,12 @@ enum DockIconCore {
     }
   }
   /// Did the icon really change? Only when both files are there and differ.
-  static func iconChanged(new: Data?, old: Data?) -> Bool {
+  /// PS 1.74 (no old icon may linger after an update): also when both Info.plists name their icon file and the names
+  /// differ. Since 1.72 the name is the picture's own hash (build.sh), so another name is another picture, even when the
+  /// replaced build's icon file cannot be read any more; a build before 1.72 says AppIcon, the old white icon's name.
+  /// Unknown names (a missing Info.plist) never restart the Dock by themselves.
+  static func iconChanged(new: Data?, old: Data?, newName: String? = nil, oldName: String? = nil) -> Bool {
+    if let a = newName, let b = oldName, iconFile(named: a) != iconFile(named: b) { return true }
     guard let n = new, let o = old, !n.isEmpty, !o.isEmpty else { return false }
     return n != o
   }

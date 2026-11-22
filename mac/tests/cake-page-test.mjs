@@ -24,22 +24,23 @@ const near = (a, b, tol) => Math.abs(a - b) <= tol;
 ok('the Anton font and its licence are in ui/', okFirst);
 const browser = await chromium.launch({ headless: true });
 // The Mac's side: records every message with the time since play(), answers "built" after `holdMs` with land(a).
-async function run({ mode = 'boot', scene = 1, reduce = false, holdMs = 0, land = { real: true, signIn: false }, skipAt = 0, until = 'done', shot = '', target = null, notch = true, shown = true, w = 1710, h = 1112 } = {}) {
+async function run({ mode = 'boot', scene = 1, reduce = false, holdMs = 0, land = { real: true, signIn: false }, skipAt = 0, until = 'done', shot = '', target = null, notch = true, shown = true, w = 1710, h = 1112, aim = undefined, from = undefined, probe = null } = {}) {
   const page = await browser.newPage({ viewport: { width: w, height: h }, bypassCSP: true });   // the test's own probes only; the page's CSP stays as it is in PS
   const errors = [];
   page.on('pageerror', e => errors.push(String(e)));
   page.on('console', m => { if (m.type() === 'error' && !(NO_FONTS && /ERR_FILE_NOT_FOUND/.test(m.text()))) errors.push(m.text()); });
-  await page.addInitScript(({ holdMs, land }) => {
+  await page.addInitScript(({ holdMs, land, aim }) => {
     window.__log = [];
     window.__t0 = 0;
     window.webkit = { messageHandlers: { cake: { postMessage: s => {
       const o = JSON.parse(s); o.at = performance.now() - window.__t0; window.__log.push(o);
       if (o.type === 'built') setTimeout(() => window.__cake.land(land), holdMs);
+      if (o.type === 'aim' && aim !== undefined) setTimeout(() => window.__cake.aimed(aim), 5);   // PS 1.74: the Mac's answer (none: an old Mac)
     } } } };
-  }, { holdMs, land });
+  }, { holdMs, land, aim });
   await page.goto(PAGE);
   await page.waitForFunction(() => window.__log.some(m => m.type === 'ready'), null, { timeout: 5000 });
-  await page.evaluate(o => { window.__t0 = performance.now(); window.__cake.play(o); }, { mode, scene, reduce, headline: 'CAKE', ver: 'PS 1.73', target: target || { x: 757, y: 0, w: 196, h: 34 }, notch, shown });
+  await page.evaluate(o => { window.__t0 = performance.now(); window.__cake.play(o); }, { mode, scene, reduce, headline: 'CAKE', ver: 'PS 1.73', target: target || { x: 757, y: 0, w: 196, h: 34 }, notch, shown, from });
   if (skipAt) { await page.waitForTimeout(skipAt); await page.evaluate(() => window.__cake.skip()); }
   if (shot) {
     await page.waitForFunction(() => window.__log.some(m => m.type === 'exit'), null, { timeout: 40000 });
@@ -47,10 +48,11 @@ async function run({ mode = 'boot', scene = 1, reduce = false, holdMs = 0, land 
   }
   await page.waitForFunction(u => window.__log.some(m => m.type === u), until, { timeout: 40000 });
   const log = await page.evaluate(() => window.__log);
+  const probed = probe ? await page.evaluate(probe) : null;
   const dom = await page.evaluate(() => ({ text: document.body.innerText, calmSeen: window.__calmSeen || false, letters: [...document.querySelectorAll('.b-l')].map(e => e.textContent).join('') }));
   await page.close();
   const at = t => (log.find(m => m.type === t) || {}).at;
-  return { log, at, errors, dom };
+  return { log, at, errors, dom, probed };
 }
 
 const DUR = { 1: 6000, 2: 5400, 3: 5400 };
@@ -62,7 +64,7 @@ for (const s of [1, 2, 3]) {
   ok(`scene ${s}: the island is built before the end`, r.at('built') < DUR[s] - 600, String(r.at('built')));
   ok(`scene ${s}: the fade starts at its fixed length (${DUR[s]} ms)`, near(r.at('exit'), DUR[s], 220), String(Math.round(r.at('exit'))));
   ok(`scene ${s}: done 0.6 s after`, near(r.at('done') - r.at('exit'), 600, 150), String(Math.round(r.at('done') - r.at('exit'))));
-  ok(`scene ${s}: the order is ready, built, exit, done`, r.log.map(m => m.type).filter(t => t !== 'click').join(',') === 'ready,built,exit,done');
+  ok(`scene ${s}: the order is ready, aim, built, exit, done`, r.log.map(m => m.type).filter(t => t !== 'click').join(',') === 'ready,aim,built,exit,done');
 }
 // 2. Same scene twice: the same length (never tied to anything else).
 {
@@ -122,6 +124,69 @@ for (const at of [800, 3000, 5000]) {
   ok('1920 x 1080: no page errors, same length', r.errors.length === 0 && near(r.at('exit'), 6000, 220), r.errors.join(' | '));
   const p = await run({ scene: 3, target: { x: 40, y: 900, w: 270, h: 30 }, notch: false, shot: SHOTS ? path.join(SHOTS, 'cake-c3-pill.png') : '' });
   ok('a pill island low on the screen: no page errors', p.errors.length === 0, p.errors.join(' | '));
+}
+// 10. PS 1.74: the island where the person put it. The page asks again just before it builds; an answer moves the build there.
+// Where the outline is (stage coordinates) and where each piece starts (its first keyframe's translate added to its box).
+const OUTLINE = () => [...document.querySelectorAll('.nisl')].map(e => {
+  const st = e.style, k = (e.getAnimations()[0] || null);
+  const f = k ? (k.effect.getKeyframes()[0].transform || '') : '';
+  const m = /translate\((-?[\d.]+)px,\s*(-?[\d.]+)px\)/.exec(f);
+  return { x: parseFloat(st.left), y: parseFloat(st.top), w: parseFloat(st.width), h: parseFloat(st.height), dx: m ? +m[1] : 0, dy: m ? +m[2] : 0 };
+});
+{
+  const tl = { x: 6, y: 2, w: 270, h: 28 };
+  for (const sc of [1, 2, 3]) {
+    const r = await run({ scene: sc, until: 'built', holdMs: 99999, aim: { target: tl, notch: false, from: { x: 1, y: 1 } }, probe: OUTLINE });
+    const o = r.probed[0] || {};
+    ok(`scene ${sc}: asks where the island is just before it builds`, r.at('aim') < r.at('built') && r.log.filter(m => m.type === 'aim').length === 1);
+    ok(`scene ${sc}: builds round the island moved to the top left, not the top centre`, near(o.x, tl.x - 3, 1.5) && near(o.y, tl.y - 3, 1.5) && near(o.w, tl.w + 6, 1.5), JSON.stringify(o));
+    ok(`scene ${sc}: no page errors with the new aim`, r.errors.length === 0, r.errors.join(' | '));
+  }
+  const old = await run({ scene: 2, probe: OUTLINE, until: 'built', holdMs: 99999, target: { x: 1400, y: 1040, w: 270, h: 30 }, notch: false });
+  ok('an old Mac that never answers: the place from the start is kept', near((old.probed[0] || {}).x, 1397, 1.5), JSON.stringify(old.probed[0]));
+  const oldEnd = await run({ scene: 2 });
+  ok('an old Mac that never answers: the scene keeps its length', near(oldEnd.at('exit'), 5400, 220), String(Math.round(oldEnd.at('exit'))));
+}
+// 11. The real island turns out somewhere else (moved while the scene ran): the outline glides onto it.
+{
+  const moved = { x: 1430, y: 1040, w: 270, h: 30 };
+  const r = await run({ scene: 1, land: { real: true, signIn: false, target: moved, notch: false }, probe: () => ({ glide: document.getElementById('stage').dataset.glide }), until: 'exit' });
+  ok('the outline glides onto the real island when it is elsewhere', r.probed.glide === '1');
+  ok('the glide keeps the scene length', near(r.at('exit'), 6000, 250), String(Math.round(r.at('exit'))));
+  const same = await run({ scene: 1, land: { real: true, signIn: false, target: { x: 757, y: 0, w: 196, h: 34 } }, probe: () => ({ glide: document.getElementById('stage').dataset.glide }), until: 'exit' });
+  ok('no glide when the island is where it was built', same.probed.glide === '');
+  const rm = await run({ scene: 2, reduce: true, land: { real: true, signIn: false, target: moved, notch: false }, probe: () => ({ glide: document.getElementById('stage').dataset.glide, moving: document.getAnimations().filter(a => a.playState === 'running' && /translate/.test(JSON.stringify(a.effect.getKeyframes()))).length }) });
+  ok('Reduce Motion: no glide, no pieces flying', rm.probed.glide === '' && rm.probed.moving === 0, JSON.stringify(rm.probed));
+}
+// 12. Pieces fly in from the side facing the island: never from beyond the edge it sits at (corners, edges, the bottom).
+{
+  const spots = [
+    ['top left', { x: 6, y: 2, w: 270, h: 28 }, { x: 1, y: 1 }],
+    ['top right', { x: 1434, y: 2, w: 270, h: 28 }, { x: -1, y: 1 }],
+    ['bottom left', { x: 6, y: 1080, w: 270, h: 28 }, { x: 1, y: -1 }],
+    ['bottom right', { x: 1434, y: 1080, w: 270, h: 28 }, { x: -1, y: -1 }],
+    ['left edge', { x: 6, y: 540, w: 270, h: 28 }, { x: 1, y: -1 }],
+    ['bottom centre', { x: 720, y: 1080, w: 270, h: 28 }, { x: 0, y: -1 }],
+  ];
+  for (const [name, t, f] of spots) {
+    const r = await run({ scene: 2, target: t, notch: false, from: f, until: 'built', holdMs: 99999, probe: OUTLINE });
+    const starts = r.probed.map(o => ({ x: o.x + o.w / 2 + o.dx, y: o.y + o.h / 2 + o.dy }));
+    const onScreen = starts.length === 4 && starts.every(p => p.x > -60 && p.x < 1770 && p.y > -90 && p.y < 1200);
+    ok(`Harbor lights, island ${name}: every piece flies in from the screen's inside`, onScreen, JSON.stringify(starts.map(p => [Math.round(p.x), Math.round(p.y)])));
+    if (SHOTS && name === 'bottom left') {
+      // a picture of the build at a corner (no hold: the scene runs to its end)
+      await run({ scene: 2, target: t, notch: false, from: f, shot: path.join(SHOTS, 'cake-c2-bottom-left.png') });
+    }
+  }
+  const home = await run({ scene: 2, until: 'built', holdMs: 99999, probe: OUTLINE });
+  const hs = home.probed.map(o => Math.round(o.dx));
+  ok('Harbor lights at home: the pieces come in as on the approved demo', JSON.stringify(hs) === JSON.stringify([-520, 520, -460, 480]), JSON.stringify(hs));
+  for (const sc of [1, 3]) {
+    const r = await run({ scene: sc, target: { x: 6, y: 1080, w: 270, h: 28 }, notch: false, from: { x: 1, y: -1 }, until: 'built', holdMs: 99999 });
+    ok(`scene ${sc} at the bottom left corner: no page errors`, r.errors.length === 0, r.errors.join(' | '));
+  }
+  const rv = await run({ mode: 'reveal', target: { x: 720, y: 1080, w: 270, h: 28 }, notch: false, from: { x: 0, y: -1 } });
+  ok('the reveal with the island at the bottom: no page errors', rv.errors.length === 0, rv.errors.join(' | '));
 }
 await browser.close();
 console.log(`\n${n - bad}/${n} passed`);

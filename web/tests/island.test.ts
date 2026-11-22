@@ -59,7 +59,7 @@ ok("counts pass through, never negative", () => {
 ok("off: says off and carries nothing", () => {
   const s = I.islandState({ ...base, settings: { island: { mode: "off", idle: "next" }, workingIds: ["x"] } as never, mail: 4, event: ev });
   const { pill: _p, notch: _n, ...rest } = s;
-  assert.deepEqual(rest, { mode: "off", private: false, task: null, more: 0, tasks: [], mail: 0, leads: 0, event: null, hide: 60, cards: true, top: [], fsMove: true, tickSide: "left", sounds: true });
+  assert.deepEqual(rest, { mode: "off", private: false, task: null, more: 0, tasks: [], mail: 0, leads: 0, event: null, hide: 60, cards: true, top: [], fsMove: true, tickSide: "left", sounds: true, taskOnly: true });
 });
 ok("pill mode carries the same content", () => {
   assert.equal(S({ island: { mode: "pill", idle: "next" }, workingIds: ["x"] }).mode, "pill");

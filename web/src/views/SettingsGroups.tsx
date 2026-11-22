@@ -15,7 +15,7 @@ import { editSoundsOn } from "../core/editsounds";
 import { isRedAccount } from "../core/account";
 import { settingsData } from "../core/select";
 import { appName } from "../core/appname";
-import { islandPrefs } from "../core/island";
+import { TASK_ONLY_FEATURE, islandPrefs } from "../core/island";
 import { ChatFadeRow } from "./IslandCards";
 import { tabStaysShown } from "../core/tabstays";
 import { DAY_ENDS_DEFAULT } from "../core/daylog";
@@ -426,6 +426,12 @@ export const CONTROLS: Controls = {
   "island": function Island({ e }) {
     const prefs = islandPrefs(settingsData(useVault()).island);
     return <SetRow e={e} plain open body={<IslandSettingsPage prefs={prefs} save={(p) => save({ island: { ...prefs, ...p } })} />} />;
+  },
+  // PS 1.74 only the task on the closed island (core/island.ts TASK_ONLY_FEATURE): the same switch as in From the squad (squadFeatures).
+  "island-task-only": function IslandTaskOnlyRow({ e }) {
+    const v = useVault();
+    const mine = cleanSwitches(settingsData(v).squadFeatures);
+    return <SetRow e={e} right={<OnOff label={e.name} on={feature(TASK_ONLY_FEATURE)} ready={v.status === "unlocked"} set={(on) => save({ squadFeatures: { ...mine, [TASK_ONLY_FEATURE]: on } })} />} />;
   },
   // PS 1.67 Hatch: the start animation, this Mac only (ps-mac Hatch.swift); on unless switched off.
   "start-animation": function StartAnimation({ e }) {
