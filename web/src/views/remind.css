@@ -157,6 +157,7 @@ select.rm-input option { color: var(--k-surface, #111111); }
 
 /* the website's Test: the card at the top centre, over everything */
 .rm-testcard { position: fixed; /* k-keep */ z-index: 2147483000; /* k-keep */ top: 14px; /* k-keep */ left: 50%; /* k-keep */ width: min(460px, calc(100vw - 24px)); /* k-keep */ transform: translateX(-50%); /* k-keep */ cursor: pointer; /* k-keep */ }
+html:not(.gos) .rm-testcard { top: calc(14px + var(--safe-top, 0px)); /* k-keep */ }   /* PS 1.74: below the notch when it shows over the Tab list */
 
 @media (prefers-reduced-motion: reduce) {
   .rm-item.rm-new, .rm-card, .rm-card::before, .rm-card-pill i, .rm-wheel, .rm-small.danger.sure, .rm-item.open .rm-body-in, .rm-card-box { animation: none; }

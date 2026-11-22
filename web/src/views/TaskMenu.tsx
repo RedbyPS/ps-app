@@ -52,8 +52,19 @@ export function openMiniMenu(e: React.MouseEvent, id: string, subId: string) {
   e.stopPropagation();
   if (GOS) return;
   e.preventDefault();
+  // PS 1.74: the keyboard's own context menu event (it follows the Menu key or Shift+F10 in some browsers) keeps the
+  // menu the key just opened, and one with no pointer spot opens at the mini task, never in the top left corner.
+  if (menu?.kb && menu.mini === subId && menu.id === id && Date.now() - menu.key < 800) return;
+  if (e.clientX === 0 && e.clientY === 0) { openMiniMenuAt(e.currentTarget as Element, id, subId); return; }
   sfx.hover();
   setMenu({ id, x: e.clientX, y: e.clientY, from: "list", root: (e.currentTarget as Element).closest(".tm-overlay"), key: Date.now(), kb: false, mini: subId });
+}
+/** The Menu key or Shift+F10 on a mini task (PS 1.74): ITS menu opens at it, first item ready, never its task's. */
+export function openMiniMenuAt(el: Element, id: string, subId: string) {
+  if (GOS) return;
+  const r = el.getBoundingClientRect();
+  sfx.hover();
+  setMenu({ id, x: r.left + Math.min(60, r.width / 2), y: r.top + r.height / 2, from: "list", root: el.closest(".tm-overlay"), key: Date.now(), kb: true, mini: subId });
 }
 /** The Menu key or Shift+F10 on a task: the menu opens at the task, its first item ready. */
 export function openTaskMenuAt(el: Element, id: string, from: MenuFrom) {

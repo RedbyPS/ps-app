@@ -60,6 +60,15 @@
   background: color-mix(in srgb, var(--k-base, #000000) 28%, transparent); border: 1px solid color-mix(in srgb, var(--k-acc2-t, #F0ABFC) 50%, transparent); border-radius: calc(9px * var(--k-rd, 1)); padding: calc(4px * var(--k-dn, 1)) calc(9px * var(--k-dn, 1)); outline: none;
   user-select: text; -webkit-user-select: text; cursor: text;
 }
+/* PS 1.74: the bin on a mini task being renamed, and on a tapped one on the phone. Thin, quiet until hovered or pressed. */
+.mt-bin {
+  flex: none; display: grid; place-items: center; width: calc(30px * var(--z, .85)); height: calc(30px * var(--z, .85)); padding: 0; border-radius: 50%; cursor: pointer;
+  border: 1px solid color-mix(in srgb, var(--k-fg, #FFFFFF) min(100%, calc(14% * var(--k-ia, 1))), transparent); background: transparent;
+  color: color-mix(in srgb, var(--k-fg, #FFFFFF) min(100%, calc(62% * var(--k-ia, 1))), transparent); transition: color .15s ease, border-color .15s ease, background .15s ease;
+  touch-action: manipulation;
+}
+.mt-bin svg { width: calc(16px * var(--z, .85)); height: calc(16px * var(--z, .85)); }
+.mt-bin:hover, .mt-bin:active, .mt-bin:focus-visible { color: var(--k-bad-t, #FF8F8A); border-color: color-mix(in srgb, var(--k-bad-t, #FF8F8A) 55%, transparent); background: color-mix(in srgb, var(--k-bad-t, #FF8F8A) 10%, transparent); outline: none; }
 .mt-input::placeholder { color: color-mix(in srgb, var(--k-fg, #FFFFFF) min(100%, calc(38% * var(--k-ia, 1))), transparent); }
 .mt-add {
   justify-self: start; display: inline-flex; align-items: center; gap: calc(7px * var(--k-dn, 1)); padding: calc(6px * var(--k-dn, 1)) calc(13px * var(--k-dn, 1)); border-radius: 999px; cursor: pointer;
@@ -114,3 +123,5 @@
 .tm-overlay:not(.ws-lightning):not(.ws-own) .tm-row.working .mt-input::placeholder { color: color-mix(in srgb, var(--k-surface, #17121A) 42%, transparent); }
 .tm-overlay:not(.ws-lightning):not(.ws-own) .tm-row.working .mt-add { color: color-mix(in srgb, var(--k-surface, #17121A) 60%, transparent); border-color: color-mix(in srgb, var(--k-base, #000000) 25%, transparent); }
 .tm-overlay:not(.ws-lightning):not(.ws-own) .tm-row.working .mt-addrow { color: color-mix(in srgb, var(--k-surface, #17121A) 50%, transparent); }
+.tv-mini-panel .mt-bin, .tv-item .mt-bin { width: 24px; height: 24px; border-color: var(--line); color: var(--muted); }
+.tv-mini-panel .mt-bin svg, .tv-item .mt-bin svg { width: 13px; height: 13px; }
