@@ -7,6 +7,7 @@ import { INBOX, inboxMove, inboxTasks, openInboxCount } from "../src/core/aiinbo
 import { aiConnect, aiGuide, KEY_SLOT } from "../src/core/taskapidoc.ts";
 import { AI_MSG } from "../src/core/aimessage.ts";
 import { tabLists } from "../src/core/groups.ts";
+import { setScheduledGate } from "../src/core/scheduled.ts";
 import { cleanRemind, type RemindRec } from "../src/core/remind.ts";
 
 let n = 0;
@@ -1058,6 +1059,33 @@ ok("Copy for AI 1.74: waitsUntil, not_landed and what dayEnds also moves are exp
   const g = aiGuide({ scopes: { ...DEFAULT_SCOPES, focus: true, settings: true }, today: T });
   for (const e of ["\"waitsUntil\"", "409 not_landed", "day turns over for client tasks"]) assert.ok(g.includes(e), e);
   assert.ok(!/[\u2013\u2014]/.test(g), "no en or em dashes");
+});
+
+// PS 1.75 scheduled tasks (core/scheduled.ts): the list an AI reads says a task is scheduled and for when, and it cannot be worked on.
+ok("Scheduled 1.75: a one-off with a later day is scheduled, not in the list, and refused as working on; off is 1.74", async () => {
+  setScheduledGate(() => true);
+  try {
+    const s = fake({ todos: [d("sc1", 0, { due: "2026-11-14", p1: true }), d("sc2", 1, { due: T }), d("cw1", 2, { clientId: "cl1", doOn: "2026-11-14" })], settings: SETTINGS });
+    (s as ApiStore).land = () => T;
+    const all = (await call(s, "GET", "/v1/tasks", undefined, ALL)).body.tasks;
+    const by = (id: string) => all.find((t: { id: string }) => t.id === id);
+    assert.deepEqual([by("sc1").waitsUntil, by("sc1").scheduled], ["2026-11-14", true]);
+    assert.deepEqual([by("sc2").waitsUntil, by("sc2").scheduled], [null, false]);
+    assert.deepEqual([by("cw1").waitsUntil, by("cw1").scheduled], ["2026-11-14", false], "a client do date is not called scheduled");
+    const r = await call(s, "PUT", "/v1/focus", { task: "sc1" }, ALL);
+    assert.equal(r.status, 409);
+    assert.match(r.body.error.message, /scheduled for 2026-11-14/);
+    setScheduledGate(() => false);
+    const off = (await call(s, "GET", "/v1/tasks", undefined, ALL)).body.tasks.find((t: { id: string }) => t.id === "sc1");
+    // Break-it 1.75: off, the task looks exactly as in 1.74 (no scheduled field at all).
+    assert.deepEqual([off.waitsUntil, "scheduled" in off], [null, false]);
+  } finally { setScheduledGate(null); }
+});
+ok("Copy for AI 1.75: the scheduled field is explained while it is on, and not there when off (1.74)", () => {
+  setScheduledGate(() => true);
+  try { assert.ok(aiGuide({ scopes: DEFAULT_SCOPES, today: T }).includes("\"scheduled\": false, or true")); } finally { setScheduledGate(null); }
+  setScheduledGate(() => false);
+  try { assert.ok(!aiGuide({ scopes: DEFAULT_SCOPES, today: T }).includes("\"scheduled\"")); } finally { setScheduledGate(null); }
 });
 
 for (const [name, fn] of tests) { await fn(); n++; console.log("ok -", name); }

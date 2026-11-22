@@ -19,7 +19,9 @@ import { AI_MSG, AI_MSG_FIELDS, addAiMsg, aiMsgWait, aiNotesMode, checkAiMsg, ne
 import { GOALS_MAX, GOAL_COLORS, GOAL_NOTE_MAX, GOAL_TITLE_MAX, endFor, goalLevel, levelName, nextGoalColor } from "./goals.ts";
 import { okResetAt, resetAtOf } from "./resetday.ts";
 import { cdPatch, cleanCd, okHm, type CdPrefs } from "./daycount.ts";
-import { isClientTask, waitsToLand } from "./clientwork.ts";
+import { isClientTask, landsOn } from "./clientwork.ts";
+import { scheduledOn } from "./scheduled.ts";
+const isISODay = (v: unknown): v is string => typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v);
 import { REM_TEXT_MAX, okTz, addTaskReminder, freshId, minutesOf, newTaskReminder, oneLine, patchReminder, reminderOfTask, remindOrDefault, removeReminder, type RemindRec } from "./remind.ts";
 
 export const API_PORT = 47836;
@@ -116,8 +118,12 @@ export interface ApiTask {
   id: string; title: string; notes: string | null; kind: "once" | "daily"; done: boolean; doneAt: string | null; due: string | null;
   p1: boolean; list: string; listName: string; section: string; sectionName: string; addedByAi: boolean; inInbox: boolean;
   createdAt: string | null; subtasks: { title: string; done: boolean }[];
-  /** Clients (PS 1.73): the do date of a task that waits out of the list until then (core/clientwork.ts waitsToLand), else null. */
+  /** Clients (PS 1.73): the do date of a task that waits out of the list until then (core/clientwork.ts waitsToLand), else null.
+   *  PS 1.75: also the day a scheduled task lands on (core/scheduled.ts), with `scheduled` true. */
   waitsUntil: string | null;
+  /** PS 1.75: scheduled for a later day (its `due`), so not in any list and not a task to work on yet. Only while the
+   *  "scheduled-tasks" switch is on (off: the task looks as in 1.74). */
+  scheduled?: boolean;
   reminder: { date: string | null; time: string; until: string; on: boolean; message: string | null } | null;
 }
 type Ctx = ReturnType<typeof makeCtx>;
@@ -159,7 +165,8 @@ function view(d: Doc<Todo>, c: Ctx): ApiTask {
     addedByAi: t.ai === true, inInbox: inInbox(t), createdAt: t.createdAt ?? null,
     subtasks: (t.subtasks ?? []).map((s) => ({ title: s.title, done: !!s.done })),
     reminder: r ? { date: r.date ?? null, time: r.at, until: r.until, on: r.on, message: r.text || null } : null,
-    waitsUntil: c.land && waitsToLand(t, c.land) ? t.doOn! : null,
+    waitsUntil: c.land ? landsOn(t, c.land) : null,
+    ...(scheduledOn() ? { scheduled: !!c.land && !isISODay(t.doOn) && landsOn(t, c.land) !== null } : {}),
   };
 }
 /** Can this AI reach this task with its switches. */
@@ -574,7 +581,10 @@ async function putFocus(body: unknown, sc: Scopes, store: ApiStore): Promise<Api
   if (!reach(d.data, sc)) return scopeOff(reachOff(d.data));
   if (d.data.done) return fail(409, "task_done", "That task is done. Open it again first (POST /v1/tasks/{id}/reopen) if the person is working on it again.");
   // Break-it 1.74: a client task before its do date is in no list yet, so no click could make it the working task.
-  if (c.land && waitsToLand(d.data, c.land)) return fail(409, "not_landed", `That task comes into their list on ${d.data.doOn} (its do date). Ask the person before working on it early.`);
+  const lands = c.land ? landsOn(d.data, c.land) : null;
+  if (lands) return fail(409, "not_landed", isISODay(d.data.doOn)
+    ? `That task comes into their list on ${lands} (its do date). Ask the person before working on it early.`
+    : `That task is scheduled for ${lands} and comes into their list that day. Ask the person before working on it early.`);
   await store.setFocus([d.id, ...hidden]);
   // Without the read switch the answer names the task by id only (PUT may set it, never read it).
   const shown = sc.read ? view(d, c) : { id: d.id };

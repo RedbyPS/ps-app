@@ -17,6 +17,7 @@
 import type { Stage, Todo } from "./model";
 import { prevEnd, nextEnd, okHm, type CdPrefs } from "./daycount.ts";
 import { cleanRepeat, isDueNow, isISO, nextAfter, plusDays, ruleDays, type Repeat } from "./repeat.ts";
+import { waitsForDay } from "./scheduled.ts";
 
 // ---------- the day ----------
 
@@ -68,9 +69,16 @@ export function landDayAt(now: number, r: DayRule): string { return nameOf(daySt
 
 // ---------- landing ----------
 
-/** A task that waits for its do date (a one day client task before its day). Everything else shows as before. */
-export function waitsToLand(t: Pick<Todo, "type" | "done"> & { doOn?: string | null }, day: string): boolean {
-  return t.type === "once" && !t.done && isISO(t.doOn) && t.doOn > day;
+/** A task that waits for its do date (a one day client task before its day), or (PS 1.75, core/scheduled.ts, while the
+ *  "scheduled-tasks" switch is on) a one-off scheduled for a later day. Everything else shows as before. */
+export function waitsToLand(t: Pick<Todo, "type" | "done"> & { doOn?: string | null; due?: string | null }, day: string): boolean {
+  if (t.type === "once" && !t.done && isISO(t.doOn) && t.doOn > day) return true;
+  return waitsForDay(t, day);
+}
+/** The day a waiting task lands on (its do date, or its scheduled day), else null. */
+export function landsOn(t: Pick<Todo, "type" | "done"> & { doOn?: string | null; due?: string | null }, day: string): string | null {
+  if (!waitsToLand(t, day)) return null;
+  return isISO(t.doOn) ? t.doOn : (t.due ?? null);
 }
 /** Is the task in the to-do list on `day`? One day tasks from their do date until ticked and Reset; repeating ones on their
  *  lit days (core/repeat.ts isDueNow, read on the person's day). */

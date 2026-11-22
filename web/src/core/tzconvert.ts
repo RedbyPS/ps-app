@@ -15,7 +15,7 @@ const ZONE_WORDS: Record<string, string> = {
   uk: "Europe/London", gmt: "Europe/London", bst: "Europe/London", london: "Europe/London",
 };
 
-/** "2pm", "2 pm", "14:00", "2:30pm", "1430", "930", "2.30 p.m.", "noon", "2pm PT". Null when it is not a time. */
+/** "2pm", "2 pm", "14:00", "14.00", "14,00", "2:30pm", "1430", "930", "2.30 p.m.", "noon", "2pm PT". Null when it is not a time. */
 export function parseTyped(text: string): Typed | null {
   let s = text.toLowerCase().replace(/(\d)\s*([ap])\.?\s*m\.?/g, "$1$2m").replace(/\s+/g, " ").trim();
   if (!s) return null;
@@ -24,11 +24,12 @@ export function parseTyped(text: string): Typed | null {
   if (zm && ZONE_WORDS[zm[1]]) { zone = ZONE_WORDS[zm[1]]; s = s.slice(0, zm.index).trim(); }
   if (s === "noon" || s === "midday") return { h: 12, mi: 0, zone };
   if (s === "midnight") return { h: 0, mi: 0, zone };
-  const m = s.match(/^(\d{1,2})(?:[:.h ]?(\d{2}))?\s*(am|pm|a|p)?$/);
+  // PS 1.75 (Jan, 22 Nov 2026: "it didn't recognize 22.15 or 22,15"): a comma and a closing dot count too ("22,15", "22.15.").
+  const m = s.replace(/^(\d{1,2}[:.,h]\d{2})\.$/, "$1").match(/^(\d{1,2})(?:\s?[:.,h]\s?(\d{2})|\s?(\d{2}))?\s*(am|pm|a|p)?$/);
   if (!m) return null;
   let h = Number(m[1]);
-  const mi = m[2] ? Number(m[2]) : 0;
-  const ap = m[3]?.[0];
+  const mi = m[2] ?? m[3] ? Number(m[2] ?? m[3]) : 0;
+  const ap = m[4]?.[0];
   if (mi > 59) return null;
   if (ap) {
     if (h < 1 || h > 12) return null;
@@ -146,7 +147,7 @@ export function timeSpans(text: string): Spans | null {
   if (!parseTyped(text)) return null;
   const w = text.match(/noon|midday|midnight/i);
   if (w) return { hour: [w.index!, w.index! + w[0].length], min: null, end: w.index! + w[0].length };
-  const m = text.match(/(\d{1,4})(?:([:.h ])(\d{2}))?/i);
+  const m = text.match(/(\d{1,4})(?:(\s?[:.,h]\s?| )(\d{2}))?/i);
   if (!m) return null;
   const at = m.index!, run = m[1];
   let hour: [number, number], min: [number, number] | null = null;

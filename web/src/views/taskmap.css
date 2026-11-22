@@ -1535,3 +1535,27 @@ html.gos .tm-done-row { -webkit-touch-callout: none; -webkit-user-select: none; 
 .lv-set { width: 100%; grid-column: 1 / -1; display: grid; gap: 6px; margin: 4px 0 10px; }
 .lv-levels { width: 100%; grid-column: 1 / -1; margin: 0 0 6px; }
 .tm-p1-frame.mini.lv-plain-mini { border: 1px solid color-mix(in srgb, var(--k-fg, #FFFFFF) min(100%, calc(22% * var(--k-ia, 1))), transparent); }
+
+/* ---------- PS 1.75: Scheduled, the closed row at the very bottom (views/Scheduled.tsx) ---------- */
+.tm-sched { display: grid; gap: calc(8px * var(--k-dn, 1)); margin-top: calc(4px * var(--k-dn, 1)); }
+.tm-sched-bar { justify-self: start; display: inline-flex; align-items: center; gap: calc(7px * var(--k-dn, 1)); cursor: pointer; font: inherit;
+  font-size: calc(13px * var(--k-fs, 1)); font-weight: 650; padding: calc(6px * var(--k-dn, 1)) calc(12px * var(--k-dn, 1)); border-radius: 999px;
+  color: color-mix(in srgb, var(--k-fg, #FFFFFF) 62%, transparent); background: transparent;
+  border: 1px solid color-mix(in srgb, var(--k-fg, #FFFFFF) min(100%, calc(12% * var(--k-ia, 1))), transparent); transition: color .18s ease, background .18s ease, border-color .18s ease; }
+.tm-sched-bar:hover, .tm-sched.open .tm-sched-bar { color: var(--k-fg, #FFFFFF); background: color-mix(in srgb, var(--k-fg, #FFFFFF) min(100%, calc(6% * var(--k-ia, 1))), transparent); }
+.tm-sched-bar b { font-size: calc(11px * var(--k-fs, 1)); font-weight: 800; padding: 0 calc(7px * var(--k-dn, 1)); border-radius: 999px; background: color-mix(in srgb, var(--k-fg, #FFFFFF) 10%, transparent); }
+.tm-sched-chev { opacity: .6; transition: transform .2s ease; }
+.tm-sched.open .tm-sched-chev { transform: rotate(180deg); }
+.tm-sched-list { animation: tm-sched-in .22s cubic-bezier(.22, 1, .36, 1) both; }
+@keyframes tm-sched-in { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .tm-sched-list { animation: none; } .tm-sched-chev { transition: none; } }
+.tm-sched-row { opacity: .58; transition: opacity .18s ease; }
+.tm-sched-row:hover, .tm-sched-row:focus-within { opacity: .9; }
+.tm-sched-open { flex: 1 1 auto; min-width: 0; display: flex; align-items: baseline; gap: calc(8px * var(--k-dn, 1)); text-align: left; cursor: pointer;
+  font: inherit; color: inherit; background: none; border: 0; padding: 0; }
+.tm-sched-open .tm-t { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tm-sched-today { flex: none; cursor: pointer; font: inherit; font-size: calc(12px * var(--k-fs, 1)); font-weight: 700; padding: calc(3px * var(--k-dn, 1)) calc(10px * var(--k-dn, 1));
+  border-radius: 999px; color: inherit; background: transparent; border: 1px solid color-mix(in srgb, var(--k-fg, #FFFFFF) 22%, transparent); opacity: 0; transition: opacity .15s ease, background .15s ease; }
+.tm-sched-row:hover .tm-sched-today, .tm-sched-row:focus-within .tm-sched-today, html.gos .tm-sched-today { opacity: 1; }
+.tm-sched-today:hover { background: color-mix(in srgb, var(--k-fg, #FFFFFF) 10%, transparent); }
+.tm-ed-lab { font-size: calc(12px * var(--k-fs, 1)); font-weight: 650; opacity: .7; align-self: center; }

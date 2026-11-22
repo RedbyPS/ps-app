@@ -41,7 +41,7 @@ export interface DueTask { id: string; title: string; kind: DueKind; dueAt: numb
 /** What dueTasks needs to know about a task (core/model.ts Todo). */
 export interface DueTodo {
   title?: unknown; type?: unknown; done?: unknown; clearedAt?: unknown; example?: unknown; aiInbox?: unknown; due?: unknown;
-  p1?: unknown; p1At?: unknown; p1Since?: unknown; clientId?: unknown; repeat?: unknown; doneAt?: unknown;
+  p1?: unknown; p1At?: unknown; p1Since?: unknown; clientId?: unknown; repeat?: unknown; doneAt?: unknown; createdAt?: unknown;
 }
 export interface DueCtx {
   now: number;
@@ -250,21 +250,39 @@ export function autoTask(items: PlanItem[], id: string): string | null {
 /** What to write on your tasks so every one off Priority 1 has its own start time (p1Since) and no other task does. It is the
  *  squad's clock when there is one (p1At), else now; a P1 that was done and opened again starts afresh; a task that left
  *  Priority 1 (or became a repeating one) loses it. Cleared tasks are left alone (nothing to write for them). */
-export function p1OwnStamps(todos: { id: string; data: DueTodo }[], now: number): { id: string; p1Since: string | null }[] {
+/** PS 1.75 (core/scheduled.ts): `waits` says a task is scheduled for a later day; it has no clock until that day (an old stamp is
+ *  taken off). `landStart` is when the person's current day started: a task that waited (added before it) and is new in
+ *  Priority 1 today with `due` on `landDay` starts its 24 hours then, the moment it landed, even if PS was closed over the day end. */
+export type P1StampOpts = { waits?: (t: DueTodo) => boolean; landStart?: number; landDay?: string };
+/** Break-it 1.75: `updatedAt` and `pending` are the doc's (core/model.ts Doc). A task changed after it landed (made P1 at 15:00, or
+ *  an edit not synced yet) starts from now: only a task left as it was since before its day started counts from the day start. */
+export function p1OwnStamps(todos: { id: string; data: DueTodo; updatedAt?: string | null; pending?: boolean }[], now: number, o: P1StampOpts = {}): { id: string; p1Since: string | null }[] {
   const out: { id: string; p1Since: string | null }[] = [];
   const nowIso = new Date(now).toISOString();
-  for (const { id, data: t } of todos) {
+  for (const { id, data: t, updatedAt, pending } of todos) {
     if (!t || t.clearedAt || t.example === true) continue;
     const own = cleanStart(t.p1Since, now);
     if (!isP1(t) || t.aiInbox === true) { if (t.p1Since) out.push({ id, p1Since: null }); continue; }
+    // Break-it 1.75: a waiting task gets nothing written. Taking an old stamp off would fight a 1.74 device, which stamps every P1
+    // it shows (each write wakes the other device: a loop). Its clock is set when it lands (below).
+    if (o.waits?.(t)) continue;
     if (t.done) continue;
     const squad = cleanStart(t.p1At, now);
+    const landing = o.landStart !== undefined && Number.isFinite(o.landStart) && o.landStart <= now && !!o.landDay && t.due === o.landDay;
+    // A stamp from before its day started (written while it waited, by a 1.74 device or before it got its day) starts again at
+    // the landing, once: the 24 hours count from its day.
+    if (own && landing && Date.parse(own) < o.landStart!) { out.push({ id, p1Since: squad && Date.parse(squad) >= o.landStart! ? squad : new Date(o.landStart!).toISOString() }); continue; }
     if (own) {
       const doneAt = typeof t.doneAt === "string" ? Date.parse(t.doneAt) : NaN;
       if (Number.isFinite(doneAt) && doneAt >= Date.parse(own)) out.push({ id, p1Since: squad && Date.parse(squad) > doneAt ? squad : nowIso });   // opened again
       continue;
     }
-    out.push({ id, p1Since: squad ?? nowIso });
+    // Landed today after waiting for its day: its clock starts when the day started (never before it was added, never later than now).
+    const made = typeof t.createdAt === "string" ? Date.parse(t.createdAt) : NaN;
+    const changed = typeof updatedAt === "string" ? Date.parse(updatedAt) : NaN;
+    const landed = landing && Number.isFinite(made) && made < o.landStart! && pending !== true && Number.isFinite(changed) && changed < o.landStart!
+      ? new Date(o.landStart!).toISOString() : null;
+    out.push({ id, p1Since: squad ?? landed ?? nowIso });
   }
   return out;
 }

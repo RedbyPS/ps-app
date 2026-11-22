@@ -145,3 +145,9 @@ export function renamedPrio(before: string, after: string): TypedPrio | null {
   const p = parsePrio(after);
   return p && suggestionKey(p) !== suggestionKey(parsePrio(before)) ? p : null;
 }
+
+/** PS 1.75 (Jan, 22 Nov 2026: "if I click on it it should stop"): a plain click that puts the caret inside lit words (not at
+ *  their edges, so typing on after them still works, and nothing selected) says no to them, as a click on the chip does. */
+export function insideLit(caret: number | null, selEnd: number | null, spans: readonly { start: number; end: number }[]): boolean {
+  return caret != null && caret === selEnd && spans.some((s) => s.start < caret && caret < s.end);
+}

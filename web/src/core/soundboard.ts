@@ -355,9 +355,10 @@ export function cleanPlays(v: unknown): TimedPlay[] {
   return out;
 }
 
-/** "7:07am", "7.07 pm", "19:07", "7am", "0707" -> "HH:MM" (24 hour), or null. */
+/** "7:07am", "7.07 pm", "19:07", "7am", "0707" -> "HH:MM" (24 hour), or null. Break-it 1.75 (the same gap as the Time zones box):
+ *  a comma, a closing dot and "p.m." count too ("22,15", "22.15.", "9,30 p.m."). */
 export function parseTime(text: string): string | null {
-  const t = text.trim().toLowerCase().replace(/\s+/g, "").replace(/\./g, ":");
+  const t = text.trim().toLowerCase().replace(/\s+/g, "").replace(/([ap])\.m\.?$/, "$1m").replace(/^(\d{1,2}[.,:]\d{2})[.,]$/, "$1").replace(/[.,]/g, ":");
   const m = /^(\d{1,2})(?::?(\d{2}))?(am|pm|a|p)?$/.exec(t);
   if (!m) return null;
   let h = Number(m[1]);

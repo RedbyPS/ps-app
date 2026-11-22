@@ -221,6 +221,12 @@ export const CONTROLS: Controls = {
     const mine = cleanSwitches(settingsData(v).squadFeatures);
     return <SetRow e={e} right={<OnOff label={e.name} on={feature("nl-dates")} ready={v.status === "unlocked"} set={(on) => save({ squadFeatures: { ...mine, "nl-dates": on } })} />} />;
   },
+  // PS 1.75 scheduled tasks (core/scheduled.ts, views/Scheduled.tsx). The same switch as in From the squad (squadFeatures).
+  "scheduled-tasks": function ScheduledTasks({ e }) {
+    const v = useVault();
+    const mine = cleanSwitches(settingsData(v).squadFeatures);
+    return <SetRow e={e} right={<OnOff label={e.name} on={feature("scheduled-tasks")} ready={v.status === "unlocked"} set={(on) => save({ squadFeatures: { ...mine, "scheduled-tasks": on } })} />} />;
+  },
   // PS 1.65 voice capture (views/VoiceCapture.tsx, core/voicecapture.ts). The same switch as in From the squad (squadFeatures).
   "voice-capture": function VoiceCaptureRow({ e }) {
     const v = useVault();

@@ -302,6 +302,19 @@ export const INTROS: IntroDef[] = [
     mark: "spark",
     choice: true,
   },
+  {
+    // PS 1.75 (Jan, 22 Nov 2026): scheduled tasks (core/scheduled.ts) are off by default, so this is an offer: it says the feature
+    // exists and where its switch is, and never says a task is hidden. Turn on switches it on (views/FeatureIntro.tsx CHOICES, the
+    // same squadFeatures switch as Settings), Not now leaves it off; both end it for good. Only while it is off for an owner
+    // (DONE_PROBES). Words wait for approval.
+    id: "scheduled-tasks-175",
+    headline: "New: hide tasks until their day.",
+    ask: "A task for a later day would wait in Scheduled at the bottom of your list. Also in Settings, Your list.",
+    show: "Turn on",
+    later: "Not now",
+    mark: "spark",
+    choice: true,
+  },
 ];
 
 /** The widths of the intro card and the guide grown out of the island (points). */

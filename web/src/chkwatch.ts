@@ -21,6 +21,8 @@ import { CHK_FEATURE, checklistTasks, chkBlock, chkCardItem, chkStart, chkStep, 
 import { openChkScreen } from "./chkscreen";
 import type { CalendarSnap, Doc, Todo } from "./core/model";
 import { lpInterval } from "./core/lowpower.ts";
+import { scheduledOn } from "./core/scheduled";
+import { landDayNow } from "./clients/clientsday";
 
 type Post = (m: object) => void;
 /** Away from the keyboard on the website: no key or mouse in this page for this long, or the page is hidden. (The Mac's shell knows for itself.) */
@@ -52,7 +54,8 @@ export function checklistNow(): { tasks: Doc<Todo>[]; lastTickAt: number } {
   const s = vaultStore.get(), now = Date.now(), day = todayISO(), min = Math.floor(now / 60_000);
   if (memo && memo.s === s && memo.day === day && memo.min === min) return memo.v;
   const st = settingsData(s), all = todos(s);
-  const lists = tabLists(all, cleanGroups(st.tmGroups), day, { now, tz: overdueZone(st.tmHomeTz) });
+  // PS 1.75: as the Tab list shows it, so a task scheduled for a later day is not on the checklist yet (core/scheduled.ts).
+  const lists = tabLists(all, cleanGroups(st.tmGroups), day, { now, tz: overdueZone(st.tmHomeTz) }, scheduledOn() ? landDayNow(s, now) : undefined);
   const v = { tasks: checklistTasks(lists), lastTickAt: lastTickOf(all) };
   memo = { s, day, min, v };
   return v;

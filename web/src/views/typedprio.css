@@ -73,3 +73,6 @@ html.gos .tp-wrap.dx-addw { flex: 1 1 100%; max-width: none; min-width: 0; }
 @media (prefers-reduced-motion: reduce) {
   .tp-mark, .tp-chip, .tp-chip.leaving { animation: none; transition: none; }
 }
+/* PS 1.75: the priority chip is one button, like the date chip: a click anywhere on it keeps the word as text. */
+button.tp-chip { font-family: inherit; cursor: pointer; }
+button.tp-chip:hover .tp-chip-x { color: var(--k-fg, #FFFFFF); background: color-mix(in srgb, var(--k-fg, #FFFFFF) 22%, transparent); }

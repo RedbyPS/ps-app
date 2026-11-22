@@ -6,7 +6,7 @@ import { forwardRef, useCallback, useEffect, useImperativeHandle, useLayoutEffec
 import type { Settings } from "../core/model";
 import { p1Color, p1Tones } from "../core/prio";
 import { settingsData } from "../core/select";
-import { backspaceDismisses, prioDismiss, prioOnAdd, prioPicked, prioStartFor, prioTyped, type PrioState, type TypedPrio } from "../core/typedprio";
+import { backspaceDismisses, insideLit, prioDismiss, prioOnAdd, prioPicked, prioStartFor, prioTyped, type PrioState, type TypedPrio } from "../core/typedprio";
 import { useVault } from "../ui/kit";
 import { sfx } from "../ui/sfx";
 import type { NlCtl } from "./NlDates";
@@ -158,10 +158,21 @@ export const PrioInput = forwardRef<HTMLInputElement, InputProps>(function PrioI
     }
     onKeyDown?.(e);
   };
+  // PS 1.75: one click inside the lit words keeps them as text (only once the box already had the focus, so the click that
+  // puts the caret in the box never says no by itself). Retyping them recognises them again.
+  const focusedAt = useRef(false);
+  const clickLit = (e: React.MouseEvent<HTMLInputElement>) => {
+    const el = e.currentTarget;
+    if (!focusedAt.current || e.detail > 1 || e.shiftKey || e.metaKey || e.ctrlKey || e.altKey) return;
+    if (offer && insideLit(el.selectionStart, el.selectionEnd, offer.tokens)) { prio.dismiss(); sfx.hover(); return; }
+    if (date && nl && insideLit(el.selectionStart, el.selectionEnd, date.hits)) { nl.dismiss(); sfx.hover(); }
+  };
   const style = { ...(prio.p1 ? { ["--tp-p1" as string]: prio.p1 } : {}) };
   return (
     <span className={`tp-wrap${wrapClass ? ` ${wrapClass}` : ""}${compact ? " tp-compact" : ""}${any ? " has-offer" : ""}`} style={style}>
-      <input ref={input} {...rest} onKeyDown={keys} onScroll={(e) => { remeasure(); onScroll?.(e); }} />
+      <input ref={input} {...rest} onKeyDown={keys} onScroll={(e) => { remeasure(); onScroll?.(e); }}
+        onMouseDown={(e) => { focusedAt.current = document.activeElement === e.currentTarget; rest.onMouseDown?.(e); }}
+        onClick={(e) => { clickLit(e); rest.onClick?.(e); }} />
       {any && box && (
         <span className="tp-hl" aria-hidden="true" style={{ left: box.padL, right: box.padR }}>
           {box.marks.map((m, i) => (
@@ -185,13 +196,15 @@ export const PrioInput = forwardRef<HTMLInputElement, InputProps>(function PrioI
         </button>
       )}
       {chip && (
-        <span className={`tp-chip tp-p${chip.prio}${chip.leaving ? " leaving" : ""}`} role="status" aria-live="polite">
+        // PS 1.75: the whole chip is one click (it used to be only its small x), like the date chip.
+        <button type="button" tabIndex={-1} className={`tp-chip tp-p${chip.prio}${chip.leaving ? " leaving" : ""}`} aria-live="polite"
+          aria-label={`Suggested: P${chip.prio}. Click to keep P${chip.prio} as text`} title={compact ? `Suggested: P${chip.prio}. Click to keep it as text` : "Keep it as text"}
+          onMouseDown={(e) => e.preventDefault()} onClick={() => { prio.dismiss(); sfx.hover(); input.current?.focus({ preventScroll: true }); }}>
           <span className="tp-chip-l">Suggested:</span><b>P{chip.prio}</b>
-          <button type="button" className="tp-chip-x" tabIndex={-1} aria-label={`Not a priority, keep P${chip.prio} as text`} title={compact ? `Suggested: P${chip.prio}. Click to keep it as text` : "Keep it as text"}
-            onMouseDown={(e) => e.preventDefault()} onClick={() => { prio.dismiss(); sfx.hover(); input.current?.focus({ preventScroll: true }); }}>
+          <span className="tp-chip-x" aria-hidden="true">
             <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.4" strokeLinecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" /></svg>
-          </button>
-        </span>
+          </span>
+        </button>
       )}
       </span>}
     </span>

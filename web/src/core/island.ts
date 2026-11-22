@@ -6,6 +6,8 @@
 // result as {type:"island", state}. Read only: the island never sends anything anywhere (Rule Zero).
 import type { Doc, Settings, Todo } from "./model";
 import { tabLists } from "./groups.ts";
+import { waitsToLand } from "./clientwork.ts";
+import { scheduledOn } from "./scheduled.ts";
 import { overdueZone } from "./overdue.ts";
 import { dndMutes } from "./dnd.ts";
 import { NOTCH_DEFAULT, PILL_DEFAULT, notchLook, notchTones, pillLook, pillTones, type NotchLook, type NotchTones, type PillLook, type PillTones } from "./islandlook.ts";
@@ -187,7 +189,10 @@ export function islandState(inp: IslandInput): IslandState {
   if (prefs.mode === "off") return none;
   const byId = new Map(inp.todos.map((d) => [d.id, d]));
   const ids = inp.settings.workingIds ?? (inp.settings.workingOn ? [inp.settings.workingOn] : []);
-  const working = ids.map((id) => byId.get(id)).filter((d): d is Doc<Todo> => !!d && open(d.data));
+  // PS 1.75: a task scheduled for a later day (or a client task before its do date) is never the island's task (core/scheduled.ts).
+  // Off: as in 1.74 (the working task shows whatever it is).
+  const wait = !!inp.land && scheduledOn();
+  const working = ids.map((id) => byId.get(id)).filter((d): d is Doc<Todo> => !!d && open(d.data) && !(wait && waitsToLand(d.data, inp.land!)));
   const name = (d: Doc<Todo>) => (priv ? PRIVATE_TITLE : clip(d.data.title || "") || "Untitled task");
   let task: IslandState["task"] = null;
   if (working.length) task = { id: working[0].id, title: name(working[0]), dim: false };

@@ -22,6 +22,7 @@ import type { SquadView } from "./view";
 import { lpClear, lpInterval } from "../core/lowpower.ts";   // PS 1.65 Low power mode: these timers stop while asleep
 import { landDayNow } from "../clients/clientsday";
 import { waitsToLand } from "../core/clientwork";
+import { schedCut, scheduledOn } from "../core/scheduled";
 
 type Post = (m: object) => void;
 const PS_PAGE = import.meta.env.MODE === "ps";
@@ -152,7 +153,8 @@ export function startP1(h: P1Hooks) {
     if (graceCrossed(lastTick, now) && sharing()) h.push();
     lastTick = now;
     quietPull(now);
-    const day = landDayNow(vaultStore.get());
+    // Break-it 1.75: with scheduled tasks on, a task also lands when its calendar date starts (core/scheduled.ts schedCut).
+    const land = landDayNow(vaultStore.get()), day = scheduledOn() ? schedCut(land) : land;
     if (day !== landSeen) { if (landSeen) void reconcile(); landSeen = day; }   // the day ended: tasks that landed get their P1 start now
     alerts();
     try { h.tick?.(); } catch { /* the board's own problem */ }

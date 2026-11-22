@@ -97,6 +97,8 @@ import { resetMinOf } from "../core/resetday";
 import { landDayNow, useLandTick } from "../clients/clientsday";
 import { deadlinePill } from "../core/clientwork";
 import { Completed } from "./Completed";
+import { Scheduled } from "./Scheduled";
+import { schedCut, scheduledList, scheduledOn } from "../core/scheduled";
 import { SleepHost, SleepRow } from "./SleepMode";
 import { TaskMenuHost, openTaskMenu, openTaskMenuAt } from "./TaskMenu";
 import { EmptyList, ListDots, ListMenuHost, ListPager, ListStrip, PlusPage, SecTitle, addGroupHere, deleteList, goToPage, jumpToPage, listDragHint, listDropAt, listName, moveToList, newPanelsPage, openSecMenu, pageBg, pageForNewGroup, pagePrefs, restoreLostPages, setListCtx, setPageOrder, useActivePage } from "./ListPager";
@@ -1072,10 +1074,11 @@ export function Overlay({ onClose, controls, docked, web, footer }: { onClose: (
   const landTick = useLandTick(s);   // Clients (PS 1.73): the next day's tasks land at the day end with no click
   // The AI Inbox (core/aiinbox.ts): tasks an AI added, on no list yet; Dimension X shows them.
   const aiInbox = useMemo(() => inboxTasks(todos(s)).filter((d) => !d.data.done), [s]);
-  const { lists, overdue, stay, done } = useMemo(() => {
+  const { lists, overdue, stay, done, sched, land } = useMemo(() => {
     const { docs: all, stay } = withTicks(todos(s));
     const now = Date.now();
-    return { lists: tabLists(all, groups, t, { now, tz: odZone }, landDayNow(s, now)), overdue: splitOverdue(all.filter((d) => d.data.aiInbox !== true), now, odZone).overdue, stay,
+    const land = landDayNow(s, now);
+    return { land, sched: scheduledList(all, land), lists: tabLists(all, groups, t, { now, tz: odZone }, land), overdue: splitOverdue(all.filter((d) => d.data.aiInbox !== true), now, odZone).overdue, stay,
       done: completedOn(lp) ? completedList(all, lp.keep, now, odZone, dayAt) : [] };
   }, [s, t, groups, odZone, odTick, tv, roll, landTick, lp.mode, lp.show, lp.keep, dayAt]); // eslint-disable-line react-hooks/exhaustive-deps
   // The end of the list (V1.47): Complete all ticks every open task shown; Resurrect brings back Completed, or when
@@ -1555,6 +1558,8 @@ export function Overlay({ onClose, controls, docked, web, footer }: { onClose: (
                 hidden (a narrow website window, sleepmode.css); otherwise bottom right. Each list has its own (V1.55). */}
             <Completed list={mine(done)} back={mine(back)} history={mine(history)} open={openHere} keep={lp.keep} editing={editing} onEdit={setEditingId} clients={clients}
               extra={GOS ? null : <SleepRow where="end" />} title={<SecTitle skey="done" title={shownName(pg.names, "done")} />} />
+            {/* PS 1.75: tasks waiting for a later day, one closed row at the very bottom (views/Scheduled.tsx, core/scheduled.ts). */}
+            <Scheduled list={mine(sched)} day={schedCut(land)} editing={editing} onEdit={setEditingId} clients={clients} />
           </>);
         }} />
         {footer}
@@ -1968,6 +1973,7 @@ function AddTaskWindow({ prio, clients, docked, onClose }: { prio: Doc<Todo>[]; 
   // PS 1.65: a date or repeat typed in plain words (core/nldates.ts, views/NlDates.tsx) fills in How often, When and Repeats.
   // A click on one of those in Advanced after typing wins over the words (they then stay in the title).
   const nl = useNlDates(title);
+  const schedOn = scheduledOn();   // PS 1.75: the date is the day it is scheduled for (core/scheduled.ts)
   const freshRule = (): RepeatDraft => ({ kind: "repeat", every: 1, unit: "week", from: todayISO() });
   const [rule, setRule] = useState<RepeatDraft>(freshRule);
   const shown = nl.offer ? nlAddOpts(o, nl.offer) : o;
@@ -2142,11 +2148,11 @@ function AddTaskWindow({ prio, clients, docked, onClose }: { prio: Doc<Todo>[]; 
                 {chip(shown.kind === "once", "One-off", () => setWhen({ kind: "once" }))}{chip(shown.kind === "daily", "Every day", () => setWhen({ kind: "daily" }))}{chip(shown.kind === "repeat", "Repeat", () => setWhen({ kind: "repeat" }))}
               </div>
               {shown.kind === "once" && <>
-                <span className="tm-add-l">When</span>
+                <span className="tm-add-l">{schedOn ? "Scheduled for" : "When"}</span>
                 <div className="tm-add-row" role="radiogroup">
                   {chip(shown.when === "today", "Today", () => setWhen({ when: "today" }))}{chip(shown.when === "tomorrow", "Tomorrow", () => setWhen({ when: "tomorrow" }))}
                   {chip(shown.when === "none", "No date", () => setWhen({ when: "none" }))}{chip(shown.when === "date", "Pick a date", () => setWhen({ when: "date" }))}
-                  {shown.when === "date" && <input type="date" className="tm-ed-date" value={shown.date} onChange={(e) => setWhen({ date: e.target.value })} aria-label="Date" />}
+                  {shown.when === "date" && <input type="date" className="tm-ed-date" value={shown.date} onChange={(e) => setWhen({ date: e.target.value })} aria-label={schedOn ? "Scheduled for" : "Date"} />}
                 </div>
                 <span className="tm-add-l">Priority</span>
                 <div className="tm-add-row">
@@ -3847,17 +3853,28 @@ export function Editor({ d, clients, onDone, ranked }: { d: Doc<Todo>; clients: 
   const [sure, setSure] = useState(false);
   const [est, setEst] = useState<number | null>(() => cleanEst(t.est));   // PS 1.65 time estimates, saved with Save
   const reminder = useTaskReminder(d.id);
+  const schedOn = scheduledOn();   // PS 1.75: the date is when it is scheduled for (feature "scheduled-tasks")
   const pick = (k: RepeatDraft["kind"]) => { setRule((r) => ({ ...r, kind: k, from: k === "repeat" && r.kind !== "repeat" ? due || todayISO() : r.from })); sfx.hover(); };
+  // Today and Tomorrow are the calendar's, as in 1.74: a task is never kept out on its own date (core/scheduled.ts schedCut).
   const plus = (n: number) => { const x = new Date(); x.setDate(x.getDate() + n); return x.toLocaleDateString("en-CA"); };
   // V1.57: P1, P2 or P3 typed in the name works when editing too (the same parser as Add task, core/typedprio.ts).
   // One-offs on the main list only (they are the ones with a priority); a word already in the name is left alone.
   const tp = useTypedPrio(title, !!ranked && type === "once", t.title);
+  // PS 1.75 (Jan, 22 Nov 2026: "I edited one task like this and it was showing in priority one even though I wanted it to be for
+  // tomorrow"): a date typed in the name while editing schedules it, as in Add task (core/nldates.ts). Words already in the name
+  // before stay as they are. A date picked below after typing wins.
+  // Only while "scheduled-tasks" is on (off: the Editor is as in 1.74), and never a time (the Editor puts no reminder on it).
+  const nl = useNlDates(title, { once: true, existing: t.title, off: type !== "once" || !schedOn, dateOnly: true });
+  const pickDue = (v: string) => { nl.picked(); setDue(v); };
   const save = () => {
-    const typedP = tp.take(title);
-    const name = (typedP ? typedP.title : title).trim();
+    const typedN = type === "once" ? nl.take(title) : null;
+    const base = typedN ? typedN.title : title;
+    const typedP = tp.take(base);
+    const name = (typedP ? typedP.title : base).trim();
     if (!name) return;
     const r = patchOf(rule, todayISO(), t);
-    const patch: TodoPatch = { title: name, notes: notes.trim() || null, type: r.type, repeat: r.repeat, due: r.type === "once" ? due || null : r.due ?? null, clientId: clientId || null };
+    const dueNow = typedN?.due ?? due;
+    const patch: TodoPatch = { title: name, notes: notes.trim() || null, type: r.type, repeat: r.repeat, due: r.type === "once" ? dueNow || null : r.due ?? null, clientId: clientId || null };
     if (est !== cleanEst(t.est)) { patch.est = est; patch.estBy = null; }
     // A new priority number moves just this task between its new neighbours.
     if (typedP && ranked && type === "once") {
@@ -3883,7 +3900,7 @@ export function Editor({ d, clients, onDone, ranked }: { d: Doc<Todo>; clients: 
   return (
     <li className="tm-row tm-editor" onKeyDown={keys} onMouseDown={(e) => e.stopPropagation()}>
       <div className="tm-ed">
-        <PrioInput prio={tp} className="tm-ed-title" value={title} autoFocus onChange={(e) => setTitle(e.target.value)} aria-label="Task name"
+        <PrioInput prio={tp} nl={nl} className="tm-ed-title" value={title} autoFocus onChange={(e) => setTitle(e.target.value)} aria-label="Task name"
           onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); save(); } }} />
         <textarea className="tm-ed-notes" value={notes} rows={2} onChange={(e) => setNotes(e.target.value)} placeholder="Notes" aria-label="Notes" />
         <div className="tm-ed-row">
@@ -3894,10 +3911,11 @@ export function Editor({ d, clients, onDone, ranked }: { d: Doc<Todo>; clients: 
           </div>
           {type === "once" && (
             <>
-              <input type="date" className="tm-ed-date" value={due} onChange={(e) => setDue(e.target.value)} aria-label="Due date" />
-              <button type="button" className="tm-ed-chip" onClick={() => setDue(plus(0))}>Today</button>
-              <button type="button" className="tm-ed-chip" onClick={() => setDue(plus(1))}>Tomorrow</button>
-              {due && <button type="button" className="tm-ed-chip" onClick={() => setDue("")}>No date</button>}
+              {schedOn && <span className="tm-ed-lab">Scheduled for</span>}
+              <input type="date" className="tm-ed-date" value={nl.offer?.due ?? due} onChange={(e) => pickDue(e.target.value)} aria-label={schedOn ? "Scheduled for" : "Due date"} />
+              <button type="button" className="tm-ed-chip" onClick={() => pickDue(plus(0))}>Today</button>
+              <button type="button" className="tm-ed-chip" onClick={() => pickDue(plus(1))}>Tomorrow</button>
+              {(nl.offer?.due ?? due) && <button type="button" className="tm-ed-chip" onClick={() => pickDue("")}>No date</button>}
             </>
           )}
           {clients.length > 0 && (
