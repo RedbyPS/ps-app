@@ -8,6 +8,7 @@ import type { Doc, Note } from "../core/model";
 import { notes } from "../core/select";
 import { newNote, purgeNote, restoreNote, saveNote, trashNote } from "../core/actions";
 import { toast, useVault } from "../ui/kit";
+import { holdEdit } from "../core/savenow";
 import "./notes.css";
 
 /** How notes are saved: straight to the vault. */
@@ -199,11 +200,19 @@ export function Editor({ d, onBack, onTrash, onRestore, onPurge }: { d: Doc<Note
   const saveBody = () => {
     window.clearTimeout(timer.current);
     timer.current = window.setTimeout(() => {
+      timer.current = undefined;
       if (!body.current) return;
       const html = cleanHtml(body.current.innerHTML);
       if (html !== n.html) void noteOps.save(d.id, { html });
     }, 500);
   };
+  // PS 1.74 (core/savenow.ts): a body save still waiting runs at once when PS updates, reloads, quits or the page hides.
+  useEffect(() => holdEdit(() => {
+    if (!timer.current || !body.current) return;
+    window.clearTimeout(timer.current); timer.current = undefined;
+    const html = cleanHtml(body.current.innerHTML);
+    if (html !== n.html) void noteOps.save(d.id, { html });
+  }), []); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => () => {
     // Save anything still waiting when the note closes.
     window.clearTimeout(timer.current);

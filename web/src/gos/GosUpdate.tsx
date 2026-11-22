@@ -10,6 +10,7 @@ import { catchUp } from "../core/notehistory";
 import { NoteGroups } from "../ui/NoteGroups";
 import { byLine } from "../core/releaseby";
 import { cardShape, sizeText } from "../core/updatecard";
+import { saveBeforeLeaving } from "../core/savenow";
 
 const STEPS = ["Download", "Verify", "Install"] as const;
 
@@ -113,7 +114,7 @@ export function GosUpdateCard() {
       {blocks.length > 1 && <NoteGroups blocks={blocks} />}
       {shape.notes.length > 0 && <ul className="gos-upd-notes">{shape.notes.map((n, i) => <li key={i}>{n}</li>)}</ul>}
       {shape.wide && (
-        <button type="button" className="gos-btn primary gos-upd-go" onClick={() => { haptic("press"); gosTick.reset(); gos.installUpdate(); }}>
+        <button type="button" className="gos-btn primary gos-upd-go" onClick={() => { haptic("press"); gosTick.reset(); void saveBeforeLeaving(window).then(() => gos.installUpdate()); }}>
           {u.state === "ready" ? "Install" : "Update now"}
         </button>
       )}
