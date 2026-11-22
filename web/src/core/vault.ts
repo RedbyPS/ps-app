@@ -1268,7 +1268,32 @@ function mirrorApply(id: string, doc: Doc | null) {
   emit({ docs: docsMap });
 }
 
-export async function put<T>(kind: Kind, data: T, opts: { id?: string; ws?: string | null } = {}): Promise<string> {
+// PS 1.74 (core/savenow.ts): every save on its way, so a page about to update, reload or quit can wait until each one has
+// reached this device's storage.
+const inflight = new Set<Promise<unknown>>();
+function track<T>(p: Promise<T>): Promise<T> {
+  inflight.add(p);
+  void p.then(() => inflight.delete(p), () => inflight.delete(p));
+  return p;
+}
+/** True once no save is on its way (checked twice, a moment apart, so a save that starts right after another is waited for
+ *  too); false when maxMs ran out first. */
+export async function settled(maxMs = 3000): Promise<boolean> {
+  const end = Date.now() + maxMs;
+  const wait = (ms: number) => new Promise((r) => setTimeout(r, Math.max(0, ms)));
+  for (let quiet = 0; quiet < 2;) {
+    const left = end - Date.now();
+    if (left <= 0) return false;
+    if (inflight.size) { quiet = 0; await Promise.race([Promise.allSettled([...inflight]), wait(left)]); }
+    else { quiet++; await wait(Math.min(40, left)); }
+  }
+  return true;
+}
+
+export function put<T>(kind: Kind, data: T, opts: { id?: string; ws?: string | null } = {}): Promise<string> {
+  return track(putRecord(kind, data, opts));
+}
+async function putRecord<T>(kind: Kind, data: T, opts: { id?: string; ws?: string | null }): Promise<string> {
   if (mirrored()) {
     const id = opts.id ?? uid(), old = snap.docs.get(id);
     if (!mirrorWriter!({ op: "put", kind, id, data })) throw new Error("Not from the Tab list.");
@@ -1329,7 +1354,10 @@ export async function put<T>(kind: Kind, data: T, opts: { id?: string; ws?: stri
   return id;
 }
 
-export async function remove(id: string) {
+export function remove(id: string): Promise<void> {
+  return track(removeRecord(id));
+}
+async function removeRecord(id: string) {
   if (mirrored()) {
     if (!snap.docs.has(id)) return;
     if (!mirrorWriter!({ op: "remove", id })) throw new Error("Not from the Tab list.");

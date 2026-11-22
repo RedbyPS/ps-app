@@ -58,6 +58,7 @@ import { addProgram, fitnessNow } from "./fitness/store";
 import { programFromPlan, type PlanIn } from "./fitness/lib";
 import { lpClear, lpInterval } from "./core/lowpower.ts";
 import { startLowPower } from "./lowpower";
+import { saveBeforeLeaving } from "./core/savenow";
 
 // V1.44 Add friend: a scanned QR code opens cincee.com/client/#add=... (or #ask=...). Read it before anything else
 // looks at the address (the hash router would take it for a page), keep it, and take the key out of the address bar.
@@ -282,7 +283,7 @@ function RefreshButton() {
   const update = useUpdateAvailable();
   async function go() {
     setBusy(true);
-    if (PS && psUpdateReady()) { toast("Loading the new version..."); location.reload(); return; }
+    if (PS && psUpdateReady()) { toast("Loading the new version..."); await saveBeforeLeaving(window); location.reload(); return; }   // PS 1.74: what is being typed is saved first
     await sync();
     setBusy(false);
     toast(s.online ? "Up to date" : "Offline. Showing your saved copy");

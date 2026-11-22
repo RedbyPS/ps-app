@@ -3,8 +3,7 @@
 // core/clientwork.ts): weekday chips for repeating ones, a date for one day ones, a deadline with its own do date, P1.
 import { useState } from "react";
 import type { CalEvent, Doc, Todo } from "../core/model";
-import { toggleTodo } from "../core/actions";
-import { addClientTodo, editClientTodo, removeClientTodo } from "../core/clientsact";
+import { addClientTodo, editClientTodo, removeClientTodo, tickClientTodo } from "../core/clientsact";
 import {
   CHIPS, SECTION_WORDS, clampDoOn, comesInWords, dayWords, daysOf, daysWords, deadlineWords, doOnFor, gapOf, landWords, repeatPatch,
   sectionOf, toggleDay, type Deadline,
@@ -121,7 +120,7 @@ function Row({ d, day, endHm, call, open, setOpen, say }: { d: Doc<Todo>; day: s
   };
   return (
     <div className={`clw-trow${t.done ? " done" : ""}`}>
-      <button type="button" className={`clw-ck${t.done ? " on" : ""}`} aria-label={t.done ? "Not done" : "Done"} onClick={() => void toggleTodo(d.id)} />
+      <button type="button" className={`clw-ck${t.done ? " on" : ""}`} aria-label={t.done ? "Not done" : "Done"} onClick={() => void tickClientTodo(d.id, !t.done)} />
       <div className="tt">
         <button type="button" className="clw-tname" title="Click to change" onClick={() => setOpen(!open)}>{t.title}</button>
         <div className="clw-tmeta">

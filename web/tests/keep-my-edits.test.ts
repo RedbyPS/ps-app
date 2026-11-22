@@ -210,13 +210,15 @@ ok("checksFirst: every kind a person edits looks at the server first, machine wr
 // ---------- the wiring in core/vault.ts ----------
 const vault = src("../src/core/vault.ts");
 ok("vault.ts: put shows the new copy at once and queues the encrypted copies per record", () => {
-  const put = vault.slice(vault.indexOf("export async function put<T>"), vault.indexOf("export async function remove("));
+  // PS 1.74 (core/savenow.ts): put is now a tracked wrapper around putRecord, where the work happens.
+  const put = vault.slice(vault.indexOf("async function putRecord<T>"), vault.indexOf("export function remove("));
+  assert.ok(put.length > 500, "putRecord found");
   assert.ok(put.indexOf("emit({ docs: docsMap })") < put.indexOf("C.encryptJson"), "memory first, then encrypt");
   assert.match(put, /putLane\.run\(id,/);
   assert.match(put, /writes\.begin\(id\)/);
   assert.match(put, /writes\.end\(id\)/);
   assert.match(put, /mergeStale\(existing\.data, data, o\.data\)/);
-  const rm = vault.slice(vault.indexOf("export async function remove("), vault.indexOf("// ---------- sync ----------"));
+  const rm = vault.slice(vault.indexOf("async function removeRecord("), vault.indexOf("// ---------- sync ----------"));
   assert.match(rm, /putLane\.run\(id,/);
   assert.ok(rm.indexOf("docsMap.delete(id)") < rm.indexOf("C.encryptJson"));
 });
