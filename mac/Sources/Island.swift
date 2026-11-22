@@ -207,6 +207,8 @@ struct IslandState: Equatable {
   var lp: [String]?
   /// PS 1.70 the day countdown in the task area and the shown task's Priority 1 timer (DayCountdownCore.swift DayIn).
   var day: DayIn?
+  /// PS 1.74: the closed island shows only the task, the rest on hover (IslandCloseCore.swift, web core/island.ts taskOnly).
+  var taskOnly = true
 
   /// A hide time from the page: whole seconds from 5 s to 1 hour, anything else the 1 minute default.
   static func hideTime(_ v: Any?) -> Double {
@@ -243,6 +245,7 @@ struct IslandState: Equatable {
     s.cards = (d["cards"] as? Bool) != false
     s.fsMove = (d["fsMove"] as? Bool) != false
     s.tickLeft = (d["tickSide"] as? String) != "right"
+    s.taskOnly = IslandCloseCore.taskOnly(d["taskOnly"]) && Features.on(IslandCloseCore.feature)   // PS 1.74
     s.meets = IslandAwayCore.meets(d["meets"])
     s.timers = TimersCore.from(d)   // V1.58 island timers
     s.day = Features.on(DayCore.feature) ? DayIn.from(d["day"]) : nil   // PS 1.70 (web src/daycount.ts dayIsland)
@@ -382,6 +385,20 @@ final class IslandModel: ObservableObject {
     return CGRect(x: c.x - IslandModel.gripHitW / 2, y: pill ? shapeRect().minY : geo.notchH, width: IslandModel.gripHitW, height: IslandModel.gripHitH)
   }
 
+  // ---------- PS 1.74: only the task when closed (IslandCloseCore.swift) ----------
+  /// Something in the task's place: a task, "Done" after a tick, or the private mode label.
+  var hasTask: Bool { st.task != nil || ticked != nil }
+  var closedShows: IslandCloseCore.Closed { IslandCloseCore.closed(taskOnly: st.taskOnly, hasTask: hasTask) }
+  var trimmed: Bool { IslandCloseCore.trimmed(taskOnly: st.taskOnly, hasTask: hasTask) }
+  /// A timer counting next to the task (WorkClock, DayClocks).
+  var clocksAny: Bool {
+    let work = tin.pomo.map { $0.phase == "work" && $0.clock && !$0.wait } ?? false
+    let day = st.day.map { $0.p1 != nil || $0.end != nil } ?? false   // nil when the day countdown is off (IslandState.from)
+    return IslandCloseCore.clocks(work: work, day: day, ticked: ticked != nil, priv: privateShown)
+  }
+  /// The open island's line for the timers and the leaf the closed island no longer shows.
+  var openLine: Bool { IslandCloseCore.openLine(trimmed: trimmed, clocks: clocksAny, leaf: st.lp != nil) }
+
   var pillW: CGFloat { st.pillLook.compact ? 270 : 330 }
   var pillH: CGFloat { st.pillLook.compact ? 28 : 34 }
   var pillOpenW: CGFloat { st.pillLook.compact ? 380 : 400 }
@@ -441,7 +458,8 @@ final class IslandModel: ObservableObject {
     let rowsH: CGFloat = CGFloat(max(rows.count, 1)) * 42
     let priv: CGFloat = st.priv && !rows.isEmpty ? 42 : 0   // the private mode line on top
     let meet: CGFloat = hoverMeet != nil ? IslandModel.meetRowH + 8 : 0   // PS 1.66: the meeting stays in the open island
-    return 18 + badges + priv + rowsH + undo + meet
+    let line = IslandCloseCore.openExtra(trimmed: trimmed, clocks: clocksAny, leaf: st.lp != nil)   // PS 1.74: the timers and the leaf
+    return 18 + badges + priv + rowsH + undo + meet + line
   }
 }
 
@@ -744,6 +762,11 @@ struct IslandView: View {
           .font(.system(size: size - 1, weight: .bold)).foregroundColor(e.kind == "mail" ? mailC : e.kind == "lead" ? leadC : chatC)
         Text(e.title).font(.system(size: size, weight: .semibold)).foregroundColor(.white).lineLimit(1).truncationMode(.tail)
         Spacer(minLength: 2)
+      } else if m.trimmed {
+        // PS 1.74: only the task when closed, in the middle (IslandCloseCore.swift)
+        Spacer(minLength: 0)
+        titleText(size: size, clocks: false)
+        Spacer(minLength: 0)
       } else {
         if left { tickOrUndo(size: tick, short: true) }
         titleText(size: size)
@@ -760,6 +783,7 @@ struct IslandView: View {
   var dropRow: some View {
     VStack(spacing: 0) {
       Color.clear.frame(height: m.geo.notchH)
+      if m.trimmed { taskOnlyRow(size: 12).padding(.horizontal, 14).frame(height: 30) } else {
       HStack(spacing: 7) {
         if m.st.tickLeft { tickOrUndo(size: 18).opacity(m.opacity) }
         Group { iconMark(size: 11); titleText(size: 12) }.opacity(m.opacity)
@@ -772,14 +796,25 @@ struct IslandView: View {
       }
       .padding(.horizontal, 12)
       .frame(height: 30)
+      }
     }
+  }
+  /// PS 1.74: the closed island's only line: the task's words in the middle, the whole width theirs (IslandCloseCore.swift).
+  func taskOnlyRow(size: CGFloat) -> some View {
+    HStack(spacing: 0) {
+      Spacer(minLength: 0)
+      titleText(size: size, clocks: false)
+      Spacer(minLength: 0)
+    }
+    .opacity(m.opacity)
   }
   /// Slim: the tick on the left wing, one count on the right; the task shows on hover.
   var slimRow: some View {
     HStack(spacing: 0) {
-      if m.st.tickLeft { slimTick } else { slimCount }
+      // PS 1.74: only the task when closed: Slim has no room for its words, so its wings stay empty (the task, tick and counts on hover)
+      if m.trimmed { Color.clear.frame(width: IslandModel.slimWing) } else if m.st.tickLeft { slimTick } else { slimCount }
       Color.clear.frame(width: m.geo.notchW)
-      if m.st.tickLeft { slimCount } else { slimTick }
+      if m.trimmed { Color.clear.frame(width: IslandModel.slimWing) } else if m.st.tickLeft { slimCount } else { slimTick }
     }
     .frame(height: m.geo.notchH)
   }
@@ -807,7 +842,8 @@ struct IslandView: View {
     .frame(maxWidth: .infinity)
     .frame(height: m.pillH)
   }
-  var pillRow: some View {
+  @ViewBuilder var pillRow: some View {
+    if m.trimmed { taskOnlyRow(size: pt.compact ? 11.5 : 12.5).padding(.horizontal, pt.compact ? 12 : 16).frame(height: m.pillH) } else {
     HStack(spacing: pt.compact ? 6 : 8) {
       if m.st.tickLeft { tickOrUndo(size: pt.compact ? 17 : 20).opacity(m.opacity) }
       Group { badges(small: true); iconMark(size: pt.compact ? 10 : 11.5); titleText(size: pt.compact ? 11.5 : 12.5) }.opacity(m.opacity)
@@ -816,6 +852,7 @@ struct IslandView: View {
     }
     .padding(.horizontal, pt.compact ? 10 : 12)
     .frame(height: m.pillH)
+    }
   }
   /// The optional icon before the task: a small target, in the accent colour.
   @ViewBuilder func iconMark(size: CGFloat) -> some View {
@@ -826,16 +863,19 @@ struct IslandView: View {
   @ViewBuilder var moreText: some View {
     if m.st.more > 0 && m.ticked == nil { Text("+\(m.st.more)").font(.system(size: 11, weight: .bold)).foregroundColor(dimC) }
   }
-  @ViewBuilder func titleText(size: CGFloat) -> some View {
-    if m.ticked != nil, !m.undoable || Date().timeIntervalSince(m.tickedAt) < 1.4 {
+  /// clocks: false leaves the timers out (PS 1.74: the closed island trimmed to the task shows them on hover instead).
+  @ViewBuilder func titleText(size: CGFloat, clocks: Bool = true) -> some View {
+    if m.ticked != nil, IslandCloseCore.showDone(sinceTick: Date().timeIntervalSince(m.tickedAt), undoable: m.undoable, trimmed: m.trimmed, nextTask: m.st.task != nil, priv: m.privateShown) {
       Text("Done").font(.system(size: size, weight: .semibold)).foregroundColor(doneC)
     } else if m.privateShown {
       privateLabel(size: size)
     } else if let t = m.st.task {
       HStack(spacing: 6) {
         Text(t.title).font(.system(size: size, weight: .semibold)).foregroundColor(t.dim ? dimC : fg).lineLimit(1).truncationMode(.tail)
-        WorkClock(m: m, color: dimC)   // V1.58: Pomodoro time left, only with its setting on
-        DayClocks(m: m, color: dimC, size: max(10, size - 1))   // PS 1.70: the task's Priority 1 timer, then the day countdown (DayCountdown.swift)
+        if clocks {
+          WorkClock(m: m, color: dimC)   // V1.58: Pomodoro time left, only with its setting on
+          DayClocks(m: m, color: dimC, size: max(10, size - 1))   // PS 1.70: the task's Priority 1 timer, then the day countdown (DayCountdown.swift)
+        }
       }
     }
   }
@@ -971,6 +1011,16 @@ struct IslandView: View {
           if m.st.mail > 0 { badge("envelope.fill", m.st.mail, mailC, small: false, via: IslandMailOpen.gmail) }
           if m.st.leads > 0 { badge("arrowshape.turn.up.left.fill", m.st.leads, leadC, small: false, via: IslandMailOpen.instantly) }
         }
+      }
+      if m.openLine {
+        // PS 1.74: what the closed island trimmed to the task no longer shows: the leaf and the timers (IslandCloseCore.swift)
+        HStack(spacing: 10) {
+          if m.st.lp != nil { leafMark(small: false) }
+          WorkClock(m: m, color: dimC)
+          DayClocks(m: m, color: dimC, size: 12)
+          Spacer(minLength: 0)
+        }
+        .frame(height: IslandCloseCore.lineH)
       }
       if m.st.priv && !m.rows.isEmpty { privateBanner }
       if m.rows.isEmpty && m.ticked == nil {
@@ -1479,6 +1529,28 @@ final class Island {
     let r = IslandPlace.movedShape(anchor: l.anchor, w: model.pillW, h: model.pillH, pillW: model.pillW, pillH: model.pillH, up: IslandPlace.opensUp(p))
     return NSRect(x: l.frame.minX + r.minX, y: l.frame.maxY - r.maxY, width: r.width, height: r.height)
   }
+  /// PS 1.74 (the developer, 22 Nov 2026: the Cake boot animation built the island at the top centre although it was moved):
+  /// where the island will be, as soon as anything can say it, for the Cake and Hatch scenes to aim at. Its rest place
+  /// or kept spot once it has a window; before that (a start: the page has told it nothing yet) the last resting shape
+  /// this Mac saw, or the kept spot read straight from settings (IslandStartCore.start). Nil: at home with nothing known
+  /// (the scene's own guess round the notch fits there), switched off, or in the full screen bar.
+  func startShape() -> NSRect? {
+    if let r = restShape() ?? hatchSpot() { return r }
+    if panel != nil, model.st.mode == "off" || model.fs != .off { return nil }
+    let (g, _) = IslandGeo.read()
+    let spot = panel != nil ? pos : IslandStartCore.spot(readPos())
+    return IslandStartCore.start(spot: spot, geo: g, last: test ? nil : IslandStartCore.decode(UserDefaults.standard.data(forKey: IslandStartCore.restKey)))
+  }
+  /// PS 1.74: the island at rest is remembered (UserDefaults island.lastRest) each time its rest place really changes, so
+  /// the next start knows it before the page has said anything. Never in a test copy, in the full screen bar or Edit mode.
+  private var lastRest: IslandRest?
+  private func rememberRest() {
+    guard !test, model.fs == .off, !model.editing, drag?.moving != true, let r = restShape(), let s = screen?.frame else { return }
+    let rest = IslandRest(rect: r, screen: s, spot: pos, pill: CGSize(width: model.pillW, height: model.pillH))
+    guard rest != lastRest else { return }
+    lastRest = rest
+    if let d = IslandStartCore.encode(rest) { UserDefaults.standard.set(d, forKey: IslandStartCore.restKey) }
+  }
   /// Cheap check (a few property reads, IslandRejoinCore): only when it shows but is missing from the desktop in front
   /// is it put back, once; still missing a moment later, it gets a new window. It looks again by itself until it is
   /// back, so it needs no stream of calls, and a stream of calls (a sync burst after a wake) does nothing extra.
@@ -1555,6 +1627,7 @@ final class Island {
     if follow != lastFollow { lastFollow = follow; Toast.shared.islandChanged() }
     guard k != lastShape else { return }
     lastShape = k
+    rememberRest()   // PS 1.74: the next start's scenes aim at it (startShape)
     onShape?()
   }
 

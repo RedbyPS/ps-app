@@ -158,7 +158,9 @@ final class Cake: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
     islandBack = true
     let real = Island.shared.hatchBorn(blob: 30)
     var a: [String: Any] = ["real": real, "signIn": e == .signIn]
-    if real, let sc = screenNow(), let r = HatchCore.pageRect(Island.shared.shapeOnScreen(), screen: sc.frame) { a["target"] = r }
+    if real, let sc = screenNow(), let r = HatchCore.pageRect(Island.shared.shapeOnScreen(), screen: sc.frame) {
+      a["target"] = r; a["notch"] = CakeCore.notchShaped(r)
+    }
     call("land", a)
   }
   /// The scene starts to fade: what comes next comes up under it.
@@ -226,14 +228,20 @@ final class Cake: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
   private func opts(_ sc: NSScreen) -> [String: Any] {
     var o: [String: Any] = ["reduce": NSWorkspace.shared.accessibilityDisplayShouldReduceMotion,
                             "headline": CakeCore.headline, "ver": CakeCore.versionLine(PSVersion.name)]
-    let t = HatchCore.aim(shown: HatchCore.pageRect(Island.shared.shapeOnScreen(), screen: sc.frame),
-                          rest: HatchCore.pageRect(Island.shared.restShape(), screen: sc.frame),
-                          spot: HatchCore.pageRect(Island.shared.hatchSpot(), screen: sc.frame),
-                          fallback: fallbackTarget(sc))
-    o["target"] = t
-    o["notch"] = CakeCore.notchShaped(t)
+    for (k, v) in aimNow(sc) { o[k] = v }
     o["shown"] = Island.shared.shapeOnScreen() != nil   // the reveal: the bolts and the neon edge need the real island on screen
     return o
+  }
+  /// Where the island is or will be, as of now, its shape (notch or pill) and the side the pieces come in from.
+  /// PS 1.74 (the developer, 22 Nov 2026: it was built at the top centre although his island was moved): before the page has
+  /// told the island anything, Island.startShape() still knows its place (the last rest, or the kept spot from settings).
+  /// The page asks again just before it builds ({type:"aim"}), and glides the outline onto the real island if it moved.
+  private func aimNow(_ sc: NSScreen) -> [String: Any] {
+    let t = HatchCore.aim(shown: HatchCore.pageRect(Island.shared.shapeOnScreen(), screen: sc.frame),
+                          rest: HatchCore.pageRect(Island.shared.restShape(), screen: sc.frame),
+                          spot: HatchCore.pageRect(Island.shared.startShape(), screen: sc.frame),
+                          fallback: fallbackTarget(sc))
+    return ["target": t, "notch": CakeCore.notchShaped(t), "from": IslandStartCore.approach(t, screen: sc.frame.size)]
   }
   /// Where the island will be when it is not on screen yet (the page has not told it anything at a start): round the
   /// camera notch, or a pill just below the top centre. The demo's island is 196 x 34 round the notch.
@@ -291,6 +299,7 @@ final class Cake: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
       ready = true
       for js in waiting { web?.evaluateJavaScript(js, completionHandler: nil) }
       waiting = []
+    case "aim": if playing, let sc = screenNow() { call("aimed", aimNow(sc)) } else { call("aimed", [String: Any]()) }   // PS 1.74
     case "built": if playing, case .boot = kind { built() }
     case "exit": if playing { exiting() }
     case "done": if playing { end() }

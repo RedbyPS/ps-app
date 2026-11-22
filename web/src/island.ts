@@ -20,7 +20,7 @@ import { mailCards } from "./core/mailcards";
 import { leadCards } from "./core/leadcards";
 import { AI_MSG_PRIVATE, aiCardsNow } from "./core/aimessage";
 import { irepFeed } from "./mailcards";
-import { ISLAND_EVENT_MS, ISLAND_FRESH_MS, canPrivateOff, canTick, canUndo, islandState, pickEvent, type IslandCard, type IslandEvent, type IslandState, type IslandTick } from "./core/island";
+import { ISLAND_EVENT_MS, ISLAND_FRESH_MS, TASK_ONLY_FEATURE, canPrivateOff, canTick, canUndo, islandState, pickEvent, type IslandCard, type IslandEvent, type IslandState, type IslandTick } from "./core/island";
 import { todayISO } from "./ui/kit";
 import { breakWindows, cleanRun, pomoIsland, pomoPrefs } from "./core/pomodoro";
 import { afkAskIsland, afkAskPatch } from "./core/afkask";
@@ -94,7 +94,7 @@ function sync(force = false) {
     eventTimer = window.setTimeout(() => { event = null; sync(); }, ISLAND_EVENT_MS);
   }
   const st = settingsData(s);
-  shown = islandState({ todos: todos(s) as Doc<Todo>[], settings: st, today: todayISO(), land: landDayNow(s, now), mail, leads, event, now });
+  shown = islandState({ todos: todos(s) as Doc<Todo>[], settings: st, today: todayISO(), land: landDayNow(s, now), mail, leads, event, now, taskOnly: feature(TASK_ONLY_FEATURE) });
   // V1.58: the meetings for "Disappear for this meeting" (core/islandaway.ts): the Meetings panel's own calendar copy,
   // the meetings taken off the panel left out. Only ids and times.
   const cal = calendarSnap(s);

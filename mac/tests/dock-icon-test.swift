@@ -21,6 +21,11 @@ let a = Data([1, 2, 3]), b = Data([1, 2, 4])
 ok("same icon: the Dock is left alone", !C.iconChanged(new: a, old: a))
 ok("a different icon: the Dock restarts", C.iconChanged(new: b, old: a))
 ok("unknown (a file is missing or empty): the Dock is left alone", !C.iconChanged(new: a, old: nil) && !C.iconChanged(new: nil, old: a) && !C.iconChanged(new: Data(), old: a))
+// PS 1.74: the icon's file name (its own hash since 1.72) says it changed even when the old file cannot be read
+ok("another icon name: the Dock restarts, even with the old icon file gone", C.iconChanged(new: a, old: nil, newName: "AppIcon-0123abcdef", oldName: "AppIcon"))
+ok("another hashed name: the Dock restarts", C.iconChanged(new: a, old: a, newName: "AppIcon-0123abcdef", oldName: "AppIcon-fedcba9876"))
+ok("the same name, with or without .icns: by the bytes as before", !C.iconChanged(new: a, old: a, newName: "AppIcon-0123abcdef", oldName: "AppIcon-0123abcdef.icns") && C.iconChanged(new: b, old: a, newName: "X", oldName: "X"))
+ok("a name not known (no Info.plist): never restarts the Dock by itself", !C.iconChanged(new: a, old: nil, newName: "AppIcon-0123abcdef", oldName: nil) && !C.iconChanged(new: nil, old: nil, newName: nil, oldName: "AppIcon"))
 
 // ---------- what runs ----------
 let app = "/Applications/PS.app"

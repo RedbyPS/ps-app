@@ -34,7 +34,6 @@ a { color: var(--deep); }
 .pic .side { fill: var(--bar); opacity: .45; }
 .pic .bar { fill: var(--bar); }
 .pic .sel { fill: #2f7cf6; } .pic .selT { fill: #fff; font-size: 7.5px; text-anchor: middle; font-weight: 600; }
-.pic .icon { fill: var(--pink); } .pic .iconT { fill: #fff; font-size: 15px; font-weight: 800; text-anchor: middle; }
 .pic .h { fill: var(--ink); font-size: 13px; font-weight: 700; text-anchor: middle; }
 .pic .hl { fill: var(--ink); font-size: 12px; font-weight: 700; }
 .pic .sec { fill: var(--ink); font-size: 10px; font-weight: 700; }

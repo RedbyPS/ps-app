@@ -27,6 +27,11 @@ export type IslandMode = "notch" | "pill" | "off";
  *  Nov 2026: "Make it so it's always on the left. Make this adjustable in the dynamic island settings too"). Left
  *  unless set. Before, the resting row drew it on the right and the open row on the left, so it jumped on hover. */
 export type TickSide = "left" | "right";
+/** PS 1.74 (the developer, 22 Nov 2026: "I should ONLY be able to see the task at hand on the dynamic island"): the closed island
+ *  shows only the task being worked on, with room to read it. The tick circle, the email and reply counts, the timers, "+1"
+ *  and everything else show on hover, inside the open island (ps-mac Island.swift, IslandCloseCore.swift). On for everyone;
+ *  its switch is in Settings, Dynamic Island, and in From the squad. Off: the full closed island as before. */
+export const TASK_ONLY_FEATURE = "island-task-only";
 export interface IslandPrefs { mode: IslandMode; idle: "next" | "none"; pill: PillLook; notch: NotchLook; hide: number; cards: boolean; top: CardKind[]; fsMove: boolean; tickSide: TickSide; sounds: boolean }
 /** The kinds of card, as ps-mac NoteDropCore.swift (NoteDrop.kinds, NoteDrop.kind) sorts them. red: only the developer's account
  *  ever gets them (his Gmail and Instantly feeds), so nobody else is shown the choice. */
@@ -107,6 +112,8 @@ export interface IslandState {
   tickSide: TickSide;
   /** The chime of the island's big moments (database loaded, updated, What's new) is on (IslandPrefs.sounds, PS 1.60). */
   sounds: boolean;
+  /** PS 1.74: the closed island shows only the task (TASK_ONLY_FEATURE); false: the full closed island as before. */
+  taskOnly: boolean;
   /** The colours and shape of each look, worked out here (readable text guaranteed) and only painted natively.
    *  Both go every time: a Mac without a notch shows "around the notch" as the pill. */
   pill: Omit<PillTones, "backs">;
@@ -154,6 +161,8 @@ export interface IslandInput {
   leads: number;
   event: IslandEvent | null;
   now?: number;
+  /** PS 1.74: feature(TASK_ONLY_FEATURE), from src/island.ts. Left out: on. */
+  taskOnly?: boolean;
 }
 
 /** The pill the Mac draws. PS 1.72 (Jan, 21 Nov 2026: the island stayed black after he picked white, and its colour could
@@ -174,7 +183,7 @@ export function islandState(inp: IslandInput): IslandState {
   const priv = !!inp.settings.privateMode;
   const { backs: _b, ...pill } = pillTones(pillShown(prefs));
   const { backs: _n, ...notch } = notchTones(prefs.notch);
-  const none: IslandState = { mode: prefs.mode, private: priv, task: null, more: 0, tasks: [], mail: 0, leads: 0, event: null, hide: prefs.hide, cards: prefs.cards, top: prefs.top, fsMove: prefs.fsMove, tickSide: prefs.tickSide, sounds: prefs.sounds, pill, notch };
+  const none: IslandState = { mode: prefs.mode, private: priv, task: null, more: 0, tasks: [], mail: 0, leads: 0, event: null, hide: prefs.hide, cards: prefs.cards, top: prefs.top, fsMove: prefs.fsMove, tickSide: prefs.tickSide, sounds: prefs.sounds, taskOnly: inp.taskOnly !== false, pill, notch };
   if (prefs.mode === "off") return none;
   const byId = new Map(inp.todos.map((d) => [d.id, d]));
   const ids = inp.settings.workingIds ?? (inp.settings.workingOn ? [inp.settings.workingOn] : []);
