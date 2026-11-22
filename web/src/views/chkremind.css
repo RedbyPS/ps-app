@@ -5,6 +5,7 @@
 /* ---------- the pop-up (website) ---------- */
 .chk-pop { position: fixed; z-index: 2147483000; top: 14px; left: 50%; width: min(460px, calc(100vw - 24px)); transform: translateX(-50%); }
 .chk-pop { transition: opacity .18s ease, transform .18s ease; }
+html:not(.gos) .chk-pop { top: calc(14px + var(--safe-top, 0px)); }   /* PS 1.74: below the notch when it shows over the Tab list */
 .chk-pop.out { opacity: 0; transform: translateX(-50%) translateY(-8px) scale(.98); pointer-events: none; }
 .chk-card { position: relative; }
 .chk-x { position: absolute; top: 12px; right: 12px; width: 26px; height: 26px; padding: 0; border: 0; border-radius: 50%; cursor: pointer; font: inherit; font-size: 17px; line-height: 26px;

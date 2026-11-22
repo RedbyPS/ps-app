@@ -16,7 +16,8 @@ import { Chevron, Collapse } from "./Accordion";
 import { StreakBadge } from "../ui/RepeatPicker";
 import { dimxIsOpen } from "./DimensionX";
 import { pushUndoAction, taskMapActions } from "./TaskMap";
-import { openMiniMenu } from "./TaskMenu";
+import { openMiniMenu, openMiniMenuAt } from "./TaskMenu";
+import { isMenuKey, miniBinShown, miniMenuFor, splitMiniRef } from "../core/minimenu";
 import { vaultStore } from "../core/vault";
 import "./minitasks.css";
 
@@ -73,7 +74,27 @@ export function useMiniOpen(d: Doc<Todo>, saved: string[] | undefined) {
 type UndoFn = (id: string, title: string, run: () => void) => void;
 type Pick = { d: Doc<Todo>; s: Subtask; index: number; undo: UndoFn };
 const keys: { sel: Pick | null; hover: Pick | null; users: number } = { sel: null, hover: null, users: 0 };
+const GOS = import.meta.env.MODE === "gos";
+const miniEl = (ref: string) => document.querySelector(`[data-mini="${CSS.escape(ref)}"]`);
+/** PS 1.74: the Menu key or Shift+F10 on a focused or clicked mini task opens ITS menu (core/minimenu.ts), never its
+ *  task's. This listener sits on the window in the capture phase, so the task row's own Menu key never sees the key. */
+function onMenuKey(e: KeyboardEvent) {
+  if (!isMenuKey(e) || dimxIsOpen()) return;
+  const a = document.activeElement as HTMLElement | null;
+  // A name being typed keeps the key (its own text menu), as Backspace does: the mini menu would take the focus, and the
+  // name box saves its half typed words on its way out. The bin beside the box deletes; the box's own list stops the key.
+  if (a && (a.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName))) return;
+  const focused = (a?.closest?.("[data-mini]") as HTMLElement | null)?.dataset.mini ?? null;
+  const picked = keys.sel ? `${keys.sel.d.id}/${keys.sel.s.id}` : null;
+  const pickedEl = picked ? miniEl(picked) : null;
+  const ref = miniMenuFor({ focused, picked, pickedShown: !!pickedEl, focusHoldsPicked: !a || !!pickedEl && a.contains(pickedEl), menuOpen: !!document.querySelector(".tm-ctx") });
+  const at = splitMiniRef(ref), el = ref ? miniEl(ref) : null;
+  if (!at || !el) return;
+  e.preventDefault(); e.stopPropagation();
+  openMiniMenuAt(el, at.id, at.subId);
+}
 function onKey(e: KeyboardEvent) {
+  if (isMenuKey(e)) { onMenuKey(e); return; }
   if (e.key !== "Backspace" && e.key !== "Delete") return;
   if (e.metaKey || e.ctrlKey || e.altKey) return;
   const a = document.activeElement as HTMLElement | null;
@@ -100,12 +121,17 @@ let focusNext: string | null = null;   // the task just opened with the chevron:
 const fresh = (d: Doc<Todo>) => (vaultStore.get().docs.get(d.id) as Doc<Todo> | undefined) ?? d;
 /** Deletes ONE mini task: only its own entry leaves the task's list (core/subtasks.ts "remove"). The task, its other
  *  mini tasks, its priority, timers and Priority 1 clock stay. Undo puts back just that mini task, in its place. */
-function removeMini({ d, s, index, undo }: Pick) {
+function removeMini({ d, s, undo }: Pick) {
+  // Its place and copy from the newest list, never the ones a click or hover remembered: a delete, a drag or a sync since
+  // then moves it, and Undo would put it back in the wrong place (and the old copy would show a deleted one again).
+  const cur = fresh(d), l = miniList(cur), index = l.findIndex((x) => x.id === s.id);
+  if (index < 0) return;
+  const item = l[index];
   sfx.drop();
   if (keys.sel?.s.id === s.id) keys.sel = null;
   if (keys.hover?.s.id === s.id) keys.hover = null;
-  miniAct(d, { op: "remove", id: s.id });
-  undo(`mini-rm:${d.id}/${s.id}`, s.title, () => miniAct(fresh(d), { op: "restore", item: s, index }));
+  miniAct(cur, { op: "remove", id: s.id });
+  undo(`mini-rm:${d.id}/${s.id}`, item.title, () => miniAct(fresh(d), { op: "restore", item, index }));
 }
 
 // ---------- a mini task's own right click menu (PS 1.73, views/TaskMenu.tsx MiniMenu) ----------
@@ -165,7 +191,9 @@ export function MiniList({ d, open, onUndo }: { d: Doc<Todo>; open: boolean; onU
     <Collapse open={open} lazy className="mt-panel">
       {/* PS 1.73: a right click anywhere in the mini list never opens the task's menu (its Delete takes the whole task). */}
       <div className="mt-box" onPointerDown={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()} onClick={(e) => e.stopPropagation()}
-        onContextMenu={(e) => { e.stopPropagation(); if (!(e.target as Element).closest("input, textarea")) e.preventDefault(); }}>
+        onContextMenu={(e) => { e.stopPropagation(); if (!(e.target as Element).closest("input, textarea")) e.preventDefault(); }}
+        // PS 1.74: the Menu key or Shift+F10 anywhere else in the mini list (its Add box) never opens the task's menu either.
+        onKeyDown={(e) => { if (isMenuKey(e)) e.stopPropagation(); }}>
         {order.length > 0 && (
           <ul className="mt-list">
             {order.map((id, i) => {
@@ -186,12 +214,14 @@ function MiniItem({ d, s, index, drag, undo }: { d: Doc<Todo>; s: Subtask; index
   useEffect(() => { if (!edit) setTitle(s.title); }, [s.title, edit]);
   const claude = !!s.claudeDoneAt && !s.done;
   const sel = keys.sel?.s.id === s.id && keys.sel.d.id === d.id;
+  const gone = useRef(false);   // deleted from its bin: the name box closing must not save a rename on top
   useEffect(() => { if (editReq === `${d.id}/${s.id}`) { editReq = null; setEdit(true); } });
   const tick = () => {
     if (!s.done) { sfx.done(); undo(`mini:${d.id}/${s.id}`, s.title, () => miniAct(d, { op: "tick", id: s.id })); }
     miniAct(d, { op: "tick", id: s.id });
   };
   const save = () => {
+    if (gone.current) return;
     setEdit(false);
     const v = title.trim();
     if (v && v !== s.title) miniAct(d, { op: "rename", id: s.id, title: v });
@@ -219,6 +249,16 @@ function MiniItem({ d, s, index, drag, undo }: { d: Doc<Todo>; s: Subtask; index
       {claude && <span className="mt-claude">Claude</span>}
       {/* PS 1.68: each mini task of a repeating task has its own streak (core/subtasks.ts), a tiny flame from 2 in a row. */}
       {d.data.type === "daily" && !edit && <StreakBadge n={s.streak} className="mt-streak" rule={d.data.repeat} best={s.bestStreak} mini />}
+      {/* PS 1.74: a bin on a mini task being renamed (every device) and on a tapped one on the phone, which has no right
+          click. It removes only this mini task; Undo (Cmd+Z, or the Undo note) puts it back in its place. It keeps the
+          name box focused while pressed, so the half typed name is never saved first. */}
+      {miniBinShown({ editing: edit, phone: GOS, picked: sel }) && (
+        <button type="button" className="mt-bin no-drag" aria-label="Delete" title="Delete"
+          onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); }} onMouseDown={(e) => e.preventDefault()}
+          onClick={(e) => { e.stopPropagation(); gone.current = true; removeMini({ d, s, index, undo }); }}>
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3M6.5 7l1 13h9l1-13M10 11v6M14 11v6" /></svg>
+        </button>
+      )}
     </li>
   );
 }

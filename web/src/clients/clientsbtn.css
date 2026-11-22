@@ -9,6 +9,10 @@
 }
 .clw-morph { position: absolute; inset: 0; z-index: 5; pointer-events: none; opacity: 0; background: radial-gradient(circle at 50% 40%, var(--k-acc, #F0567F), var(--k-acc2, #7C6CFF)); }
 .clw-body { position: relative; z-index: 2; height: 100%; box-sizing: border-box; overflow: hidden; }
+/* PS 1.74: on a Mac with a notch the tab row (client tabs, + and Esc) sat under it. The Tab list covers the menu bar, so the
+   screen starts below the menu bar and the notch (--safe-top, core/screenfit.ts from ScreenFit.swift); the strip above
+   stays the screen's own colour. The website has no --safe-top (0), the phone has its own rule below. */
+.clw-layer:not(.gos) .clw-body { padding-top: var(--safe-top, 0px); }
 
 /* ---------- the phone (PS GOS and the iPhone web app): above the page, under the dock ---------- */
 .clw-layer.gos { z-index: 205; }
