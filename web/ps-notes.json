@@ -387,5 +387,12 @@
    "Delete one mini task anywhere: from its own menu, with a bin while you rename it, or with a tap on the phone. Clients stays clear of the notch, and New project works.",
    "The Cake icon is now the only icon. Your AI can see and set the task you are working on, send a message with a Mark done button, and change your reset time and Day ends."
   ]
+ },
+ "1.75": {
+  "en": [
+   "Schedule a task: switch on \"Hide tasks until their day\" in Settings, then type tomorrow, Friday or 25.11, also while editing. It waits in Scheduled at the bottom of your list until its day, Priority 1 timer included.",
+   "One click on a recognised date or priority turns it back into plain text. Type it again to bring it back.",
+   "Time boxes now read 22,15 as a time."
+  ]
  }
 }
