@@ -34,7 +34,9 @@ ok("the entry: 'New app logo', one button 'Ok', the logo, no question, no Later,
   assert.equal(LOGO.mark, "logo");
   assert.equal(LOGO.ack, true);
   assert.equal(LOGO.updatersOnly, true);
-  assert.ok(existsSync(new URL("../src/assets/ps-icon.png", import.meta.url)), "the new logo (PS 1.60 app logo) is bundled");
+  // PS 1.74: the only app icon is the Cake icon (mac/icon/hatch-1024.png); the old white PS icon is gone from the code.
+  assert.ok(existsSync(new URL("../src/assets/cake-icon.png", import.meta.url)), "the app logo (the 1.72 Cake icon) is bundled");
+  assert.ok(!existsSync(new URL("../src/assets/ps-icon.png", import.meta.url)), "the old white PS icon is not bundled any more");
   assert.ok(!/[–—]/.test(JSON.stringify(LOGO)));
 });
 
@@ -100,7 +102,7 @@ ok("Ok, Esc and Back all close it for good; there is no Later button and no guid
   assert.match(v, /\{!def\.ack && def\.later && <button/);
   assert.match(v, /\{def\.ask && <p className="fi-ask">\{def\.ask\}<\/p>\}/);
   assert.match(v, /logo: \(n\) => <img src=\{logoPng\}/);
-  assert.match(v, /import logoPng from "\.\.\/assets\/ps-icon\.png";/);
+  assert.match(v, /import logoPng from "\.\.\/assets\/cake-icon\.png";/);
 });
 
 ok("where: the Mac (from the island) and the website and the phone (the same card, plain)", () => {

@@ -29,6 +29,9 @@ Phone web app (--web), served at /todolist-mobile/:
   todolist-mobile/static/icon-cake-maskable-512.png   opaque, the disc inside the 80 % safe circle
                         New file names with each new icon, so no browser, service worker or Home Screen cache can
                         serve the old one (manifest.webmanifest and scripts/postbuild.mjs name them).
+Website (--web, PS 1.74), served at /client/:
+  public/icon-cake-*.png   the same four (index.html, public/manifest.webmanifest, public/sw.js and the download page)
+  src/assets/cake-icon.png the rounded square without the margin, 168 px (twice the 84 px it is shown at): the logo in the sign in window and the logo intro
 """
 import math
 import os
@@ -128,7 +131,8 @@ line = Image.new("RGBA", (S, S), (255, 255, 255, 0))
 line.putalpha(edge.resize((S, S), Image.LANCZOS).point(lambda v: round(v * 0.12)))
 icon.alpha_composite(line)
 wrote.append(out(os.path.join(HERE, "icon-1024.png"), icon))
-wrote.append(out(os.path.join(HERE, "hatch-1024.png"), plate.crop((x0, y0, x0 + body, y0 + body)).resize((S, S), Image.LANCZOS)))
+hatch = plate.crop((x0, y0, x0 + body, y0 + body)).resize((S, S), Image.LANCZOS)
+wrote.append(out(os.path.join(HERE, "hatch-1024.png"), hatch))
 
 # ---------- PS GOS ----------
 if PHONE:
@@ -158,10 +162,18 @@ if WEB:
         im.alpha_composite(disc_at(dd), ((size - dd) // 2, (size - dd) // 2))
         return im.convert("RGB")
 
-    wrote.append(out(os.path.join(st, f"icon-{NAME}-180.png"), opaque(180, 0.86)))
-    wrote.append(out(os.path.join(st, f"icon-{NAME}-maskable-512.png"), opaque(512, 0.78)))
-    for s in (192, 512):
-        wrote.append(out(os.path.join(st, f"icon-{NAME}-{s}.png"), disc_at(s)))
+    # PS 1.74: the same four for the website (web/public, served at /client/: index.html, manifest.webmanifest, sw.js and
+    # the download page name them), and the logo the website and the app show (src/assets/cake-icon.png: the sign in
+    # window and the logo intro). Nothing of the old white PS icon is left in the code.
+    pub = os.path.join(WEB, "public")
+    for folder in [st] + ([pub] if os.path.isdir(pub) else []):
+        wrote.append(out(os.path.join(folder, f"icon-{NAME}-180.png"), opaque(180, 0.86)))
+        wrote.append(out(os.path.join(folder, f"icon-{NAME}-maskable-512.png"), opaque(512, 0.78)))
+        for s in (192, 512):
+            wrote.append(out(os.path.join(folder, f"icon-{NAME}-{s}.png"), disc_at(s)))
+    assets = os.path.join(WEB, "src", "assets")
+    if os.path.isdir(assets):
+        wrote.append(out(os.path.join(assets, f"{NAME}-icon.png"), hatch.resize((168, 168), Image.LANCZOS)))
 
 print("make-icons: wrote\n  " + "\n  ".join(wrote))
 if not PHONE: print("make-icons: no PS GOS folder found, phone icons skipped (--phone)")

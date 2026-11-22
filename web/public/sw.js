@@ -1,14 +1,31 @@
 // Cincee Vault service worker: keeps the app itself available offline.
 // It never caches API traffic; your data is cached separately, encrypted, by the app.
 // v2 (31 Oct 2026): v1 could keep a download (PS.dmg, the download page) as the shell; a new name clears it.
-const CACHE = "cincee-vault-shell-v2";
-const SHELL = ["/client/", "/client/manifest.webmanifest", "/client/icon.svg", "/client/icon-192.png"];
+// v3 (PS 1.74): the app icons are the Cake icon under new names (icon-cake-*.png); a new name clears the old icons too.
+const CACHE = "cincee-vault-shell-v3";
+const SHELL = ["/client/", "/client/manifest.webmanifest", "/client/icon-cake-192.png"];
 
 self.addEventListener("install", (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));
 });
 self.addEventListener("activate", (e) => {
-  e.waitUntil(caches.keys().then((keys) => Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k)))).then(() => self.clients.claim()));
+  // The app files (hashed, under /client/assets/) an older cache holds move into the new one first: the page that brought
+  // this worker loaded them through the old one, and the cached shell needs them for an offline start.
+  e.waitUntil(caches.keys().then(async (keys) => {
+    const old = keys.filter((k) => k !== CACHE);
+    try {
+      const now = await caches.open(CACHE);
+      for (const k of old.filter((k) => k.startsWith("cincee-vault-shell-"))) {
+        const c = await caches.open(k);
+        for (const req of await c.keys()) {
+          if (!new URL(req.url).pathname.startsWith("/client/assets/") || await now.match(req)) continue;
+          const r = await c.match(req);
+          if (r) await now.put(req, r);
+        }
+      }
+    } catch { /* the old caches still go */ }
+    await Promise.all(old.map((k) => caches.delete(k)));
+  }).then(() => self.clients.claim()));
 });
 self.addEventListener("fetch", (e) => {
   const url = new URL(e.request.url);
