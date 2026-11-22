@@ -3,7 +3,7 @@
 // hold a note on what happened. Year, Month and Week views. Everything is saved encrypted.
 // The Tab list opens the same map in a window (SeriesPill.tsx): embedded, with its saves sent
 // through PS to the main window, which holds the keys.
-import { createContext, useContext, useEffect, useMemo, useState } from "react";
+import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 import type { Doc, Goal, JournalEntry, ScreenTimeDay, Todo } from "../core/model";
 import { calendarSnap, dayLogs, journal, screenTimeDays, settingsData } from "../core/select";
 import { ScreenTimeBars, fmtDur, totalSecs } from "./ScreenTime";
@@ -104,7 +104,8 @@ export function SeriesMap({ onClose, embedded, saves = SAVES, escRef }: {
   });
   useEffect(() => {
     if (embedded) return;
-    const key = (e: KeyboardEvent) => { if (e.key === "Escape" && !e.defaultPrevented) { e.preventDefault(); if (goalsEsc()) return; if (edit) setEdit(null); else onClose(); } };
+    // PS 1.74: a title or note being typed is saved first (it saves on blur), then the panel or the map closes.
+    const key = (e: KeyboardEvent) => { if (e.key === "Escape" && !e.defaultPrevented) { e.preventDefault(); if (goalsEsc()) return; (document.activeElement as HTMLElement | null)?.blur?.(); if (edit) setEdit(null); else onClose(); } };
     document.addEventListener("keydown", key);
     const prev = document.body.style.overflow;
     document.body.style.overflow = "hidden";
@@ -165,13 +166,16 @@ function MonthTitle({ y, m, j, big }: { y: number; m: number; j: Map<string, Doc
   const save = useContext(Saves);
   const saved = j.get(k)?.data.title || "";
   const [v, setV] = useState(saved);
-  useEffect(() => setV(saved), [saved]);
+  // PS 1.74: the saved copy coming back never replaces what is being typed in this box.
+  const typing = useRef(false);
+  useEffect(() => { if (!typing.current) setV(saved); }, [saved]);
   return (
     <div className={`sm-mtitle${big ? " big" : ""}`}>
       <span className="sm-mname">{MONTHS[m]}</span>
       <span className="sm-dot" aria-hidden="true">·</span>
       <input className="sm-mepisode" value={v} placeholder="Title this month" aria-label={`Title for ${MONTHS[m]} ${y}`}
-        onChange={(e) => setV(e.target.value)} onBlur={() => { if (v.trim() !== saved) void save.journal(k, { title: v.trim() || null }); }}
+        onFocus={() => { typing.current = true; }}
+        onChange={(e) => setV(e.target.value)} onBlur={() => { typing.current = false; if (v.trim() !== saved) void save.journal(k, { title: v.trim() || null }); }}
         onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }} onClick={(e) => e.stopPropagation()} />
     </div>
   );
@@ -181,10 +185,12 @@ function NoteBox({ k, j, placeholder, rows = 3, label }: { k: string; j: Map<str
   const save = useContext(Saves);
   const saved = j.get(k)?.data.note || "";
   const [v, setV] = useState(saved);
-  useEffect(() => setV(saved), [saved, k]);
+  const typing = useRef(false), shownKey = useRef(k);
+  useEffect(() => { if (!typing.current || shownKey.current !== k) setV(saved); shownKey.current = k; }, [saved, k]);
   return (
     <textarea className="textarea sm-note" rows={rows} value={v} placeholder={placeholder} aria-label={label}
-      onChange={(e) => setV(e.target.value)} onBlur={() => { if (v !== saved) void save.journal(k, { note: v.trim() || null }); }} />
+      onFocus={() => { typing.current = true; }}
+      onChange={(e) => setV(e.target.value)} onBlur={() => { typing.current = false; if (v !== saved) void save.journal(k, { note: v.trim() || null }); }} />
   );
 }
 

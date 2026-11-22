@@ -13,7 +13,7 @@ import { applyInbound as applyWaInbound, applyStatus, chatKey, groupChats, match
 import { applyInbound, applySent, buildMatcher, clientForInbound, parseAddress, type GmailInbound, type GmailSent } from "./mail";
 import { logInbound, mailVerdict, ownAccounts, staleSenders, type MailSender } from "./mailrules";
 import { DEFAULT_SETTINGS, uid } from "./model";
-import { staleEditOfDeleted } from "./dimxmove";
+import { IdLane, WriteWatch, carrySent, checksFirst, inDoubtBase, keepWritten, landedIn, markSent, mergeStale, sentAfterMerge, sentAfterOwn, settleSent, staleEditGone } from "./keepedits";
 import { notify } from "./notify";
 import { ownerInviteLink, publicBase, type OwnerInviteRow } from "./ownerInvite";
 import { parseRole } from "./account";
@@ -84,7 +84,8 @@ const mergeable = () => [...outbox.entries()].some(([id, r]) => {
   const k = snap.docs.get(id)?.kind;
   // PS 1.68: an edit of a task made on a copy from the server is checked against the server first (a tiny probe when
   // nothing moved), so a task deleted or moved away on another device is not brought back by it (pullRecords).
-  return !!k && (mergers.has(k) || (k === "todo" && !r.deleted && r.updated_at !== null));
+  // PS 1.74 (core/keepedits.ts): every kind does, so a newer copy there is merged into this one, never replaced by it.
+  return !!k && (mergers.has(k) || (!r.deleted && r.updated_at !== null && checksFirst(k)));
 });
 
 interface Row {
@@ -94,6 +95,10 @@ interface Row {
   ct: string;
   deleted: boolean;
   updated_at: string | null;
+  /** Outbox only (break-it 1.74, core/keepedits.ts markSent): copies of it sent with no answer yet. Never sent. */
+  sent?: string[];
+  /** Outbox only (break-it 1.74 round 2, core/keepedits.ts settleSent): sends no longer in doubt, only to know them. */
+  past?: string[];
 }
 interface KeysRow {
   user_id: string;
@@ -332,19 +337,32 @@ async function loadWsKeys(list: { workspace_id: string; wrapped_key: string }[])
   }
 }
 
+// PS 1.74 (core/keepedits.ts): the records written while a rebuild decrypts everything keep their newest copy, and a
+// rebuild that finishes after a newer one never puts its older list on screen.
+const writes = new WriteWatch();
+const putLane = new IdLane();
+let rebuildSeq = 0, rebuiltSeq = 0;
 async function rebuildDocs() {
+  const seq = ++rebuildSeq;
+  const written = writes.start();
   const docs = new Map<string, Doc>();
-  for (const r of rows.values()) {
-    const pending = outbox.get(r.id);
-    const d = await decryptRow(pending ?? r);
-    if (d) docs.set(d.id, { ...d, pending: !!pending });
+  try {
+    for (const r of [...rows.values()]) {
+      const pending = outbox.get(r.id);
+      const d = await decryptRow(pending ?? r);
+      if (d) docs.set(d.id, { ...d, pending: !!pending });
+    }
+    for (const [id, r] of [...outbox]) {
+      if (rows.has(id)) continue;
+      const d = await decryptRow(r);
+      if (d) docs.set(d.id, { ...d, pending: true });
+    }
+  } finally {
+    writes.stop(written);
   }
-  for (const [id, r] of outbox) {
-    if (rows.has(id)) continue;
-    const d = await decryptRow(r);
-    if (d) docs.set(d.id, { ...d, pending: true });
-  }
-  emit({ docs, pendingCount: outbox.size });
+  if (seq < rebuiltSeq) return;
+  rebuiltSeq = seq;
+  emit({ docs: keepWritten(docs, snap.docs, written), pendingCount: outbox.size });
 }
 
 // ---------- unlock / lock ----------
@@ -1276,15 +1294,36 @@ export async function put<T>(kind: Kind, data: T, opts: { id?: string; ws?: stri
   if (known && known.ws !== ws) throw new Error("A record cannot change scope. Create a new one instead.");
   const key = ws ? WKS.get(ws) : VK;
   if (!key) throw new Error("Missing key for this workspace.");
-  const ct = await C.encryptJson(key, { kind, data }, C.aad.record(id, ws));
-  const row: Row = {
-    id, workspace_id: ws, author_id: existing?.author ?? meta.userId, ct, deleted: false,
-    updated_at: existing?.updatedAt ?? null,
-  };
-  outbox.set(id, row);
+  // PS 1.74 (core/keepedits.ts): the new copy is in memory at once, so an edit started right after this one builds on
+  // it (it used to land only after encrypting, and a second edit in that moment saved over the first). The encrypted
+  // copies of one record reach the outbox in the order they were made.
+  const author = existing?.author ?? meta.userId, base = existing?.updatedAt ?? null;
   const docsMap = new Map(snap.docs);
-  docsMap.set(id, { id, ws, kind, data, author: row.author_id, updatedAt: row.updated_at, pending: true });
-  emit({ docs: docsMap, pendingCount: outbox.size });
+  const shown: Doc = { id, ws, kind, data, author, updatedAt: base, pending: true };
+  docsMap.set(id, shown);
+  writes.begin(id);
+  emit({ docs: docsMap });
+  try {
+    await putLane.run(id, async () => {
+      let out: unknown = data, made = base;
+      // This device already holds a newer copy than the one this edit was made on: the unsent copy was merged with the
+      // server's (mergeInto), or a download landed before the screen caught up. Keep both, never only this edit's copy.
+      const prev = outbox.get(id), row = rows.get(id);
+      const newer = (r: Row | undefined) => !!r && !r.deleted && r.updated_at !== null && (base === null || r.updated_at > base);
+      const other = prev ? (newer(prev) ? prev : undefined) : newer(row) ? row : undefined;
+      if (existing && other && checksFirst(kind) && !mergers.has(kind)) {
+        const o = await decryptRow(other);
+        if (o && o.kind === kind) { out = mergeStale(existing.data, data, o.data); made = other.updated_at; }
+      }
+      const ct = await C.encryptJson(key, { kind, data: out }, C.aad.record(id, ws));
+      // Sends of the copies before this one still in doubt stay known (core/keepedits.ts markSent, inDoubtBase).
+      outbox.set(id, { id, workspace_id: ws, author_id: author, ct, deleted: false, updated_at: made, ...carrySent(outbox.get(id)) });
+      if (out !== data && snap.docs.get(id) === shown) { const m = new Map(snap.docs); m.set(id, { ...shown, data: out, updatedAt: made }); emit({ docs: m }); }
+    });
+  } finally {
+    writes.end(id);
+  }
+  if (snap.pendingCount !== outbox.size) emit({ pendingCount: outbox.size });
   await persist();
   scheduleFlush();
   return id;
@@ -1310,11 +1349,20 @@ export async function remove(id: string) {
   if (!existing) return;
   const key = existing.ws ? WKS.get(existing.ws) : VK;
   if (!key) return;
-  const ct = await C.encryptJson(key, { kind: "_deleted", data: null }, C.aad.record(id, existing.ws));
-  outbox.set(id, { id, workspace_id: existing.ws, author_id: existing.author, ct, deleted: true, updated_at: existing.updatedAt });
+  // PS 1.74: gone from memory at once, and after any copy of it still being encrypted (core/keepedits.ts).
   const docsMap = new Map(snap.docs);
   docsMap.delete(id);
-  emit({ docs: docsMap, pendingCount: outbox.size });
+  writes.begin(id);
+  emit({ docs: docsMap });
+  try {
+    await putLane.run(id, async () => {
+      const ct = await C.encryptJson(key, { kind: "_deleted", data: null }, C.aad.record(id, existing.ws));
+      outbox.set(id, { id, workspace_id: existing.ws, author_id: existing.author, ct, deleted: true, updated_at: existing.updatedAt });
+    });
+  } finally {
+    writes.end(id);
+  }
+  if (snap.pendingCount !== outbox.size) emit({ pendingCount: outbox.size });
   await persist();
   scheduleFlush();
 }
@@ -1344,13 +1392,16 @@ async function flush() {
   if (!meta || !outbox.size || !navigator.onLine) return;
   if (flushing && Date.now() - flushAt < STUCK_MS) return;
   // An unsent change of a mergeable record: see the server's copy first (a tiny probe when nothing moved).
-  if (mergeable() && Date.now() - lastPull > 3000) await pull();
+  // Break-it 1.74: only when something can go now (a change held for the storage limit never asks on every try).
+  if (mergeable() && Date.now() - lastPull > 3000 && sendable(outbox.values(), held, Date.now()).length) await pull();
   if (!meta || !outbox.size) return;
   flushing = true; flushAt = Date.now();
   try {
     // The server's answer leaves out the ciphertext (egress): we already hold what we sent.
     const send = async (list: Row[]) => {
       const body = list.map((r) => ({ id: r.id, workspace_id: r.workspace_id, ct: r.ct, deleted: r.deleted }));
+      for (const r of list) if (outbox.get(r.id) === r) markSent(r);   // in place, kept with the outbox
+      await persist();   // stored before the request: a page closed mid request still knows what it sent
       const { data, error } = await sb.from("records").upsert(body, { onConflict: "id" }).select("id, workspace_id, author_id, deleted, updated_at");
       if (error) throw error;
       const sentCt = new Map(list.map((r) => [r.id, r.ct]));
@@ -1371,6 +1422,9 @@ async function flush() {
       // One bad row must not block the rest: retry one by one and drop rows the server will
       // never accept (eg edits to a client that was destroyed on another device).
       for (const row of batch) {
+        // Break-it 1.74: a row dropped (another device deleted the record, core/keepedits.ts staleEditGone) or replaced
+        // while the ones before it were tried is never sent from this old list (it would bring a deleted record back).
+        if (outbox.get(row.id) !== row) continue;
         try { data.push(...await send([row])); }
         catch (e2) {
           if (isNetworkError(e2)) throw e2;
@@ -1385,6 +1439,9 @@ async function flush() {
       held.delete(r.id);   // it went up: the account has room again
       const sent = outbox.get(r.id);
       if (sent && sent.ct === r.ct) outbox.delete(r.id);
+      // Break-it 1.74 round 2: a newer unsent copy keeps the sends after this one in doubt; this one and the ones before it
+      // are settled (left in doubt, a field another device set back to a value one of them held was undone).
+      else if (sent) settleSent(sent, r.ct);
       rows.set(r.id, r);
       const d = snap.docs.get(r.id);
       if (d) d.updatedAt = r.updated_at, d.pending = outbox.has(r.id), d.author = r.author_id;
@@ -1609,9 +1666,11 @@ async function pullRecords(full: boolean): Promise<boolean> {
       rows.set(r.id, r);
       // PS 1.68: a task another device deleted (or moved to Dimension X) after the copy this device's unsent edit was made
       // on: the edit is dropped, or sending it would bring the task back and it would be in two places (core/dimxmove.ts).
-      const mine = outbox.get(r.id);
-      if (mine && staleEditOfDeleted(snap.docs.get(r.id)?.kind, { deleted: mine.deleted, base: mine.updated_at }, r)) { outbox.delete(r.id); changed = true; }
-      if (mergers.size && outbox.has(r.id) && !r.deleted && (!old || old.ct !== r.ct)) await mergeInto(r);
+      // Break-it 1.74: for every kind a person edits, not only tasks (core/keepedits.ts staleEditGone).
+      const mine = outbox.get(r.id), kind = snap.docs.get(r.id)?.kind;
+      if (mine && staleEditGone(kind, !!kind && mergers.has(kind), { deleted: mine.deleted, base: mine.updated_at }, r)) { outbox.delete(r.id); changed = true; }
+      // A write of it still on its way (put encrypting) is merged too, once it is in the outbox (same lane).
+      if ((outbox.has(r.id) || !putLane.idle(r.id)) && !r.deleted && (!old || old.ct !== r.ct)) await mergeInto(r, old);
     }
   }
   for (const s of stamps) if (s.updated_at && (!cursor || s.updated_at > cursor)) cursor = s.updated_at;
@@ -1625,19 +1684,58 @@ async function pullRecords(full: boolean): Promise<boolean> {
   return changed;
 }
 
-/** The server has a newer copy of a record this device has not sent yet: merge the two into the unsent one. */
-async function mergeInto(remote: Row) {
-  const mine = outbox.get(remote.id);
-  if (!mine || mine.deleted || mine.ct === remote.ct) return;
-  try {
-    const a = await decryptRow(mine), b = await decryptRow(remote);
-    const fn = a && b && a.kind === b.kind ? mergers.get(a.kind) : undefined;
-    if (!a || !b || !fn) return;
-    const key = a.ws ? WKS.get(a.ws) : VK;
-    if (!key) return;
-    const ct = await C.encryptJson(key, { kind: a.kind, data: fn(a.data, b.data) }, C.aad.record(a.id, a.ws));
-    outbox.set(a.id, { ...mine, ct });
-  } catch { /* leave the unsent copy as it is */ }
+/** The server has a newer copy of a record this device has not sent yet: merge the two into the unsent one.
+ *  `base`: the server's copy this device had before (the one its change was made on). A kind with its own merger uses
+ *  it; every other kind keeps what this device changed since `base` and takes the rest from the server (PS 1.74,
+ *  core/keepedits.ts mergeStale). It used to send its whole copy, which put back everything the other device changed. */
+async function mergeInto(remote: Row, base?: Row) {
+  // Break-it 1.74: in the record's own lane, so a put of it never overlaps a merge (a put that picked its copy before the
+  // merge landed wrote its unmerged copy over it, and no later download merged it again: the other device's change was
+  // gone with the next send).
+  await putLane.run(remote.id, async () => {
+    const mine = outbox.get(remote.id);
+    if (!mine || mine.deleted || mine.ct === remote.ct) return;
+    const inDoubt = [...(mine.sent ?? [])];   // copied now: an answer landing meanwhile never changes what this merge uses
+    const own = inDoubt.includes(remote.ct) || !!mine.past?.includes(remote.ct);   // settled sends: only known, never merged from
+    try {
+      const a = await decryptRow(mine);
+      if (!a) return;
+      const fn = mergers.get(a.kind);
+      // This device's own earlier send, whose answer was lost: what is unsent now was made on top of it. Never merged
+      // (that would bring back what was changed since); it is the copy the unsent one is made on now.
+      if (!fn && own) {
+        if (outbox.get(remote.id) === mine) outbox.set(a.id, { ...mine, updated_at: remote.updated_at, ...sentAfterOwn(mine, remote.ct) });
+        return;
+      }
+      const b = await decryptRow(remote);
+      if (!b || a.kind !== b.kind) return;
+      let data: unknown;
+      const seen: string[] = [];   // sends the server's copy shows arrived (core/keepedits.ts landedIn)
+      if (fn) data = fn(a.data, b.data);
+      else {
+        if (!checksFirst(a.kind) || !base || base.deleted) return;   // no copy it was made on: as before
+        const o = await decryptRow(base);
+        if (!o || o.kind !== a.kind) return;
+        // A send of this device still in doubt (its answer was lost) may be what the server built on: start from it there.
+        const sent: unknown[] = [];
+        for (const ct of inDoubt) { const x = await decryptRow({ ...mine, ct }); if (x && x.kind === a.kind) { sent.push(x.data); if (landedIn(o.data, x.data, b.data)) seen.push(ct); } }
+        data = mergeStale(sent.length ? inDoubtBase(o.data, sent, b.data) : o.data, a.data, b.data);
+      }
+      const key = a.ws ? WKS.get(a.ws) : VK;
+      if (!key) return;
+      const ct = await C.encryptJson(key, { kind: a.kind, data }, C.aad.record(a.id, a.ws));
+      if (outbox.get(remote.id) !== mine) return;   // sent meanwhile: the server has it, leave it
+      if (fn) { outbox.set(a.id, { ...mine, ct }); return; }
+      // Now made on the server's copy: the next newer copy merges against this one. Break-it 1.74: the sends in doubt stay
+      // known (one may still be on its way and land after this copy; it comes down later as this device's own, never as
+      // another device's copy that would bring back the old values the server's copy changed). Round 2: one this copy shows
+      // arrived is known only (past), never a later merge's start (a field another device set back to a value it held
+      // looked like this device's own send, and that change was undone).
+      outbox.set(a.id, { ...mine, ct, updated_at: remote.updated_at, ...sentAfterMerge(mine, seen) });
+      const cur = writes.busyWith(a.id) ? undefined : snap.docs.get(a.id);   // a write on its way merges it itself (put)
+      if (cur) { const docsMap = new Map(snap.docs); docsMap.set(a.id, { ...cur, data, updatedAt: remote.updated_at, pending: true }); emit({ docs: docsMap }); }
+    } catch { /* leave the unsent copy as it is */ }
+  });
 }
 
 let pulling = false, pullAt = 0;

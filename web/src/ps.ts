@@ -979,6 +979,7 @@ export function startPsBridge() {
       || d.kind === "phonelayout" || d.kind === "phonedev" || d.kind === "bgdev"   // V1.56 the phone layout editor: each phone's layout, and which phones you have
       || d.kind === "remind"    // Settings > Annoying 15 min reminder: the reminders and their answers (a few KB)
       || d.kind === "ttime"     // Time spent (PS 1.65, core/timeest.ts): the clocks and each month's finished times, for Edit's past times and the overload line (a few KB)
+      || d.kind === "journal"   // PS 1.74: the Map pill's month titles and notes (views/SeriesMap.tsx). Left out before, so a title typed there was saved but looked deleted the next time the map opened
       || (d.kind === "stline" && Number((d.data as { hour?: number }).hour) > Date.now() - 25 * 3600_000)) : [];
     if (cal) docs.push(cal);
     // V1.59 Reply in the email panel (core/inlinereply.ts): how each reply went ("Replied", "Not sent"), never its words.

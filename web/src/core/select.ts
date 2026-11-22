@@ -15,6 +15,7 @@ import { isOpenReply } from "./mailopen";
 import { hasOff, shownEvents, type CalInfo } from "./calpick";
 import { belongsTo, daysOf } from "./screentime";
 import { daysFromToday, todayISO } from "../ui/kit";
+import { journalByKey } from "./keepedits";
 
 function byKind<T>(s: Snapshot, kind: string, ws?: string | null): Doc<T>[] {
   const out: Doc<T>[] = [];
@@ -246,7 +247,7 @@ export function screenLines(s: Snapshot): Doc<StLine>[] {
   return byKind<StLine>(s, "stline");
 }
 export function journal(s: Snapshot): Map<string, Doc<JournalEntry>> {
-  return new Map(byKind<JournalEntry>(s, "journal").map((d) => [d.data.key, d]));
+  return journalByKey(byKind<JournalEntry>(s, "journal"));
 }
 /** The Instantly conversations (full threads), newest first. */
 export function ithreads(s: Snapshot): Doc<IThread>[] {
