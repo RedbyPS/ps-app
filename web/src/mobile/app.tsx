@@ -13,12 +13,15 @@ import "../gos/gos.css";
 import "../gos/polish/index.css";
 import "../gos/layouts.css";
 import { startWebKeyboard } from "./keyboard";
+import { installSaveNow } from "../core/savenow";
+import { settled } from "../core/vault";
 
 startGosLayout();
 startMobileWeb();
 startKeyboard();
 startWebKeyboard();
 startCalm();
+installSaveNow(window, document, settled);   // PS 1.74 (core/savenow.ts): waiting saves run when the page is hidden or closed
 
 export default function MobileApp() {
   return <><App /><GosLayer /><RemCard /></>;

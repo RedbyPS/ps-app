@@ -39,6 +39,7 @@ import { addDraftReminder, addTimeReminder, type TimeRemind } from "../core/nlre
 import { privatePatch } from "../core/privateends";
 import type { Reminder } from "../core/remind";
 import { addTodo, approveSuggestion, awareDone, awareToList, awareUndone, suggestionToAware, suggestionToDimx, resetTodos, deleteTodo, dismissSuggestion, moveTaskToIdea, moveIdeaToTask, tidyMoves, saveSettings, setReplyHandled, setTodoOrder, setWorkingOn, subtaskOp, toggleTodo, setTodoDone, setTodosDone, clearTodos, reviveTodos, buryTodos, restoreTodo, updateTodo, moveTasks, ungroupTasks, setDnd, setJournal } from "../core/actions";
+import { resetUndoSlot } from "../core/resetsave";
 import { accepts, cleanGroups, dropAbovePrioIsP1, groupKey, hitSection, mergeOrder, newGroupId, sectionOrder, tabLists, type TabLists, type TaskMove } from "../core/groups";
 import { fmtDate, todayISO, useVault } from "../ui/kit";
 import { GSquadButton, GSquadHost } from "./GSquad";
@@ -317,12 +318,12 @@ export const taskMapActions: {
   keep: async () => {},
   goals: (list) => saveSettings({ goals: list }),
   journal: (key, patch) => setJournal(key, patch),
-  reset: async () => { lastResetUndo = await resetTodos(); },
+  reset: () => resetSlot.reset(() => resetTodos()),
   rules: (list) => saveSettings({ rules: cleanRules(list) }),
   moveTasks: (m, make) => moveTasks(m, make),
   ungroup: (id) => ungroupTasks(id),
   dnd: (o) => setDnd(o),
-  undoReset: async () => { const u = lastResetUndo; lastResetUndo = null; await u?.(); },
+  undoReset: () => resetSlot.undo(),
   notifyPref: (on) => saveSettings({ tmNotify: on }),
   workStyle: (style) => saveSettings({ tmWorkStyle: style }),
   p1Style: (id) => saveSettings({ tmP1Style: p1Design(id) }),
@@ -650,7 +651,8 @@ function GlassBar({ saved, kept, hover, onKeep, onHover }: { saved: number; kept
 // ---------- undo: tasks you ticked off by mistake come straight back ----------
 // Kept outside the list so it survives the list closing and opening again (last 10, for 15 minutes).
 type UndoEntry = { id: string; title: string; at: number; reset?: boolean; aware?: { item: AwareItem; index: number; todoId: string }; run?: () => void };
-let lastResetUndo: (() => Promise<void>) | null = null;
+// Break-it 1.74 round 2 (core/resetsave.ts resetUndoSlot): Cmd+Z right after End day waits for that Reset and takes it back.
+const resetSlot = resetUndoSlot();
 let undoStack: UndoEntry[] = [];
 const undoListeners = new Set<() => void>();
 const undoEmit = () => undoListeners.forEach((l) => l());

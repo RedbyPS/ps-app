@@ -941,8 +941,12 @@ final class App: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMess
     if updateSeen == nil { updateSeen = Date() }
     main.evaluateJavaScript("window.__psUpdateReady = true", completionHandler: nil)
     window.subtitle = "New version ready: click the refresh button"
-    // The overlay holds no state of its own, so it can simply reload (once per build).
-    if !shown && !kept && now != overlayIndex { overlayIndex = now; overlay.load(URLRequest(url: URL(string: "ps://app/client/overlay")!)) }
+    // The overlay holds no state of its own, so it can simply reload (once per build), after saving what it was typing
+    // (PS 1.74, SaveFirstCore.swift: a box left open in the Tab list).
+    if !shown && !kept && now != overlayIndex {
+      overlayIndex = now
+      savePagesFirst(only: ["overlay"]) { [weak self] in self?.overlay.load(URLRequest(url: URL(string: "ps://app/client/overlay")!)) }
+    }
     autoReload()
   }
 
@@ -985,9 +989,33 @@ final class App: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMess
       psLog("PS update: auto reload to the newer web build (waited \(Int(Date().timeIntervalSince(self.updateSeen ?? Date())))s)")
       self.updateWait = ""; self.updateSeen = nil
       if self.window.subtitle.hasPrefix("New version") { self.window.subtitle = "" }
-      self.loadMain()
-      if now != self.overlayIndex { self.overlayIndex = now; self.overlay.load(URLRequest(url: URL(string: "ps://app/client/overlay")!)) }
+      // PS 1.74 (SaveFirstCore.swift): both pages save what is typed and on its way first, then reload.
+      let both = now != self.overlayIndex
+      if both { self.overlayIndex = now }
+      self.savePagesFirst { [weak self] in
+        guard let self else { return }
+        self.loadMain()
+        if both { self.overlay.load(URLRequest(url: URL(string: "ps://app/client/overlay")!)) }
+      }
     }
+  }
+
+  /// PS 1.74 (SaveFirstCore.swift, web core/savenow.ts): the pages save the box being typed in, any save still waiting and
+  /// any save on its way to storage, the Tab list first (its saves travel to the main page). `then` runs once, on the main
+  /// thread, when they answered or after SaveFirstCore.limit seconds.
+  func savePagesFirst(only: [String] = SaveFirstCore.order, _ then: @escaping () -> Void) {
+    let once = SaveFirstOnce(then)
+    DispatchQueue.main.asyncAfter(deadline: .now() + SaveFirstCore.limit) { once.fire() }
+    let pages = SaveFirstCore.order.filter { only.contains($0) }
+    func step(_ i: Int) {
+      guard i < pages.count, !once.done else { return once.fire() }
+      guard let web = pages[i] == "overlay" ? overlay : main else { return step(i + 1) }
+      // The next page is asked when this one answered, or after its share of the time (SaveFirstCore.pageLimit).
+      let next = SaveFirstOnce { step(i + 1) }
+      if i + 1 < pages.count { DispatchQueue.main.asyncAfter(deadline: .now() + SaveFirstCore.pageLimit) { next.fire() } }
+      web.callAsyncJavaScript(SaveFirstCore.js, arguments: [:], in: nil, in: .page) { _ in DispatchQueue.main.async { next.fire() } }
+    }
+    step(0)
   }
 
   // Does the website run newer code than PS? Both builds write version.json from the same source.
@@ -1397,13 +1425,21 @@ final class App: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMess
   /// A card's Dismiss or Remind me in must reach the page (the developer, 3 Nov 2026: dismissed cards kept coming back).
   /// While the main page loads (an update reload, a wake) window.__ps is not there yet: the answer was dropped,
   /// the card stayed in the vault and came back at the next resync. It is tried again every second for a minute.
-  func sendCardAction(_ json: String, tries: Int = 0) {
-    main.callAsyncJavaScript("if (!window.__ps) return false; window.__ps.apply(JSON.parse(m)); return true", arguments: ["m": json], in: nil, in: .page) { [weak self] r in
-      if case .success(let v) = r, (v as? Bool) == true { return }
-      guard tries < 60 else { return }
-      DispatchQueue.main.asyncAfter(deadline: .now() + 1) { self?.sendCardAction(json, tries: tries + 1) }
+  // Break-it 1.74 round 2 (InOrderSendCore.swift): one message at a time, in the order sent, each tried every second for a
+  // minute while window.__ps is missing. Each used to retry on its own timer, so a Clients task added and then renamed while
+  // the main page loaded could run rename first (no task yet, dropped) and then the add.
+  private lazy var cardSend = InOrderSend(attempt: { [weak self] json, done in
+    guard let self, let web = self.main else { return done(false) }
+    // A page that never answers (a hung page) must not hold every later answer back: after 10 s this one is let go, never
+    // tried again (it may still run, and a second try could run it twice). Each answer counts once.
+    var answered = false
+    let finish = { (ok: Bool) in if answered { return }; answered = true; done(ok) }
+    DispatchQueue.main.asyncAfter(deadline: .now() + 10) { if !answered { psLog("PS: an answer to the main page got no reply in 10 s, let go") }; finish(true) }
+    web.callAsyncJavaScript("if (!window.__ps) return false; window.__ps.apply(JSON.parse(m)); return true", arguments: ["m": json], in: nil, in: .page) { r in
+      DispatchQueue.main.async { if case .success(let v) = r, (v as? Bool) == true { finish(true) } else { finish(false) } }
     }
-  }
+  }, later: { job in DispatchQueue.main.asyncAfter(deadline: .now() + 1, execute: job) })
+  func sendCardAction(_ json: String) { cardSend.send(json) }
 
   // MARK: bridge (in memory only)
 
@@ -1593,7 +1629,10 @@ final class App: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMess
          "headline" where fromOverlay, "add" where fromOverlay, "sound" where fromOverlay, "homeTz" where fromOverlay, "timelines" where fromOverlay, "timelineOrder" where fromOverlay, "timelineHidden" where fromOverlay, "meetingNotes" where fromOverlay, "suggest" where fromOverlay, "workStyle" where fromOverlay, "stHours" where fromOverlay, "awayPatch" where fromOverlay, "goals" where fromOverlay, "reset" where fromOverlay, "resetUndo" where fromOverlay, "notifyPref" where fromOverlay, "replyHandled" where fromOverlay, "inboxMin" where fromOverlay, "dimxList" where fromOverlay, "awareDone" where fromOverlay, "awareUndone" where fromOverlay, "awareToList" where fromOverlay, "p1Style" where fromOverlay, "meetPrefs" where fromOverlay, "eod" where fromOverlay, "looks" where fromOverlay:
       if ProcessInfo.processInfo.environment["PS_SELFTEST"] != nil { print("BRIDGE:", type, msg["id"] ?? "", msg["action"] ?? "", msg["zone"] ?? "") }
       if type == "add" && ProcessInfo.processInfo.environment["PS_SELFTEST"] != nil { SelfTest.lastAdd = msg }   // the add task check reads what was sent
-      sendToMain(text)
+      // Break-it 1.74: a Clients save from the Tab list (web core/clientsop.ts) is a save the developer made, and the Tab list
+      // shows it as done. While the main page loads (an update reload, a wake) it used to be dropped: it is tried again like a
+      // card's answer instead.
+      if type == "looks", ((msg["patch"] as? [String: Any])?["clientsOp"]) != nil { sendCardAction(text) } else { sendToMain(text) }
     case "timeline:get" where fromOverlay:          // the screen time timeline, last N hours
       if let j = ScreenTime.shared.timelineJSON(hours: msg["hours"] as? Double ?? 24) { sendToOverlay(j) }
     case "presence:get" where fromOverlay:          // when the developer was last on (screen time pop-up)
@@ -1828,8 +1867,12 @@ final class App: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMess
   func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
     var replied = false
     let reply = { if !replied { replied = true; NSApp.reply(toApplicationShouldTerminate: true) } }
-    guard ScreenRec.shared.finishForQuit({ DispatchQueue.main.async { reply() } }) else { return .terminateNow }
-    DispatchQueue.main.asyncAfter(deadline: .now() + 6) { reply() }
+    // PS 1.74 (SaveFirstCore.swift): every quit, an update's relaunch and the Hatch scene's restart included, first lets the
+    // pages save what is being typed and on its way (a few seconds at most), and lets a screen recording end.
+    let all = SaveFirstAll(["pages", "recording"]) { DispatchQueue.main.async { reply() } }   // always after this returns
+    savePagesFirst { all.finished("pages") }
+    if !ScreenRec.shared.finishForQuit({ DispatchQueue.main.async { all.finished("recording") } }) { all.finished("recording") }
+    DispatchQueue.main.asyncAfter(deadline: .now() + 6) { all.giveUp() }
     return .terminateLater
   }
 
@@ -1948,7 +1991,14 @@ final class App: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMess
   }
   @objc func openListMenu() { openList() }
   @objc func openSettingsMenu() { openList(then: App.openSettingsJS) }
-  @objc func reloadMain() { loadMain() }
+  // PS 1.74 (SaveFirstCore.swift): View > Reload (Cmd+R) saves the box being typed in and any waiting save first, like the
+  // reload for a new web build. Only the main page reloads, so only it is asked. A second Cmd+R while it saves does nothing.
+  private var reloadSaving = false
+  @objc func reloadMain() {
+    if reloadSaving { return }
+    reloadSaving = true
+    savePagesFirst(only: ["main"]) { [weak self] in self?.reloadSaving = false; self?.loadMain() }
+  }
   @objc func checkUpdates() { Updater.shared.checkNow(manual: true) }
   @objc func openProjectSetup() { ProjectSetup.shared.show(mode: ProjectSetup.shared.holding ? .first : .change) }
   /// About PS shows the version the developer knows (V1.02), not the internal build number.

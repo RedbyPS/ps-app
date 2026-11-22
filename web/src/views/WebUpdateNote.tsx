@@ -11,6 +11,7 @@ import { updateChecksOff } from "../core/updateevery";
 import { WEB_CHANNEL, WEB_COMPAT, lookDelay, lookOnReturn, webNote, type WebNote } from "../core/webupdate";
 import "./webupdate.css";
 import { lowPower } from "../core/lowpower.ts";
+import { saveBeforeLeaving } from "../core/savenow";
 
 // The website in a browser only: PS on the Mac and the phone get new pages through their own Update now.
 const WEBSITE = !PS && import.meta.env.MODE !== "gos" && import.meta.env.MODE !== "ps";
@@ -71,6 +72,7 @@ function useWebNote() { return useSyncExternalStore(subscribe, () => cur); }
 
 /** Saves what is waiting (a few seconds at most), then loads the new build. Only ever from a click. */
 async function reloadNow() {
+  await saveBeforeLeaving(window);   // PS 1.74 (core/savenow.ts): the box being typed in and any waiting save first
   await Promise.race([sync().catch(() => {}), new Promise((r) => setTimeout(r, 5000))]);
   location.reload();
 }

@@ -26,6 +26,7 @@ import { dndApply, type DndOp } from "./dnd";
 import { overdueZone } from "./overdue";
 import { autoResetDue, resetDayOf, resetMinOf } from "./resetday";
 import { planReset } from "./resetplan";
+import { resetLane, saveResetPuts, undoLog, undoResetPuts } from "./resetsave";
 import { cleanTzPerson, type TzPerson } from "./tzpeople";
 import { cleanTzZones, sameZones, zonesOf, type TzZones } from "./tzzones";
 import type { Zone } from "./tz";
@@ -290,14 +291,14 @@ function wsOwnerName(): { ownerName?: string } {
   const n = (settings(s)?.data.ownerName || "").trim();
   return { ownerName: n && n !== DEFAULT_SETTINGS.ownerName ? n : "your project lead" };
 }
-export async function addClient(input: { name: string; contactName?: string; email?: string; greetingName?: string; notes?: string; timezone?: string }): Promise<string> {
+export async function addClient(input: { name: string; contactName?: string; email?: string; greetingName?: string; notes?: string; timezone?: string }, opts: { id?: string } = {}): Promise<string> {
   const ws = await createWorkspace();
   await put<WsMeta>("wsmeta", { clientName: input.name, greetingName: input.greetingName || input.contactName?.split(" ")[0] || null, ...wsOwnerName() }, { ws });
   return put<ClientRec>("client", {
     name: input.name, ws, contactName: input.contactName || null, email: input.email || null,
     greetingName: input.greetingName || input.contactName?.split(" ")[0] || null,
     notes: input.notes || null, timezone: input.timezone || null, createdAt: now(),
-  }, { ws: null });
+  }, { ws: null, ...(opts.id ? { id: opts.id } : {}) });
 }
 
 // Client edits run one at a time, so two quick saves (eg a field saved on blur, then the
@@ -362,14 +363,15 @@ export async function addMatchAddr(clientId: string, entry: string) {
 // ---------- projects ----------
 const HIDDEN_BY_DEFAULT = new Set(["lead", "proposal_sent"]);
 
-export async function addProject(ws: string, type: ProjectType, title?: string, patch: Partial<Project> = {}): Promise<string> {
+/** opts.id (PS 1.74): the id picked by the caller (the Mac's Tab list picks it, core/clientsop.ts). */
+export async function addProject(ws: string, type: ProjectType, title?: string, patch: Partial<Project> = {}, opts: { id?: string } = {}): Promise<string> {
   const p = { ...newProject(type, title), ...patch };
   // Leads and unsigned proposals stay private (vault key) until the developer shows them to the client.
   const hidden = patch.clientVisible === false || (patch.clientVisible === undefined && HIDDEN_BY_DEFAULT.has(p.pipeline));
   p.clientVisible = !hidden;
   const id = hidden
-    ? await put<Project>("project", { ...p, clientWs: ws }, { ws: null })
-    : await put<Project>("project", { ...p, clientWs: null }, { ws });
+    ? await put<Project>("project", { ...p, clientWs: ws }, { ws: null, ...(opts.id ? { id: opts.id } : {}) })
+    : await put<Project>("project", { ...p, clientWs: null }, { ws, ...(opts.id ? { id: opts.id } : {}) });
   await put<ProjectPrivate>("pprivate", { projectId: id, history: [{ date: todayISO(), text: "Project created" }] }, { ws: null });
   return id;
 }
@@ -772,14 +774,22 @@ export async function deleteTodo(id: string, o: { moved?: boolean } = {}) {
  * auto: the automatic Reset at your reset time (core/resetday.ts): each tick is filed into its own day and anything
  * ticked since today started is left alone.
  */
-export async function resetTodos(opts: { auto?: boolean } = {}): Promise<() => Promise<void>> {
+// Break-it 1.74 (core/resetsave.ts resetLane): one Reset at a time, a second one asked for meanwhile gets the same run and Undo.
+const resetOne = resetLane<() => Promise<void>>();
+export function resetTodos(opts: { auto?: boolean } = {}): Promise<() => Promise<void>> {
+  return resetOne(!!opts.auto, () => resetTodosNow(opts));
+}
+async function resetTodosNow(opts: { auto?: boolean }): Promise<() => Promise<void>> {
   const list = todos(vaultStore.get());
   const t = now();
-  const before = list.map((d) => ({ id: d.id, data: structuredClone(d.data) }));
+  const before = new Map(list.map((d) => [d.id, structuredClone(d.data)]));
   const st = settings(vaultStore.get())?.data;
+  // Break-it 1.74 round 2: an automatic Reset that waited in the lane behind one pressed by hand is no longer due once that one
+  // closed the day. Run anyway, it marked every daily task as missed yesterday (the hand Reset had just unticked them).
+  if (opts.auto && !autoResetDue(st, Date.now(), overdueZone(st?.tmHomeTz))) return async () => {};
   const plan = planReset(list, { at: t, tz: overdueZone(st?.tmHomeTz), atMin: resetMinOf(st), auto: opts.auto, dayEndsHour: st?.dayEndsHour });
   // History first: every ticked task goes into the log of its day.
-  const logUndo: { prev: Doc<DayLog> | undefined; id: string | null }[] = [];
+  const logUndo: { prev: Doc<DayLog> | undefined; id: string | null; wrote: DayLog }[] = [];
   const recordMissed = feature("fuller-history") && historyOn(st);
   const logDays = new Map(plan.logs);
   if (recordMissed && !logDays.has(plan.missedDay)) logDays.set(plan.missedDay, []);   // a day with nothing ticked still gets its missed list
@@ -787,15 +797,23 @@ export async function resetTodos(opts: { auto?: boolean } = {}): Promise<() => P
     const prevLog = dayLogs(vaultStore.get()).get(date);
     const nextLog = addToLog(prevLog?.data, date, its, t, date === plan.missedDay && recordMissed ? plan.missed : undefined);
     if (!nextLog) continue;
-    logUndo.push({ prev: prevLog, id: await put<DayLog>("daylog", nextLog, { id: prevLog?.id, ws: null }) });
+    logUndo.push({ prev: prevLog, id: await put<DayLog>("daylog", nextLog, { id: prevLog?.id, ws: null }), wrote: nextLog });
   }
-  for (const x of plan.puts) await put<Todo>("todo", x.data, { id: x.id, ws: null });
+  // PS 1.74 (core/resetsave.ts): each task is saved on its copy as it is at that moment, never the one read at the start, so a
+  // mini task ticked, added or renamed while Reset runs stays, and a task deleted meanwhile is not brought back.
+  const io = { get: (id: string) => doc<Todo>(id)?.data, put: (id: string, data: Todo) => put<Todo>("todo", data, { id, ws: null }) };
+  const written = await saveResetPuts(plan.puts, before, io);
   await saveSettings({ lastResetAt: t, lastResetDay: plan.today });
+  // Undo takes back only what Reset changed, on the newest copies (an edit made since the Reset stays).
   return async () => {
-    for (const b of before) await put<Todo>("todo", b.data, { id: b.id, ws: null });
+    await undoResetPuts(written, io);
     for (const l of logUndo) {
-      if (l.prev) await put<DayLog>("daylog", l.prev.data, { id: l.prev.id, ws: null });
-      else if (l.id) await remove(l.id);
+      if (!l.id) continue;
+      const cur = doc<DayLog>(l.id);
+      if (!cur) continue;
+      const back = undoLog(l.prev?.data, l.wrote, cur.data);
+      if (back) await put<DayLog>("daylog", back, { id: l.id, ws: null });
+      else await remove(l.id);
     }
   };
 }

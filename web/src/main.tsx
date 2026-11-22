@@ -9,6 +9,8 @@ import { startNoContextMenu } from "./nocontext";
 import { startHoverCards } from "./ui/hovercard";
 import { startNoSelect } from "./ui/noselect";
 import { startUpdateEvery } from "./updateevery";
+import { installSaveNow } from "./core/savenow";
+import { settled } from "./core/vault";
 
 // PS, the Mac app: no browser right click menu (it only said Reload); tasks have PS's own (V1.34, src/nocontext.ts).
 if (import.meta.env.MODE === "ps") startNoContextMenu();
@@ -20,6 +22,9 @@ startNoSelect();
 
 // V1.54: Settings, "Check for updates every": the Mac and phone shells are told the choice, the website pill reads it.
 startUpdateEvery();
+
+// PS 1.74 (core/savenow.ts): an edit made just before an update, a reload or Quit is saved first.
+installSaveNow(window, document, settled);
 
 createRoot(document.getElementById("root")!).render(<StrictMode><App /></StrictMode>);
 

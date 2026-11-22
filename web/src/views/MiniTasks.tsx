@@ -19,6 +19,7 @@ import { pushUndoAction, taskMapActions } from "./TaskMap";
 import { openMiniMenu, openMiniMenuAt } from "./TaskMenu";
 import { isMenuKey, miniBinShown, miniMenuFor, splitMiniRef } from "../core/minimenu";
 import { vaultStore } from "../core/vault";
+import { holdEdit } from "../core/savenow";
 import "./minitasks.css";
 
 // ---------- what shows: the saved list, or the one just changed until the save comes back ----------
@@ -272,6 +273,15 @@ function MiniAdd({ d, open }: { d: Doc<Todo>; open: boolean }) {
     if (open && focusNext === d.id) { focusNext = null; if (!(d.data.subtasks || []).length) setOn(true); }
     if (!open) setOn(false);
   }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
+  // PS 1.74 (core/savenow.ts): a mini task typed but not yet added with Enter is added when PS updates, reloads or quits.
+  const latest = useRef({ d, v, on });
+  latest.current = { d, v, on };
+  useEffect(() => holdEdit(() => {
+    const { d: task, v: text, on: shown } = latest.current, t = text.trim();
+    if (!shown || !t) return;
+    miniAct(task, { op: "add", id: newSubId(), title: t.slice(0, 300) });
+    setV("");
+  }, "leave"), []);
   const add = () => {
     const t = v.trim();
     if (!t) return;
