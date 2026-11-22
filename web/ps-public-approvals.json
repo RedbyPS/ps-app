@@ -523,5 +523,15 @@
   ],
   "by": "jan",
   "shared": true
+ },
+ "1.76": {
+  "code": "63c6dfe40bdd",
+  "at": "2026-11-22T18:17:36.203Z",
+  "keyword": "Horizon",
+  "notes": [
+   "Tasks for a later day now wait in Scheduled at the bottom of your list by default. To see every task in your list again, switch off \"Hide tasks until their day\" in Settings, Your list."
+  ],
+  "by": "jan",
+  "shared": true
  }
 }
