@@ -497,5 +497,19 @@
   ],
   "by": "red",
   "shared": true
+ },
+ "1.74": {
+  "code": "e22ecaf4ebc4",
+  "at": "2026-11-22T09:26:39.620Z",
+  "keyword": "Aurora",
+  "notes": [
+   "Your task and checklist edits now stick, even when a sync, another device, an update or a reload lands at the same time. Month titles in the Map stay.",
+   "Reset never undoes a change you make while it runs, and Undo takes back only what Reset did.",
+   "The closed island shows just your task. Point at it for the timers, counts and the rest. The start animation builds the island where you put it.",
+   "Delete one mini task anywhere: from its own menu, with a bin while you rename it, or with a tap on the phone. Clients stays clear of the notch, and New project works.",
+   "The Cake icon is now the only icon. Your AI can see and set the task you are working on, send a message with a Mark done button, and change your reset time and Day ends."
+  ],
+  "by": "jan",
+  "shared": true
  }
 }
