@@ -32,6 +32,9 @@ await ok("d-2 sw.js: after the v2 to v3 update the page's hashed app files are s
   const v2 = await open("cincee-vault-shell-v2");
   await v2.put("https://x.example.com/client/", { body: "new index" });
   await v2.put("https://x.example.com/client/assets/index-NEW.js", { body: "app" });
+  // another app on the same site (the phone web app) keeps its own offline files
+  const other = await open("psm-shell-v7");
+  await other.put("https://x.example.com/m/", { body: "phone index" });
   const on: Record<string, (e: unknown) => void> = {};
   const self = { addEventListener: (k: string, f: (e: unknown) => void) => { on[k] = f; }, skipWaiting: async () => {}, clients: { claim: async () => {} } };
   vm.runInNewContext(read("public/sw.js", "sw.js"), { self, caches, URL, location: { origin: "https://x.example.com" }, fetch: async () => { throw new Error("offline"); }, Promise, console });
@@ -39,6 +42,7 @@ await ok("d-2 sw.js: after the v2 to v3 update the page's hashed app files are s
   await run("install");
   await run("activate");
   assert.ok(!stores.has("cincee-vault-shell-v2"), "the old cache is gone");
+  assert.ok(stores.get("psm-shell-v7")?.has("https://x.example.com/m/"), "a cache that is not this worker's is left alone");
   const v3 = stores.get("cincee-vault-shell-v3")!;
   assert.ok(v3.has("https://x.example.com/client/assets/index-NEW.js"), "the app file the cached shell needs is still there");
 });

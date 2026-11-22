@@ -16,6 +16,9 @@ const dir = realpathSync(mkdtempSync(join(tmpdir(), "ps-zzc-stage-")));
 const vaultShim = join(dir, "vault.ts"), actShim = join(dir, "actions.ts"), entry = join(dir, "entry.ts"), out = join(dir, "out.mjs");
 writeFileSync(vaultShim, `
 export const DB = new Map();
+export const STATE = { local: null };
+export const NEEDS_SYNC = "This needs sync.";
+export const vaultStore = { get: () => STATE };
 export function doc(id) { return DB.get(id); }
 export function docs(kind) { return [...DB.values()].filter((d) => d.kind === kind); }
 export async function put(kind, data, o = {}) { const id = o.id ?? "x" + DB.size; DB.set(id, { id, kind, data, ws: null }); return id; }

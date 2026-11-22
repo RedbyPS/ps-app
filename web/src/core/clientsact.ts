@@ -5,7 +5,7 @@
 // Change only records, so the Supabase egress rule holds. The rules are core/clientwork.ts.
 import type { ChecklistItem, ClientRec, Doc, Project, Stage, Todo } from "./model";
 import { uid } from "./model";
-import { doc, docs, put, remove } from "./vault";
+import { NEEDS_SYNC, doc, docs, put, remove, vaultStore } from "./vault";
 import { addClient, addProject, addTodo, deleteTodo, privOf, setTodoDone, toggleTodo, updateClient, updatePrivate, updateProject, updateTodo } from "./actions";
 import { STARTER, addStage, cleanTpl, fromTemplate, layStages, moveStage, removeStage, setDone, templateOf, type ProjectTpl } from "./clientwork";
 import { OpLane, cleanTaskPatch, stageAt, type ClientsOp } from "./clientsop";
@@ -24,7 +24,12 @@ const sent = (op: ClientsOp) => { relay!(op); return Promise.resolve(); };
 
 /** + on the tabs: a new client (its own workspace and key) with a First project of three stages. Returns the client id. */
 export async function newClient(name: string, order: number, today: string, id?: string): Promise<string> {
-  if (relay) { const nid = id ?? uid(); relay({ op: "newClient", id: nid, name, order, today }); return nid; }
+  if (relay) {
+    // The main window would refuse these two (vault.ts createWorkspace) with only a log line: say why here, where the click was.
+    if (vaultStore.get().local) throw new Error(NEEDS_SYNC);
+    if (typeof navigator !== "undefined" && navigator.onLine === false) throw new Error("Connect to the internet to add a new client.");
+    const nid = id ?? uid(); relay({ op: "newClient", id: nid, name, order, today }); return nid;
+  }
   if (id && doc(id)) return id;   // the same op twice: made already
   const cid = await addClient({ name: name.trim() || "New client" }, { id });
   await updateClient(cid, { status: "client", order });

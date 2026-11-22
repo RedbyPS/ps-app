@@ -15,6 +15,9 @@ const dir = realpathSync(mkdtempSync(join(tmpdir(), "ps-zzb-tick-")));
 const vaultShim = join(dir, "vault.ts"), actShim = join(dir, "actions.ts"), entry = join(dir, "entry.ts"), out = join(dir, "out.mjs");
 writeFileSync(vaultShim, `
 export const DB = new Map();
+export const STATE = { local: null };
+export const NEEDS_SYNC = "This needs sync.";
+export const vaultStore = { get: () => STATE };
 export function doc(id) { return DB.get(id); }
 export function docs(kind) { return [...DB.values()].filter((d) => d.kind === kind); }
 export async function put(kind, data, o = {}) { const id = o.id ?? "x" + DB.size; DB.set(id, { id, kind, data, ws: null }); return id; }
@@ -31,7 +34,7 @@ export async function updateTodo() {} export async function deleteTodo() {} expo
 export async function addClient() { return "c"; } export async function addProject() { return "p"; }
 export async function updateClient() {} export async function updateProject() {}
 `);
-writeFileSync(entry, `export * from ${JSON.stringify(root + "src/core/clientsact.ts")}; export { DB } from ${JSON.stringify(vaultShim)};`);
+writeFileSync(entry, `export * from ${JSON.stringify(root + "src/core/clientsact.ts")}; export { DB, STATE } from ${JSON.stringify(vaultShim)};`);
 await build({
   plugins: [{ name: "shims", setup(b) {
     b.onResolve({ filter: /^\.\/vault$/ }, (a) => a.importer.endsWith("clientsact.ts") ? { path: vaultShim } : undefined);
@@ -85,6 +88,30 @@ await ok("an untick still unticks", async () => {
   await tabList(() => { void M.tickClientTodo(T, false); void M.checkTick(P, "abcd1234ef56", false); });
   assert.equal(M.DB.get(T).data.done, false);
   assert.equal(stepDone(), false);
+});
+// Last check before the 1.74 release: the Tab list's + said nothing when a new client cannot be made.
+await ok("the Tab list's +: no sync or no internet says why and sends nothing, otherwise the op goes with its id", async () => {
+  const sent: { op: string; id: string }[] = [];
+  M.setClientsRelay((op: { op: string; id: string }) => sent.push(op));
+  const nav = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+  const online = (v: boolean | undefined) => Object.defineProperty(globalThis, "navigator", { value: { onLine: v }, configurable: true });
+  try {
+    M.STATE.local = { since: "2026-11-01" };
+    await assert.rejects(M.newClient("New client", 0, "2026-11-22"), /This needs sync\./);
+    M.STATE.local = null;
+    online(false);
+    await assert.rejects(M.newClient("New client", 0, "2026-11-22"), /Connect to the internet to add a new client\./);
+    assert.equal(sent.length, 0, "nothing was sent to the main window");
+    online(true);
+    const id = await M.newClient("New client", 0, "2026-11-22");
+    assert.deepEqual(sent.map((o) => [o.op, o.id]), [["newClient", id]]);
+    online(undefined);   // no answer at all counts as online
+    await M.newClient("New client", 1, "2026-11-22");
+    assert.equal(sent.length, 2);
+  } finally {
+    M.STATE.local = null; M.setClientsRelay(null);
+    if (nav) Object.defineProperty(globalThis, "navigator", nav); else delete (globalThis as { navigator?: unknown }).navigator;
+  }
 });
 await ok("the Clients screen's ticks say which way", async () => {
   const { readFileSync } = await import("node:fs");

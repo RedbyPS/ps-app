@@ -811,10 +811,11 @@ struct IslandView: View {
   /// Slim: the tick on the left wing, one count on the right; the task shows on hover.
   var slimRow: some View {
     HStack(spacing: 0) {
-      // PS 1.74: only the task when closed: Slim has no room for its words, so its wings stay empty (the task, tick and counts on hover)
-      if m.trimmed { Color.clear.frame(width: IslandModel.slimWing) } else if m.st.tickLeft { slimTick } else { slimCount }
+      // PS 1.74: Slim never had room for the task's words, so "Only the task when closed" leaves it as it was (empty wings
+      // would make it a blank strip): the tick on one side, the count on the other.
+      if m.st.tickLeft { slimTick } else { slimCount }
       Color.clear.frame(width: m.geo.notchW)
-      if m.trimmed { Color.clear.frame(width: IslandModel.slimWing) } else if m.st.tickLeft { slimCount } else { slimTick }
+      if m.st.tickLeft { slimCount } else { slimTick }
     }
     .frame(height: m.geo.notchH)
   }
@@ -1545,7 +1546,8 @@ final class Island {
   /// the next start knows it before the page has said anything. Never in a test copy, in the full screen bar or Edit mode.
   private var lastRest: IslandRest?
   private func rememberRest() {
-    guard !test, model.fs == .off, !model.editing, drag?.moving != true, let r = restShape(), let s = screen?.frame else { return }
+    // Not while a moment holds it open (an email popped out, the big timer): the next start would build that opened size.
+    guard !test, model.fs == .off, !model.editing, model.popping == nil, !model.bigTimer, drag?.moving != true, let r = restShape(), let s = screen?.frame else { return }
     let rest = IslandRest(rect: r, screen: s, spot: pos, pill: CGSize(width: model.pillW, height: model.pillH))
     guard rest != lastRest else { return }
     lastRest = rest
