@@ -31,10 +31,13 @@ import { PS, psPost } from "../ps";
 import { orderForPriority, taskMapActions } from "./TaskMap";
 import { p1AfterMove, prioNumbers } from "../core/prio";
 import { PrioInput, typedPrioOn, useTypedPrio } from "./TypedPrio";
-import { useNlDates } from "./NlDates";
+import { nlDatesOn, nlParseCtx, useNlDates } from "./NlDates";
+import { renamedDate } from "../core/nldates";
+import { scheduledOn } from "../core/scheduled";
 import type { ParsedTask } from "../core/nldates";
 import type { TimeRemind } from "../core/nlremind";
 import { settingsData } from "../core/select";
+import { vaultStore } from "../core/vault";
 import { renamedPrio, typedEdit, typedOrder, type PrioNum } from "../core/typedprio";
 import { DimxLists, MoveMenu, cardOf, listsEscape, secTasks, type ListCard, type ListDnd } from "./DimxLists";
 import { accepts } from "../core/groups";
@@ -63,6 +66,12 @@ const isBand = (z: Zone): z is DimxZone => z === "act" || z === "soon" || z === 
 // Open in this page right now (the Tab list keeps typing in its boxes while it is).
 let dxOpen = false;
 export const dimxIsOpen = () => dxOpen;
+/** PS 1.75: the one-off date newly typed into a renamed card, read as the add boxes read it (views/NlDates.tsx), or null. */
+function dateEdit(before: string, after: string) {
+  if (!nlDatesOn() || !scheduledOn()) return null;   // off: a rename is as in 1.74
+  const ctx = nlParseCtx(settingsData(vaultStore.get()));
+  return renamedDate(before, after, Date.now(), ctx.tz, { ...ctx.opts, numDates: true });
+}
 
 export const reduced = () => typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
 export const EASE_CSS = "cubic-bezier(.22,1,.36,1)";
@@ -760,13 +769,16 @@ function Board({ prio, aware, dimx, inbox, ready, escRef, view, onClose }: {
     }
   };
   const rename = (card: Card, text: string) => {
-    const t = text.trim();
+    let t = text.trim();
     setEditKey(null);
     if (!t || t === card.text) return;
     const cur = vRef.current;
     if (isBand(card.zone)) { const next = cur.dimx.map((x) => (x.id === card.id ? { ...x, text: t.slice(0, 500) } : x)); keep({ dimx: next }); void taskMapActions.dimx(next); }
     else if (card.zone === "ai") { keep({ ai: cur.ai.map((p) => (p.id === card.id ? { ...p, title: t } : p)) }); void taskMapActions.update(card.id, { title: t.slice(0, 500) }); }
     else {
+      // PS 1.75: a date typed into the name while editing schedules the task, as in Add task (core/nldates.ts renamedDate).
+      const dated = dateEdit(card.text, t);
+      if (dated) { t = dated.title; void taskMapActions.update(card.id, { due: dated.due }); }
       // V1.57: P1, P2 or P3 typed into the name while editing sets the priority, as in Add task (core/typedprio.ts).
       const typed = typedOn ? renamedPrio(card.text, t) : null;
       if (typed && typed.title) {

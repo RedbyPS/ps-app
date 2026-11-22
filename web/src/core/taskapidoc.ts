@@ -8,6 +8,7 @@ import { API_PORT, BATCH_MAX, LIST_LIMIT_DEF, LIST_LIMIT_MAX, NOTES_MAX, SCOPES,
 import { INBOX_MAX } from "./aiinbox.ts";
 import { AI_MSG } from "./aimessage.ts";
 import { GOALS_MAX, GOAL_COLORS, GOAL_NOTE_MAX, GOAL_TITLE_MAX } from "./goals.ts";
+import { scheduledOn } from "./scheduled.ts";
 
 export const KEY_SLOT = "{{PS_API_KEY}}";
 
@@ -79,6 +80,7 @@ export function aiGuide(o: { scopes: Scopes; port?: number; today: string }): st
     "  \"subtasks\": [{\"title\": \"...\", \"done\": false}],   read only",
     `  \"reminder\": null, or {\"date\": \"${ex(1)}\", \"time\": \"09:30\", \"until\": \"12:30\", \"on\": true, \"message\": null}`,
     `  \"waitsUntil\": null, or \"${ex(2)}\"   a client task that is not in their list until that day (its do date)`,
+    ...(scheduledOn() ? [`  \"scheduled\": false, or true            scheduled for a later day (waitsUntil): not in any list until that day`] : []),
     "}",
     "",
     "## Endpoints",

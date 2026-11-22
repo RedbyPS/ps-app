@@ -80,7 +80,9 @@ export interface ParsedTask {
   label: string;
   key: string;
 }
-export interface NlOpts { dayEndsHour?: number; dayFirst?: boolean; hour12?: boolean; keep?: readonly string[] }
+/** `numDates` (PS 1.75, only while "scheduled-tasks" is on, views/NlDates.tsx): also read dates typed in numbers with nothing
+ *  around them ("25.11", "25/11", "25 11", "the 25th"). Off: exactly the 1.74 forms. */
+export interface NlOpts { dayEndsHour?: number; dayFirst?: boolean; hour12?: boolean; keep?: readonly string[]; today?: string; numDates?: boolean }
 
 /** A "tomorrow" typed before this hour (or the person's work day end, if earlier) means the day that is starting. */
 export const NIGHT_MAX = 5;
@@ -165,6 +167,12 @@ const TOMORROW_RE = "tomorrow|tomorow|tommorow|tommorrow|tommorw|tomorro|tmrw|tm
 const B = String.raw`(?<![\p{L}\p{N}_/#.@\-])`;
 // "on the 3rd floor" is a place, not a date.
 const NOT_PLACE = String.raw`(?!\s+(?:floor|place|time|try|attempt|round|row|page|step|grade|level|street|st|avenue|ave|edition|anniversary|birthday|year|person|one|item|line|option|draft|version|chapter|lesson|week|day|month))`;
+// A number with a unit or a currency after it is an amount, not a date ("25.11 kg", "12.10 EUR", "25/11 %").
+const NOT_UNIT = String.raw`(?!\s*(?:%|\u20ac|\$|\u00a3|\u00b0|(?:eur|euro|euros|usd|gbp|czk|kc|kg|g|km|m|cm|mm|ml|l|lb|lbs|oz|h|hrs?|hours?|mins?|minutes?|x|percent|pct|points?|pts|pages?|people|persons?|pcs|pieces?|times|kcal|cal|kb|mb|gb|tb|mph|kmh|kph)(?![\p{L}])))`;
+// Break-it 1.75: a bare number pair after a word that counts or names a number is not a date ("score 26.10", "page 25.10",
+// "team of 25 12", "line 29 11", "chapter 25 11", "age 28 12"), nor one end of a range ("25.11-28.11" stays text).
+const NOT_COUNT = String.raw`(?<!(?:^|[^\p{L}])(?:score|scores|page|pages|pg|p|chapter|chapters|ch|line|lines|room|rm|age|aged|grade|level|lvl|bus|tram|flight|train|route|version|ver|v|rate|ratio|team|of|to|set|sets|vote|votes|size|step|steps|track|seat|row|gate|platform|weight|price|total|sum|rank|round|table|code|pin|no|nr|number|apt|flat|unit|item|items|qty|x|reps|lap|laps|hole|holes|bib|verse|psalm|exercise|ex|question|q|task|issue|ticket|order|invoice|ref|id)\s+)(?<!\d\s?[-\u2013]\s?)`;
+const NOT_RANGE = String.raw`(?!\s?[-\u2013]\s?\d)`;
 const E = String.raw`(?![\p{L}\p{N}_])(?![.@/][\p{L}\p{N}])(?!['\u2019]s(?![\p{L}]))`;
 const PRE = String.raw`(?:(?:on|by|due|for|until|till|before|starting|start|from|beginning|commencing)\s+(?:on\s+|from\s+)?)?`;
 
@@ -303,14 +311,43 @@ function gather(lower: string, c: Ctx): Cand[] {
     const [y, mo, d] = [Number(m[1]), Number(m[2]), Number(m[3])];
     return mo >= 1 && mo <= 12 && d >= 1 && d <= daysIn(y, mo) ? { part: "date", date: iso(y, mo, d) } : null;
   }, out);
-  scan(lower, rx(String.raw`(?:(on|by|due|for|until)\s+)?(\d{1,2})/(\d{1,2})(?:/(\d{4}|\d{2}))?`), (m) => {
-    if (!m[1] && !m[4]) return null;
+  const num = c.opts.numDates === true;
+  scan(lower, num ? rx(String.raw`(?<![$\u20ac\u00a3\u00a5])${NOT_COUNT}(?:(on|by|due|for|until)\s+)?(\d{1,2})/(\d{1,2})(?:/(\d{4}|\d{2}))?${NOT_UNIT}${NOT_RANGE}`)
+    : rx(String.raw`(?:(on|by|due|for|until)\s+)?(\d{1,2})/(\d{1,2})(?:/(\d{4}|\d{2}))?`), (m) => {
     const a = Number(m[2]), b = Number(m[3]);
+    // PS 1.75 (numDates): "25/11" alone is a date when one number is over 12 (so it cannot be a fraction like 1/2), never "24/7".
+    if (!m[1] && !m[4] && !(num && (a > 12 || b > 12) && a <= 31 && b <= 31 && !(a === 24 && b === 7))) return null;
     let mo = c.opts.dayFirst ? b : a, d = c.opts.dayFirst ? a : b;
     if (mo > 12 && d <= 12) [mo, d] = [d, mo];
     if (mo < 1 || mo > 12 || d < 1) return null;
     if (m[4]) { const y = m[4].length === 2 ? 2000 + Number(m[4]) : Number(m[4]); return d <= daysIn(y, mo) ? { part: "date", date: iso(y, mo, d) } : null; }
     const date = nextMonthDay(t, mo, d);
+    return date ? { part: "date", date } : null;
+  }, out);
+
+  // PS 1.75 (Jan, 22 Nov 2026: "if we just type some number like a date, it should work as well"): day first with dots,
+  // "25.11", "25.11.", "25.11.2026", and "25 11". Alone (no on, by or year, no closing dot) only when it cannot be a time or a
+  // decimal: the day is 24 or more and the month has two digits ("25.11"; "22.15", "10.30", "9.30", "2.5" stay as they are).
+  if (num) scan(lower, rx(String.raw`(?<![$\u20ac\u00a3\u00a5])${NOT_COUNT}(?:(on|by|due|for|until|before|starting|from)\s+)?(\d{1,2})\.(\d{1,2})(?:(\.)(\d{4})?)?${NOT_UNIT}${NOT_RANGE}`), (m) => {
+    const d = Number(m[2]), mo = Number(m[3]);
+    const sure = !!m[1] || !!m[4];
+    if (!sure && !(d >= 24 && m[3].length === 2)) return null;
+    if (mo < 1 || mo > 12 || d < 1) return null;
+    if (m[5]) { const y = Number(m[5]); return d <= daysIn(y, mo) ? { part: "date", date: iso(y, mo, d) } : null; }
+    const date = nextMonthDay(t, mo, d);
+    return date ? { part: "date", date } : null;
+  }, out);
+  // "25 11": with on or by, or alone at the very end with a day over 12 ("gym 25 11"), never in the middle of numbers.
+  if (num) scan(lower, rx(String.raw`(?<![$\u20ac\u00a3\u00a5\d]\s?)${NOT_COUNT}(?:(on|by|due|for|until|from)\s+)?(\d{1,2})\s(\d{1,2})(?=\s*$)`), (m) => {
+    const d = Number(m[2]), mo = Number(m[3]);
+    if (!m[1] && (d < 13 || (d === 24 && mo === 7))) return null;
+    if (mo < 1 || mo > 12 || d < 1) return null;
+    const date = nextMonthDay(t, mo, d);
+    return date ? { part: "date", date } : null;
+  }, out);
+  // "the 25th" alone, at the end or before a time or a comma ("pay rent the 25th", "the 3rd at 10"); "the 3rd floor" stays.
+  if (num) scan(lower, rx(String.raw`the\s+(\d{1,2})(?:st|nd|rd|th)(?=\s*(?:$|[,;!?)]|\.(?!\S)|(?:at\s+|@\s*)?\d))`), (m) => {
+    const date = nextDom(t, Number(m[1]));
     return date ? { part: "date", date } : null;
   }, out);
 
@@ -448,7 +485,11 @@ const gapOnly = (lower: string, a: number, b: number) => a <= b && /^\s*$/.test(
 function pick(lower: string, all: Cand[], keep: readonly string[]): { date?: Cand; time?: Cand; rep?: Cand; extra: Cand[] } {
   const blocks = all.filter((x) => x.part === "block");
   const keepSet = new Set(keep.map((k) => k.trim().toLowerCase()));
-  const live = all.filter((x) => x.part !== "block" && !blocks.some((b) => x.start < b.end && b.start < x.end) && !keepSet.has(lower.slice(x.start, x.end).trim()));
+  // PS 1.75: words said no to stay text whole: nothing inside them is taken either (refusing "every Friday" never leaves "Friday").
+  const kept: { start: number; end: number }[] = [];
+  for (const k of keepSet) { if (!k) continue; for (let i = lower.indexOf(k); i >= 0; i = lower.indexOf(k, i + 1)) kept.push({ start: i, end: i + k.length }); }
+  const live = all.filter((x) => x.part !== "block" && !blocks.some((b) => x.start < b.end && b.start < x.end) && !keepSet.has(lower.slice(x.start, x.end).trim())
+    && !kept.some((b) => b.start <= x.start && x.end <= b.end));
   // Longest first, then earliest: one phrase per stretch of text.
   live.sort((a, b) => (b.end - b.start) - (a.end - a.start) || a.start - b.start);
   const chosen: Cand[] = [];
@@ -544,9 +585,14 @@ export function parseTaskText(text: string, now: number | Date = Date.now(), tz 
   const lower = lowerSame(src);
   const nowMs = typeof now === "number" ? now : now.getTime();
   const w = wall(nowMs, tz);
-  const today = iso(w.y, w.mo, w.d);
+  const wallToday = iso(w.y, w.mo, w.d);
+  // PS 1.75: `today` is the person's own day when the caller knows it (core/clientwork.ts landDayAt, their Day ends), so
+  // "today" and "tomorrow" typed after midnight by a night owl mean the day they are in and the next. A time with no day
+  // still counts from the clock (below).
+  const own = typeof opts.today === "string" && /^\d{4}-\d{2}-\d{2}$/.test(opts.today) ? opts.today : null;
+  const today = own ?? wallToday;
   const cut = Math.min(Math.max(0, Math.floor(opts.dayEndsHour ?? 0)), NIGHT_MAX);
-  const c: Ctx = { today, tomorrow: w.h < cut ? today : plusDays(today, 1), nowH: w.h, nowMi: w.mi, nowMs, tz, opts };
+  const c: Ctx = { today, tomorrow: own ? plusDays(own, 1) : w.h < cut ? today : plusDays(today, 1), nowH: w.h, nowMi: w.mi, nowMs, tz, opts };
   const p = pick(lower, gather(lower, c), opts.keep ?? []);
   let { date, time, rep } = p;
   // An every day task has no start day in PS: a date beside it stays in the title.
@@ -586,9 +632,9 @@ export function parseTaskText(text: string, now: number | Date = Date.now(), tz 
       const nowMin = c.nowH * 60 + c.nowMi;
       if (t.h * 60 + t.mi <= nowMin) {
         if (t.guessed && t.h < 12 && (t.h + 12) * 60 + t.mi > nowMin) t = { ...t, h: t.h + 12 };
-        else due = plusDays(today, 1);
+        else due = plusDays(wallToday, 1);
       }
-      due ??= today;
+      due ??= wallToday;
     }
     hm = `${pad(t.h)}:${pad(t.mi)}`;
   }
@@ -674,6 +720,11 @@ export function nlRule(p: Pick<ParsedTask, "kind" | "repeat">): RepeatDraft | nu
 export type NlState = { key: string; kept: string[]; typedAt: number; pickedAt: number; tick: number };
 export const nlStart = (): NlState => ({ key: "", kept: [], typedAt: 0, pickedAt: 0, tick: 0 });
 
+/** Editing a task (PS 1.75): the date words already in its name were written before, not typed now, so they start as said no
+ *  to ("Friday deck" stays a title); a date typed while editing is offered as in an add box. `p` is the old name's parse. */
+export function nlStartFor(p: ParsedTask | null): NlState {
+  return p ? { ...nlStart(), kept: [...new Set(p.hits.map((h) => lowerSame(h.raw).trim()))] } : nlStart();
+}
 /** The text changed: a new or different phrase counts as typed now. A phrase said no to is forgotten once it is gone. */
 export function nlTyped(st: NlState, text: string, p: ParsedTask | null): NlState {
   const lower = lowerSame(text);
@@ -708,4 +759,13 @@ export function settled(p: ParsedTask | null, text: string, idleMs: number): boo
   if (!p) return false;
   const endAt = text.replace(/\s+$/, "").length;
   return idleMs >= SETTLE_MS || text.length > endAt || !p.hits.some((h) => h.end >= endAt);
+}
+
+/** A name edited in place (a Dimension X card, PS 1.75): the one-off date that is new in it, or null when there is none, the
+ *  name had those words before ("Friday deck" stays as it is) or nothing would be left to call the task. */
+export function renamedDate(before: string, after: string, now: number, tz: string, opts: NlOpts = {}): ParsedTask | null {
+  const old = parseTaskText(before, now, tz, opts);
+  const keep = [...(opts.keep ?? []), ...(old ? old.hits.map((h) => lowerSame(h.raw).trim()) : [])];
+  const p = parseTaskText(after, now, tz, { ...opts, keep });
+  return p && p.kind === "once" && p.due && p.title && !p.time ? p : null;   // a time stays text: a rename puts no reminder on it
 }

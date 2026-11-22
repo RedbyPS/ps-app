@@ -13,7 +13,11 @@ import { dayPrefs, dayZone } from "./daycount";
 import { autoTask, dueNagItems, dueP1Items, dueTasks, p1OwnStamps, type DueCtx, type DueTask } from "./core/duealerts";
 import type { AlarmRing, PlanItem } from "./core/remind";
 import { vaultStore } from "./core/vault";
-import { clientDueTasks } from "./clients/clientsday";
+import { clientDueTasks, dayRuleOf, landDayNow } from "./clients/clientsday";
+import { dayStartAt } from "./core/clientwork";
+import { schedCut, scheduledOn, waitsForDay, withoutWaiting } from "./core/scheduled";
+import { overdueZone } from "./core/overdue";
+import { wall, zonedToTs } from "./core/tz";
 
 type Source = (ctx: DueCtx) => DueTask[];
 const sources = new Map<string, Source>();
@@ -43,7 +47,8 @@ export function duePlan(s: Snapshot, now: number): { nags: PlanItem[]; p1: PlanI
   const ctx = dueCtx(s, now);
   const extra: DueTask[] = [];
   for (const f of sources.values()) { try { extra.push(...f(ctx)); } catch { /* a broken source never stops the rest */ } }
-  const mine = allTodos(s).filter((d) => d.ws === null);
+  // PS 1.75 (core/scheduled.ts): a task scheduled for a later day is never nagged and its P1 alarm waits for its day.
+  const mine = withoutWaiting(allTodos(s).filter((d) => d.ws === null), landDayNow(s, now));
   const tasks = dueTasks(mine, ctx, extra);
   const own = new Set((rec?.list ?? []).filter((r) => r.task && r.on).map((r) => r.task!));
   const nags = dueNagItems(tasks, rec, red, ctx, { ownTaskReminders: own });
@@ -58,11 +63,26 @@ export function dueTaskOf(id: string): string | null { return autoTask(last.item
 
 // ---------- your own Priority 1 clock (Todo.p1Since) ----------
 let stamping = false;
+/** Break-it 1.75: the moment tasks due on today's date came in (core/scheduled.ts schedCut): the earlier of the calendar day's
+ *  start (in the Tab list's zone) and the start of the person's day, whichever of the two is that date. */
+function landedAt(s: Snapshot, now: number, land: string): { landStart?: number; landDay?: string } {
+  const cut = schedCut(land), tz = overdueZone(settingsData(s).tmHomeTz), w = wall(now, tz);
+  const wallDay = `${w.y}-${String(w.mo).padStart(2, "0")}-${String(w.d).padStart(2, "0")}`;
+  const at: number[] = [];
+  if (cut === wallDay) at.push(zonedToTs(w.y, w.mo, w.d, 0, 0, tz));
+  if (cut === land) at.push(dayStartAt(now, dayRuleOf(s)));
+  return at.length ? { landStart: Math.min(...at), landDay: cut } : {};
+}
 /** After every change of your tasks: each one off Priority 1 gets its own 24 hour start, whether or not it is shared. */
 export function stampP1Own(s: Snapshot) {
   if (stamping || s.status !== "unlocked" || s.role !== "owner" || s.userId === "ps-overlay" || s.userId === "dev") return;
   if (s.syncing || !(s.lastSync || s.local)) return;   // never on a list that has not really come yet
-  const todo = p1OwnStamps(allTodos(s).filter((d) => d.ws === null), Date.now());
+  const now = Date.now();
+  // PS 1.75: a scheduled task gets no clock until its day; on that day it starts when the day started (core/scheduled.ts).
+  const on = scheduledOn(), day = landDayNow(s, now);
+  const todo = p1OwnStamps(allTodos(s).filter((d) => d.ws === null), now, on
+    ? { waits: (t) => waitsForDay(t as Parameters<typeof waitsForDay>[0], day, true), ...landedAt(s, now, day) }
+    : {});
   if (!todo.length) return;
   stamping = true;
   void (async () => { for (const x of todo.slice(0, 60)) await updateTodo(x.id, { p1Since: x.p1Since }); })()

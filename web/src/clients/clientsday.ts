@@ -2,7 +2,7 @@
 // feed for the nag (p1-alarms-173), and a tick at each day end so the list lands the next day's tasks with no click.
 // The rules are core/clientwork.ts.
 import { useEffect, useState } from "react";
-import type { Snapshot } from "../core/vault";
+import { vaultStore, type Snapshot } from "../core/vault";
 import type { CalEvent, ClientRec, Doc, Todo } from "../core/model";
 import { allTodos, calendarSnap, settingsData } from "../core/select";
 import { cdEffective } from "../core/daycount";
@@ -12,6 +12,9 @@ import { buildMatcher } from "../core/mail";
 import { dayOn, dayPrefs, dayZone } from "../daycount";
 import { clientDueToday, dayEndAt, landDayAt, type DayRule } from "../core/clientwork";
 import { setLandDay } from "../core/actions";
+import { scheduledOn, setSchedWall } from "../core/scheduled";
+import { overdueZone } from "../core/overdue";
+import { wall } from "../core/tz";
 
 /** The person's day rule: the countdown's Day ends (the developer's 12:00 GST), else Settings 'Your work day ends at'. */
 export function dayRuleOf(s: Snapshot): DayRule {
@@ -22,6 +25,17 @@ export function dayRuleOf(s: Snapshot): DayRule {
 /** Which day it is for the person now (the day client tasks land on). */
 export const landDayNow = (s: Snapshot, now = Date.now()) => landDayAt(now, dayRuleOf(s));
 setLandDay((s) => landDayNow(s));
+// Break-it 1.75 (core/scheduled.ts schedCut): the calendar date in the Tab list's zone (the zone Overdue and typed dates use),
+// so a scheduled task is never kept out on its own date. Worked out once a minute per vault state.
+let wallMemo: { s: Snapshot | null; min: number; day: string } = { s: null, min: -1, day: "" };
+setSchedWall(() => {
+  const s = vaultStore.get(), now = Date.now(), min = Math.floor(now / 60_000);
+  if (wallMemo.s !== s || wallMemo.min !== min) {
+    const w = wall(now, overdueZone(settingsData(s).tmHomeTz));
+    wallMemo = { s, min, day: `${w.y}-${String(w.mo).padStart(2, "0")}-${String(w.d).padStart(2, "0")}` };
+  }
+  return wallMemo.day;
+});
 
 /** "12:00": the day end as a clock time in its zone. */
 export function endHmOf(s: Snapshot, now = Date.now()): string {
@@ -42,7 +56,9 @@ export function useLandTick(s: Snapshot): number {
     const arm = () => {
       if (timer !== null) return;
       const now = Date.now();
-      const wait = Math.max(1000, Math.min(dayEndAt(now, dayRuleOf(s)) - now + 500, 10 * 60_000));
+      // Break-it 1.75: with scheduled tasks on, tasks also come in when their calendar date starts (core/scheduled.ts schedCut).
+      const mid = new Date(now); mid.setHours(24, 0, 0, 500);
+      const wait = Math.max(1000, Math.min(dayEndAt(now, dayRuleOf(s)) - now + 500, 10 * 60_000, scheduledOn() ? mid.getTime() - now : Infinity));
       timer = window.setTimeout(() => { timer = null; tick++; subs.forEach((g) => g()); arm(); }, wait);
     };
     arm();

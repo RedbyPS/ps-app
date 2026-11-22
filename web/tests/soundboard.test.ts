@@ -197,6 +197,9 @@ ok("7:07am, typed any way the developer types it", () => {
   assert.equal(S.parseTime("12:30pm"), "12:30");
   assert.equal(S.parseTime("25:00"), null);
   assert.equal(S.parseTime("13pm"), null);
+  // Break-it 1.75: a comma, a closing dot and p.m. read too; 22.60, 25.10 and 1,5 are still not times.
+  for (const [t, v] of [["22,15", "22:15"], ["22.15.", "22:15"], ["9,30pm", "21:30"], ["9.30 p.m.", "21:30"], ["22.15", "22:15"]]) assert.equal(S.parseTime(t), v, t);
+  for (const t of ["22.60", "25.10", "1,5", "7,"]) assert.equal(S.parseTime(t), null, t);
   assert.equal(S.timeWords("07:07"), "7:07am");
   assert.equal(S.timeWords("19:30"), "7:30pm");
   assert.equal(S.timeWords("00:00"), "12:00am");

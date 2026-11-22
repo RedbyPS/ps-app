@@ -28,6 +28,9 @@ import { startGymSquad } from "../squad/gym";
 import { gymShellMessage, gymWake, startGymWatch } from "../gymwatch";
 import { dayShellMessage, startDayCount } from "../daycount";
 import { remShellMessage, remWake, startRemWatch } from "../remwatch";
+import { landDayNow } from "../clients/clientsday";
+import { waitsToLand } from "../core/clientwork";
+import { scheduledOn } from "../core/scheduled";
 import { calRefreshIfStale, startCalRefresh } from "../calrefresh";
 import { visibleEvents } from "../core/meethide";
 import { meetingEvents } from "../core/calpick";
@@ -162,7 +165,10 @@ function sendSchedule() {
 let lastTasks = "";
 function sendTasks() {
   const s = vaultStore.get();
-  const open = todos(s).filter((d) => !d.data.done && !d.data.clearedAt && d.data.type === "once" && d.data.aiInbox !== true)   // the AI Inbox is on no list
+  // PS 1.75: while "scheduled-tasks" is on, a task waiting for a later day (or a client task before its do date) is not counted
+  // until its day (core/scheduled.ts). Off: as in 1.74.
+  const day = scheduledOn() ? landDayNow(s) : null;
+  const open = todos(s).filter((d) => !d.data.done && !d.data.clearedAt && d.data.type === "once" && d.data.aiInbox !== true && !(day && waitsToLand(d.data, day)))   // the AI Inbox is on no list
     .sort((a, b) => (a.data.order ?? 0) - (b.data.order ?? 0));
   const working = new Set(workingIdsOf(settingsData(s)));
   const w = open.find((d) => working.has(d.id));

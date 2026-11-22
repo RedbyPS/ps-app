@@ -7,13 +7,14 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Settings } from "../core/model";
 import { feature } from "../core/features";
-import { nlBackspace, nlDismiss, nlOnAdd, nlPicked, nlStart, nlTyped, parseTaskText, reminderOf, settled, SETTLE_MS, type NlState, type ParsedTask } from "../core/nldates";
+import { nlBackspace, nlDismiss, nlOnAdd, nlPicked, nlStart, nlStartFor, nlTyped, parseTaskText, reminderOf, settled, SETTLE_MS, type NlState, type ParsedTask } from "../core/nldates";
 import { overdueZone } from "../core/overdue";
 import { DAY_ENDS_DEFAULT } from "../core/daylog";
 import { DEVICE_TZ } from "../core/tz";
 import { settingsData } from "../core/select";
 import type { TimeRemind } from "../core/nlremind";
 import { useVault } from "../ui/kit";
+import { scheduledOn } from "../core/scheduled";
 
 /** The feature switch (Settings, Your list, and From the squad). */
 export const nlDatesOn = () => feature("nl-dates");
@@ -47,20 +48,25 @@ export type NlCtl = {
   on: boolean;
 };
 
-/** One add box's typed date, following its text. `once`: only one-off dates (a box that cannot hold a repeat). */
-export function useNlDates(text: string, opts: { once?: boolean } = {}): NlCtl {
+/** One add box's typed date, following its text. `once`: only one-off dates (a box that cannot hold a repeat).
+ *  `existing` (PS 1.75, editing a task): the name as it was; its date words start as said no to, so only a date typed now counts.
+ *  `off`: nothing is read (a repeating task being edited). */
+export function useNlDates(text: string, opts: { once?: boolean; existing?: string; off?: boolean; dateOnly?: boolean } = {}): NlCtl {
   const vault = useVault();
   const st = settingsData(vault);
-  const on = nlDatesOn();
+  const on = nlDatesOn() && !opts.off;
   const tz = overdueZone(st.tmHomeTz);
-  const parseOpts = { dayEndsHour: st.dayEndsHour ?? DAY_ENDS_DEFAULT, hour12: HOUR12, dayFirst: DAY_FIRST };
+  // PS 1.75: with scheduled tasks on, dates typed in numbers ("25.11", "25/11") are read too (core/nldates.ts numDates). "Today"
+  // and "tomorrow" stay the calendar's, as in 1.74 (break-it 1.75: the land day can lag the calendar by hours, and `due` is a date).
+  const parseOpts = { dayEndsHour: st.dayEndsHour ?? DAY_ENDS_DEFAULT, hour12: HOUR12, dayFirst: DAY_FIRST, numDates: scheduledOn() };
   const ref = useRef<NlState>(null as unknown as NlState);
-  if (!ref.current) ref.current = nlStart();
+  if (!ref.current) ref.current = opts.existing ? nlStartFor(parseTaskText(opts.existing, Date.now(), tz, parseOpts)) : nlStart();
   const [, redraw] = useState(0);
   const parse = (t: string, s: NlState) => {
     if (!on) return null;
     const p = parseTaskText(t, Date.now(), tz, { ...parseOpts, keep: s.kept });
     if (!p || !p.title || (opts.once && p.kind !== "once")) return null;   // nothing left to call the task: it stays as typed
+    if (opts.dateOnly && p.time) return null;   // break-it 1.75: editing has no reminder to put a typed time on, so its words stay
     return p;
   };
   // Follows the text during render: the same text twice changes nothing, so this is safe to run again.
@@ -78,7 +84,7 @@ export function useNlDates(text: string, opts: { once?: boolean } = {}): NlCtl {
     return () => window.clearTimeout(t);
   });
   const remindOk = nlRemindOn(st);
-  const take = useCallback((t: string) => { const p = parse(t, ref.current); return nlOnAdd(nlTyped(ref.current, t, p), p); }, [on, tz, parseOpts.dayEndsHour]); // eslint-disable-line react-hooks/exhaustive-deps
+  const take = useCallback((t: string) => { const p = parse(t, ref.current); return nlOnAdd(nlTyped(ref.current, t, p), p); }, [on, tz, parseOpts.dayEndsHour, parseOpts.numDates]); // eslint-disable-line react-hooks/exhaustive-deps
   const picked = useCallback(() => { ref.current = nlPicked(ref.current); redraw((n) => n + 1); }, []);
   const dismiss = useCallback(() => { ref.current = nlDismiss(ref.current, now); redraw((n) => n + 1); }, [now?.key]); // eslint-disable-line react-hooks/exhaustive-deps
   const reset = useCallback(() => { ref.current = nlStart(); redraw((n) => n + 1); }, []);

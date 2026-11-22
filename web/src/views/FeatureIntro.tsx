@@ -21,7 +21,7 @@ import { assistPrefs } from "../core/assist";
 import { settingsData } from "../core/select";
 import { dndActive } from "../core/dnd";
 import { CHK_FEATURE } from "../core/chkremind";
-import { feature } from "../core/features";
+import { cleanSwitches, feature } from "../core/features";
 import { chatStore } from "../squad/chatengine";
 import { RCPT_FEATURE, receiptsOn } from "../core/receipts";
 import { posturePrefs } from "../core/posture";
@@ -184,6 +184,9 @@ const DONE_PROBES: Record<string, (can: boolean, s: Snapshot) => Promise<"done" 
   // PS 1.68 streaks on repeating tasks: only while the feature is on, for an owner; Ok ends it for good.
   "task-streaks-168": async (_can, s) => (feature("task-streaks") && s.status === "unlocked" && s.role === "owner" ? "open" : "unknown"),
   // PS 1.74 only the task on the closed island: only on a Mac (the island is the Mac's), while the feature is on for an owner; Ok ends it for good.
+  // PS 1.75 scheduled tasks: while the feature is on for an owner; Ok ends it for good.
+  // Off by default, so it is an offer: shown while it is off for an owner, done once they switched it on themselves.
+  "scheduled-tasks-175": async (_can, s) => (s.status !== "unlocked" || s.role !== "owner" ? "unknown" : feature("scheduled-tasks") ? "done" : "open"),
   "island-task-only-174": async (_can, s) => (PS && feature(TASK_ONLY_FEATURE) && s.status === "unlocked" && s.role === "owner" ? "open" : "unknown"),
   screenrec: async () => { askScreenRec(); return introAudience({ mac: PS, st: screenRecNow() }); },
   whatsapp: async (can) => {
@@ -219,6 +222,8 @@ const CHOICES: Record<string, (yes: boolean, s: Snapshot, keep: string[]) => voi
     const done = cleanDone(settingsData(s).introsDone);
     if (!done.includes(JOIN_ASK_ID)) void saveSettings({ introsDone: [...done, JOIN_ASK_ID] }).catch(() => { /* this device still never shows it again */ });
   },
+  // PS 1.75 scheduled tasks: Turn on saves the same switch as Settings, Your list (squadFeatures, synced to the person's devices).
+  "scheduled-tasks-175": (yes, s) => { if (yes) void saveSettings({ squadFeatures: { ...cleanSwitches(settingsData(s).squadFeatures), "scheduled-tasks": true } }).catch(() => { /* Settings still has the switch */ }); },
   "squad-p1": (yes, s) => { void saveSettings({ squadShare: { ...cleanShareOpts(settingsData(s).squadShare), p1: yes } }).catch(() => { /* asks again later */ }); },
 };
 
