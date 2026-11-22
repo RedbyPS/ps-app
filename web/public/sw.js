@@ -12,10 +12,11 @@ self.addEventListener("activate", (e) => {
   // The app files (hashed, under /client/assets/) an older cache holds move into the new one first: the page that brought
   // this worker loaded them through the old one, and the cached shell needs them for an offline start.
   e.waitUntil(caches.keys().then(async (keys) => {
-    const old = keys.filter((k) => k !== CACHE);
+    // Only this worker's own older caches: another app on this site (the phone web app) keeps its own.
+    const old = keys.filter((k) => k !== CACHE && k.startsWith("cincee-vault-shell-"));
     try {
       const now = await caches.open(CACHE);
-      for (const k of old.filter((k) => k.startsWith("cincee-vault-shell-"))) {
+      for (const k of old) {
         const c = await caches.open(k);
         for (const req of await c.keys()) {
           if (!new URL(req.url).pathname.startsWith("/client/assets/") || await now.match(req)) continue;

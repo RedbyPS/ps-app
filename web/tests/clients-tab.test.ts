@@ -121,6 +121,21 @@ ok("every Clients save asks the relay first (nothing in Clients reaches vault.ts
     assert.doesNotMatch(t, /from "\.\.\/core\/(vault|actions)"/, f);
   }
 });
+// Last check before the 1.74 release: with no sync or no internet the main window refuses a new client with only a log
+// line, so the Tab list's "+" did nothing and said nothing. It now says why, before anything is sent.
+ok("the Tab list's + says why a new client cannot be made (no sync, offline) instead of doing nothing", () => {
+  const a = src("../src/core/clientsact.ts");
+  const nc = a.slice(a.indexOf("export async function newClient"), a.indexOf("export const renameClient"));
+  const local = nc.indexOf("if (vaultStore.get().local) throw new Error(NEEDS_SYNC);"), off = nc.indexOf('navigator.onLine === false) throw new Error("Connect to the internet to add a new client.");');
+  const sends = nc.indexOf('relay({ op: "newClient"');
+  assert.ok(local > 0 && off > local && sends > off, "both checks come before the op is sent");
+  assert.ok(nc.indexOf("if (relay) {") < local, "and only on the Tab list");
+  // the same words the main window uses
+  const v = src("../src/core/vault.ts");
+  assert.match(v, /if \(!navigator\.onLine\) throw new Error\("Connect to the internet to add a new client\."\);/);
+  // and the screen shows a thrown message
+  assert.match(src("../src/clients/ClientsScreen.tsx"), /catch \(e\) \{ say\(e instanceof Error \? e\.message : "Could not add a client now\."\); return; \}/);
+});
 ok("the main window runs each op only on its own kind of record, and a new record keeps the id the Tab list picked", () => {
   const a = src("../src/core/clientsact.ts");
   const run = a.slice(a.indexOf("export function runClientsOp"));

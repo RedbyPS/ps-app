@@ -41,7 +41,9 @@ let root = CommandLine.arguments.count > 1 ? CommandLine.arguments[1] : "."
 let src = (try? String(contentsOfFile: root + "/Sources/Island.swift", encoding: .utf8)) ?? ""
 ok("the page's switch reaches the island, with the Mac's feature switch", src.contains("s.taskOnly = IslandCloseCore.taskOnly(d[\"taskOnly\"]) && Features.on(\"island-task-only\")"))
 ok("the pill, Drop and the full screen bar each draw only the task when trimmed", src.contains("if m.trimmed { taskOnlyRow(size: pt.compact ? 11.5 : 12.5)") && src.contains("if m.trimmed { taskOnlyRow(size: 12)") && src.contains("} else if m.trimmed {\n        // PS 1.74: only the task when closed"))
-ok("Slim keeps its wings empty when trimmed", src.contains("if m.trimmed { Color.clear.frame(width: IslandModel.slimWing) } else if m.st.tickLeft { slimTick }"))
+// Last check before the 1.74 release: empty wings made Slim a blank strip, so Slim stays as it was in 1.73.
+ok("Slim keeps its tick and count when trimmed (never a blank strip)", !src.contains("if m.trimmed { Color.clear.frame(width: IslandModel.slimWing) }") && src.contains("      if m.st.tickLeft { slimTick } else { slimCount }\n      Color.clear.frame(width: m.geo.notchW)\n      if m.st.tickLeft { slimCount } else { slimTick }"))
+ok("the remembered rest is never an opened island (an email popped out, the big timer)", src.contains("guard !test, model.fs == .off, !model.editing, model.popping == nil, !model.bigTimer, drag?.moving != true, let r = restShape()"))
 ok("the trimmed row leaves the timers out", src.contains("titleText(size: size, clocks: false)"))
 ok("the open island shows the timers and the leaf on their own line", src.contains("if m.openLine {") && src.contains("WorkClock(m: m, color: dimC)\n          DayClocks(m: m, color: dimC, size: 12)"))
 ok("and is measured for it", src.contains("IslandCloseCore.openExtra(trimmed: trimmed, clocks: clocksAny, leaf: st.lp != nil)"))
