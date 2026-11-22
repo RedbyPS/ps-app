@@ -394,5 +394,10 @@
    "One click on a recognised date or priority turns it back into plain text. Type it again to bring it back.",
    "Time boxes now read 22,15 as a time."
   ]
+ },
+ "1.76": {
+  "en": [
+   "Tasks for a later day now wait in Scheduled at the bottom of your list by default. To see every task in your list again, switch off \"Hide tasks until their day\" in Settings, Your list."
+  ]
  }
 }
