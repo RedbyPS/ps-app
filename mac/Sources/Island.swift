@@ -245,7 +245,7 @@ struct IslandState: Equatable {
     s.cards = (d["cards"] as? Bool) != false
     s.fsMove = (d["fsMove"] as? Bool) != false
     s.tickLeft = (d["tickSide"] as? String) != "right"
-    s.taskOnly = IslandCloseCore.taskOnly(d["taskOnly"]) && Features.on(IslandCloseCore.feature)   // PS 1.74
+    s.taskOnly = IslandCloseCore.taskOnly(d["taskOnly"]) && Features.on("island-task-only")   // PS 1.74 (IslandCloseCore.feature, written out for the registry check)
     s.meets = IslandAwayCore.meets(d["meets"])
     s.timers = TimersCore.from(d)   // V1.58 island timers
     s.day = Features.on(DayCore.feature) ? DayIn.from(d["day"]) : nil   // PS 1.70 (web src/daycount.ts dayIsland)

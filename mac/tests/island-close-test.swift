@@ -39,7 +39,7 @@ ok("the open island grows by the line and its gap", C.openExtra(trimmed: true, c
 // 7. the island draws it so (Island.swift, read as text: the views need a window to run)
 let root = CommandLine.arguments.count > 1 ? CommandLine.arguments[1] : "."
 let src = (try? String(contentsOfFile: root + "/Sources/Island.swift", encoding: .utf8)) ?? ""
-ok("the page's switch reaches the island, with the Mac's feature switch", src.contains("s.taskOnly = IslandCloseCore.taskOnly(d[\"taskOnly\"]) && Features.on(IslandCloseCore.feature)"))
+ok("the page's switch reaches the island, with the Mac's feature switch", src.contains("s.taskOnly = IslandCloseCore.taskOnly(d[\"taskOnly\"]) && Features.on(\"island-task-only\")"))
 ok("the pill, Drop and the full screen bar each draw only the task when trimmed", src.contains("if m.trimmed { taskOnlyRow(size: pt.compact ? 11.5 : 12.5)") && src.contains("if m.trimmed { taskOnlyRow(size: 12)") && src.contains("} else if m.trimmed {\n        // PS 1.74: only the task when closed"))
 ok("Slim keeps its wings empty when trimmed", src.contains("if m.trimmed { Color.clear.frame(width: IslandModel.slimWing) } else if m.st.tickLeft { slimTick }"))
 ok("the trimmed row leaves the timers out", src.contains("titleText(size: size, clocks: false)"))

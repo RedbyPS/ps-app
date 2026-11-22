@@ -29,7 +29,7 @@ ok("the island off still carries it (the Mac keeps its default)", () => {
   assert.equal(I.islandState({ ...base, settings: { island: { mode: "off" } } as never, taskOnly: false }).taskOnly, false);
 });
 ok("the page sends the feature's answer", () => {
-  assert.match(read("../src/island.ts"), /islandState\(\{[^}]*taskOnly: feature\(TASK_ONLY_FEATURE\) \}\)/);
+  assert.match(read("../src/island.ts"), /islandState\(\{[^}]*taskOnly: feature\("island-task-only"\) \}\)/);
 });
 ok("features.json: shared, by jan, since 1.74, on by default, web and Mac", () => {
   const f = JSON.parse(read("../../features.json")).features.find((x: { id: string }) => x.id === "island-task-only");
