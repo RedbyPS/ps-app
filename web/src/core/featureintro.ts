@@ -303,15 +303,14 @@ export const INTROS: IntroDef[] = [
     choice: true,
   },
   {
-    // PS 1.75 (Jan, 22 Nov 2026): scheduled tasks (core/scheduled.ts) are off by default, so this is an offer: it says the feature
-    // exists and where its switch is, and never says a task is hidden. Turn on switches it on (views/FeatureIntro.tsx CHOICES, the
-    // same squadFeatures switch as Settings), Not now leaves it off; both end it for good. Only while it is off for an owner
-    // (DONE_PROBES). Words wait for approval.
-    id: "scheduled-tasks-175",
-    headline: "New: hide tasks until their day.",
-    ask: "A task for a later day would wait in Scheduled at the bottom of your list. Also in Settings, Your list.",
-    show: "Turn on",
-    later: "Not now",
+    // PS 1.76 (Jan, 22 Nov 2026: "by default they should be hidden, the setting should be on by default"): scheduled tasks
+    // (core/scheduled.ts) are on by default, so this card says once that later tasks now wait and where the switch is. A new id,
+    // so a person who answered the 1.75 offer (scheduled-tasks-175, off by default then) is told too. One Ok ends it for good.
+    // Only while the feature is on for an owner (views/FeatureIntro.tsx DONE_PROBES). Words wait for approval.
+    id: "scheduled-tasks-176",
+    headline: "Tasks for a later day now wait.",
+    ask: "They sit in Scheduled at the bottom of your list and come in on their day. Want them all back? Settings, Your list, Hide tasks until their day.",
+    show: "Ok",
     mark: "spark",
     choice: true,
   },

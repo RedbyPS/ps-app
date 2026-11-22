@@ -234,19 +234,21 @@ ok("Time zones: 22.15, 22,15, 9.30pm, 9,30 pm and 22.15. are times; stepping kee
 // ---------- the switch and the registry ----------
 ok("features.json, FEATURES.md, Settings and the literal id at every ask", () => {
   const reg = JSON.parse(readFileSync(new URL("../../features.json", import.meta.url), "utf8")).features.find((f: { id: string }) => f.id === "scheduled-tasks");
-  assert.deepEqual([reg.owner, reg.scope, reg.since, reg.default, reg.parts], ["jan", "shared", "1.75", "off", ["web"]], "off by default (break-it 1.75)");
+  assert.deepEqual([reg.owner, reg.scope, reg.since, reg.default, reg.parts], ["jan", "shared", "1.75", "on", ["web"]], "on by default since 1.76 (Jan, 22 Nov 2026)");
   assert.match(readFileSync(new URL("../../FEATURES.md", import.meta.url), "utf8"), /\| Hide tasks until their day \|.*Settings, Your list, "Hide tasks until their day"/);
   const src = (f: string) => readFileSync(new URL(`../src/${f}`, import.meta.url), "utf8");
   for (const f of ["core/scheduled.ts", "views/SettingsGroups.tsx", "views/FeatureIntro.tsx"]) assert.ok(src(f).includes('feature("scheduled-tasks")'), f);
   assert.ok(src("core/settingsindex.ts").includes('id: "scheduled-tasks"'));
-  // Break-it 1.75: off by default, so the intro is an offer with Turn on, and it never says a task is already hidden.
-  const intro = INTROS.find((d) => d.id === "scheduled-tasks-175")!;
-  assert.deepEqual([intro.show, intro.later, intro.choice], ["Turn on", "Not now", true]);
-  assert.ok(!/now wait|are hidden|stays in/i.test(`${intro.headline} ${intro.ask}`), "never claims tasks already wait");
+  // 1.76: on by default, so the island card says once that later tasks now wait and where the switch is. One Ok, a new id
+  // (a person who answered the 1.75 offer is told too), and the 1.75 offer with its Turn on button is gone.
+  const intro = INTROS.find((d) => d.id === "scheduled-tasks-176")!;
+  assert.deepEqual([intro.show, intro.later, intro.choice], ["Ok", undefined, true]);
+  assert.match(intro.ask, /Settings, Your list, Hide tasks until their day/, "says where the switch is");
   assert.ok(!/[\u2013\u2014]/.test(`${intro.headline} ${intro.ask}`));
+  assert.equal(INTROS.find((d) => d.id === "scheduled-tasks-175"), undefined, "the 1.75 offer is gone");
   const fi = src("views/FeatureIntro.tsx");
-  assert.match(fi, /"scheduled-tasks-175": \(yes, s\) => \{ if \(yes\) void saveSettings\(\{ squadFeatures: \{[^}]*"scheduled-tasks": true/, "Turn on saves the Settings switch");
-  assert.match(fi, /"scheduled-tasks-175": async[^\n]*feature\("scheduled-tasks"\) \? "done" : "open"/, "shown only while it is off");
+  assert.match(fi, /"scheduled-tasks-176": async \(_can, s\) => \(feature\("scheduled-tasks"\) && s\.status === "unlocked" && s\.role === "owner" \? "open" : "unknown"\)/, "shown only while it is on, for an owner");
+  assert.ok(!fi.includes("scheduled-tasks-175"), "no Turn on choice left behind");
   for (const f of ["core/scheduled.ts", "views/Scheduled.tsx"]) assert.ok(!/[\u2013\u2014]/.test(src(f)), `no en or em dashes in ${f}`);
 });
 ok("A click inside lit words refuses them; at their edges it does not (typing on after them still works)", () => {
