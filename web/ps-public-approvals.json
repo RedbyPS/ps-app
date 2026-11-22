@@ -511,5 +511,17 @@
   ],
   "by": "jan",
   "shared": true
+ },
+ "1.75": {
+  "code": "9ba2ec65755a",
+  "at": "2026-11-22T17:09:28.206Z",
+  "keyword": "Sunrise",
+  "notes": [
+   "Schedule a task: switch on \"Hide tasks until their day\" in Settings, then type tomorrow, Friday or 25.11, also while editing. It waits in Scheduled at the bottom of your list until its day, Priority 1 timer included.",
+   "One click on a recognised date or priority turns it back into plain text. Type it again to bring it back.",
+   "Time boxes now read 22,15 as a time."
+  ],
+  "by": "jan",
+  "shared": true
  }
 }
