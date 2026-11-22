@@ -401,6 +401,8 @@ export interface AiMsg {
   id: string; from: string; text: string; detail?: string;
   /** The chat it came from, as the AI tool names it (Claude Code's session id): its plain finished card is then not shown. */
   chat?: string;
+  /** PS 1.74: the task the card's Mark done ticks (kept only while the Task API's "Tick tasks done" switch was on). */
+  task?: string;
   at: string; seen?: boolean; remindAt?: string;
 }
 /** V1.58: what pops up when an AI chat ends (core/aimessage.ts AI_NOTES). None means "messages". */

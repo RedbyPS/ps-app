@@ -20,12 +20,13 @@
 // Which sound, and whether a kind makes one at all, is the developer's pick in Settings, Notifications (core/notelook.ts, V1.36):
 // by default chats and leads chime (Glass) and client emails stay quiet, as before. One sound per look, the newest card's.
 import { feature } from "./core/features";
-import { pokeCardsAfterSave, vaultStore } from "./core/vault";
+import { pokeCardsAfterSave, sync as syncVault, vaultStore } from "./core/vault";
 import { settingsData } from "./core/select";
-import { saveSettings, setReplyRemind, setReplySeen } from "./core/actions";
+import { saveSettings, setReplyRemind, setReplySeen, setTodoDone } from "./core/actions";
 import { mailCards, nextRemind, REMIND } from "./core/mailcards";
 import { CHAT_REMIND, chatDoneAnswer, chatLife, nextChatRemind } from "./core/chatdone";
-import { AI_MSG_PRIVATE, aiCardsNow, aiMsgAnswer, isAiMsgCard, nextAiMsgRemind } from "./core/aimessage";
+import { AI_MSG_DONE, AI_MSG_PRIVATE, aiCardsNow, aiMsgAnswer, aiMsgOfCard, isAiMsgCard, MARK_DONE_WAIT_MS, markDoneFor, markDoneOk, nextAiMsgRemind, tapFresh, tapWait, type TapWait, type MarkDoneScopes } from "./core/aimessage";
+import type { Todo } from "./core/model";
 import { LEAD_REMIND, leadAnswer, leadCards, nextLeadRemind, type IRep } from "./core/leadcards";
 import { cardKind, dndEndsAt, dndLetsSender, dndMutes, type DndKind } from "./core/dnd";
 import { heldDismissed, type Dismissed } from "./core/cardsync";
@@ -56,6 +57,10 @@ const DEVICE = import.meta.env.MODE === "gos" ? "phone" : "mac";
 /** Reply from PS (src/replyengine.ts, V1.44): the Mac's cards get a Reply button. The phone and the website have none. */
 const REPLY = import.meta.env.MODE === "ps" ? { reply: true } : {};
 let post: Post = () => {};
+/** PS 1.74 Mark done on an AI message's card (core/aimessage.ts markDoneOk): the Mac's AI task API switches now (ps.ts passes
+ *  them), or null on the phone, which has none (the Task API's check when the message came stands). */
+let doneScopes: () => MarkDoneScopes | null = () => null;
+const todoIn = (s: Snapshot, id: string | undefined): Todo | null => { const d = id ? s.docs.get(id) : undefined; return d && d.kind === "todo" ? d.data as Todo : null; };
 /** What the pop-up stack is showing right now (card id -> what was sent), this run of the page only. */
 let shown = new Map<string, string>();
 /** Dismissed (or reminded) a moment ago: not sent again while its vault save is still on its way. */
@@ -67,7 +72,7 @@ const reapplied = new Map<string, number>();
 /** The time each card on the stack carries (card id -> its "at"), for dismissedHere. */
 const cardAt = new Map<string, string>();
 /** Answers that came while the vault was still locked (a phone notification tapped while the page slept). */
-let waiting: { id: string; action: string }[] = [];
+let waiting: { id: string; action: string; tap?: TapWait }[] = [];
 let onNext: (at: number) => void = () => {};
 let nextTimer = 0, lastNext = -1;
 /** A full look has run since the cards last left the screen: only then does a client email new on the stack chime
@@ -97,7 +102,8 @@ function sync(force = false) {
   if (mailOn && !st.leadCards?.since) { void saveSettings({ leadCards: { since: new Date().toISOString() } }); return; }   // the same for Instantly replies
   const waOn = feature("whatsapp") && waOnSnap(s), waPrefs = prefsOf(st);   // the feature "whatsapp" (default on) and its switch
   if (waOn && !waPrefs.since) { void saveWaPrefs({ since: new Date().toISOString() }); return; }   // first run: start from now
-  if (waiting.length) { const w = waiting; waiting = []; w.forEach((a) => apply(a.id, a.action)); }
+  // A Mark done tap waiting for a fresh copy (the phone) stays queued until it has one (apply says false).
+  if (waiting.length) { const w = waiting; waiting = []; w.forEach((a) => { if (!apply(a.id, a.action, a.tap)) waiting.push(a); }); }
   // The next reminded card: back on time here, and the phone shell wakes this page for it.
   // Do Not Disturb ending by itself counts too: the held cards come back on time (and the phone wakes for them).
   const now = Date.now();
@@ -169,8 +175,10 @@ function sync(force = false) {
     if (held(c.id)) continue;
     if ((justDismissed.get(c.id) || 0) > Date.now() - 15_000) continue;
     // The phone shows title and sub (ps-gos Notifier.kt chat()); the Mac's card also folds the detail (AiMessageCard.swift).
+    // PS 1.74: Mark done, only while it may tick the task (an open task, the switch on); the card goes back to plain otherwise.
+    const markDone = !!c.task && markDoneOk(todoIn(s, c.task), doneScopes());
     const card = { id: c.id, rev: c.rev, tone: "ai", icon: "ai", title: c.from, sub: c.text, ...(c.detail ? { body: c.detail } : {}), at: c.at,
-      discreetText: AI_MSG_PRIVATE, remind: CHAT_REMIND, ...chatLife(st.chatFade) };
+      discreetText: AI_MSG_PRIVATE, remind: CHAT_REMIND, ...chatLife(st.chatFade), ...(markDone ? { markDone: true } : {}) };
     const json = JSON.stringify(card);
     if (!force && shown.get(c.id) === json) continue;
     if (!shown.has(c.id) && c.fresh) chimes.push({ at: c.at, name: noteSoundName(look.done) });   // the AI chats' sound
@@ -195,13 +203,28 @@ function sync(force = false) {
 function hideAll() { for (const id of shown.keys()) post({ type: "cardHide", id }); shown = new Map(); primed = false; }
 
 /** Dismiss, or Remind me in N mins, on one card: saved on its reply record, so every device follows. */
-function apply(id: string, action: string): boolean {
+function apply(id: string, action: string, tap?: TapWait): boolean {
   const s = vaultStore.get();
   if (s.status !== "unlocked" || s.role !== "owner") return false;
+  // The phone's Mark done: only on a copy fetched after the tap (core/aimessage.ts tapFresh). A device with no other device
+  // (local mode) has nothing newer to wait for.
+  if (tap && DEVICE === "phone" && !s.local && action === AI_MSG_DONE.action) {
+    if (Date.now() - tap.at > MARK_DONE_WAIT_MS) return true;   // never fetched in time: dropped, the card stays as it is
+    const f = tapFresh(tap, s.lastSync);
+    if (f.fetch) void syncVault();
+    if (!f.fresh) return false;
+  }
   pokeCardsAfterSave();   // V1.59: the other devices hear it within seconds (core/vault.ts)
   const mins = action.startsWith("remind:") ? Number(action.slice(7))
     : action.startsWith("remindUntil:") ? (Number(action.slice(12)) - Date.now()) / 60_000 : NaN;
   if (isAiMsgCard(id)) {   // V1.58: a message from an AI: Dismiss or Remind me in, on every device
+    if (action === AI_MSG_DONE.action) {   // PS 1.74: Mark done ticks its task (checked again now), then the message is dismissed
+      const m = aiMsgOfCard(settingsData(s).aiMsgs, id);
+      if (!m?.task || !markDoneFor(m, todoIn(s, m.task), doneScopes())) { shown.delete(id); justDismissed.delete(id); window.setTimeout(() => sync(true), 0); return true; }   // not allowed now: back as a plain card
+      const task = m.task;
+      void setTodoDone(task, true).then(() => { const list = aiMsgAnswer(settingsData(vaultStore.get()).aiMsgs, id, "dismiss"); if (list) void saveSettings({ aiMsgs: list }); });
+      return true;
+    }
     if (action !== "dismiss" && !(mins > 0)) return true;
     const list = aiMsgAnswer(settingsData(s).aiMsgs, id, action === "dismiss" ? "dismiss" : mins);
     if (list) void saveSettings({ aiMsgs: list });
@@ -245,6 +268,14 @@ function apply(id: string, action: string): boolean {
 export function mailCardMessage(m: { type?: string; id?: string; action?: string }) {
   if (m.type === "cardAction" && typeof m.id === "string" && (m.id.startsWith("m:") || m.id.startsWith("c:") || m.id.startsWith("n:") || m.id.startsWith("w:"))) {
     const action = String(m.action || "");
+    if (action === AI_MSG_DONE.action && isAiMsgCard(m.id)) {   // PS 1.74 Mark done: the card goes for now, the tick dismisses it for good
+      shown.delete(m.id);
+      justDismissed.set(m.id, Date.now());
+      const tap = tapWait(Date.now(), vaultStore.get().lastSync);
+      if (DEVICE === "phone") void syncVault();   // fetch now: the tap is applied on a copy fetched after it
+      if (!apply(m.id, action, tap)) waiting.push({ id: m.id, action, tap });
+      return true;
+    }
     if (action === "dismiss" || action.startsWith("remind")) {
       shown.delete(m.id);
       justDismissed.set(m.id, Date.now());
@@ -262,9 +293,10 @@ export function mailCardMessage(m: { type?: string; id?: string; action?: string
 export function refreshMailCards() { sync(true); }
 
 /** PS main window only. */
-export function startMailCards(p: Post, next?: (at: number) => void) {
+export function startMailCards(p: Post, next?: (at: number) => void, scopes?: () => MarkDoneScopes | null) {
   post = p;
   if (next) onNext = next;
+  if (scopes) doneScopes = scopes;
   let t = 0;
   vaultStore.subscribe(() => { clearTimeout(t); t = window.setTimeout(sync, 400); });
   lpInterval("mail-cards", () => sync(true), 60_000);   // PS 1.65: asleep in Low power mode. Self healing: whatever happened to the stack, it matches the vault within a minute

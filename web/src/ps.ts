@@ -166,6 +166,7 @@ import { islandPrefs } from "./core/island";
 import { cleanRules } from "./core/rules";
 import { mailOnSnap } from "./core/mailsnap";
 import { irepFeed, mailCardMessage, startMailCards } from "./mailcards";
+import { cleanScopes } from "./core/taskapi";
 import { cleanReplyCardId, leadRows, setLeadMirror } from "./core/overlaymail";
 import { leadCards } from "./core/leadcards";
 import { requestWaReply } from "./core/wareplyopen";
@@ -1051,7 +1052,8 @@ export function startPsBridge() {
   sayOwner();
   // The developer's own background videos come from his vault onto this Mac (src/core/bgvault.ts).
   startBgVault({ post: psPost, listen: (f) => { bgShell.add(f); } });
-  startMailCards(psPost);   // client email cards that stay until dismissed (src/mailcards.ts)
+  // PS 1.74: an AI message's Mark done follows this Mac's AI task API switches as they are now (none known yet: no button).
+  startMailCards(psPost, undefined, () => { const a = psSettings?.taskApi; return a?.on ? cleanScopes(a.scopes) : { done: false, inbox: false, lists: false }; });   // client email cards that stay until dismissed (src/mailcards.ts)
   startReplyEngine(psPost, () => psSettingsNow()?.mailSend ?? null);   // Reply from PS: the compose window's email, signatures and responses (src/replyengine.ts)
   startNotesCard(psPost);   // meeting notes pop-up, top left (src/notescard.ts)
   startMeetAlerts(psPost);   // meeting alert cards (src/meetwatch.ts)

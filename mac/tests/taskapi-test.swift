@@ -127,6 +127,9 @@ check(TaskApiCore.cleanScopes(["message": true])["message"] == true, "the messag
 check(TaskApiCore.scopeIds.contains("message") && TaskApiCore.scopeIds.count == TaskApiCore.scopeDefaults.count, "every switch has a default")
 // ---------- the goals Timeline (PS 1.72) ----------
 check(TaskApiCore.scopeDefaults["goals"] == false && TaskApiCore.cleanScopes(nil)["goals"] == false, "the goals switch is off unless switched on")
+// PS 1.74: the Working on switch (GET and PUT /v1/focus), the same id and default as web core/taskapi.ts.
+check(TaskApiCore.scopeIds.contains("focus") && TaskApiCore.scopeDefaults["focus"] == false && TaskApiCore.cleanScopes(nil)["focus"] == false, "the focus switch is off unless switched on")
+check(TaskApiCore.cleanScopes(["focus": true])["focus"] == true && TaskApiCore.cleanScopes(["focus": "yes"])["focus"] == false, "the focus switch is heard when on, booleans only")
 check(TaskApiCore.cleanScopes(["goals": true])["goals"] == true, "the goals switch can be switched on, so the page hears it")
 let goalBody = "{\"title\":\"Launch the shop\",\"level\":\"macro\"}"
 let goalNoKey = ok(TaskApiCore.parse(req("POST /v1/goals HTTP/1.1\nHost: 127.0.0.1:47836\nContent-Type: application/json\nContent-Length: \(goalBody.utf8.count)\n\n") + Data(goalBody.utf8)))!
@@ -153,8 +156,9 @@ if !src.isEmpty {
     check(!src.contains("\"\(word)"), "no page message \(word) exists on the Mac")
   }
   // The message card (AiMessageCard.swift) is wired into the card page, and puts words in as text only.
-  check(src.contains("AiMessageCard.tone].contains(tone)") && src.contains("\\#(AiMessageCard.css)") && src.contains("\\#(AiMessageCard.js)")
-        && src.contains("AiMsg.click(c,t)") && src.contains("AiMsg.made(c)"), "the message card is hooked into the card page")
+  check(src.contains("AiMessageCard.tone, SquadMessageCard.tone].contains(tone)") && src.contains("\\#(AiMessageCard.css)") && src.contains("\\#(AiMessageCard.js)")
+        && src.contains("AiMsg.click(c,t)") && src.contains("AiMsg.made(c)") && src.contains("AiMsg.buttons(c,mb)")
+        && src.contains("AiMessageCard.markDone(tone: tone, c[\"markDone\"])"), "the message card is hooked into the card page (Mark done too, PS 1.74)")
   check(src.contains("LOOKSEL={done:['.t-done','.t-ai']"), "the message card takes the AI chat cards' colours")
 } else { check(false, "the Mac's sources were given to the Sentry check") }
 // AiMessageCard's page code never puts anything in as HTML (its icon is a fixed path the page's own svg() draws).

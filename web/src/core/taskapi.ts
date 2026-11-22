@@ -17,6 +17,9 @@ import { INBOX, INBOX_MAX, INBOX_NAME, inInbox, intoSection, listsCtx, sectionTa
 import { API_GYM_FIELDS, API_GYM_YES, API_NO_YES, apiGym, apiGymPatch, gymPrefs } from "./gym.ts";
 import { AI_MSG, AI_MSG_FIELDS, addAiMsg, aiMsgWait, aiNotesMode, checkAiMsg, newAiMsgId, sameAiMsg } from "./aimessage.ts";
 import { GOALS_MAX, GOAL_COLORS, GOAL_NOTE_MAX, GOAL_TITLE_MAX, endFor, goalLevel, levelName, nextGoalColor } from "./goals.ts";
+import { okResetAt, resetAtOf } from "./resetday.ts";
+import { cdPatch, cleanCd, okHm, type CdPrefs } from "./daycount.ts";
+import { isClientTask, waitsToLand } from "./clientwork.ts";
 import { REM_TEXT_MAX, okTz, addTaskReminder, freshId, minutesOf, newTaskReminder, oneLine, patchReminder, reminderOfTask, remindOrDefault, removeReminder, type RemindRec } from "./remind.ts";
 
 export const API_PORT = 47836;
@@ -26,7 +29,7 @@ export const TITLE_MAX = 500, NOTES_MAX = 2000;
 export const LIST_LIMIT_DEF = 200, LIST_LIMIT_MAX = 500;
 
 // ---------- the switches ----------
-export type ScopeId = "inbox" | "lists" | "goals" | "rename" | "read" | "add" | "edit" | "done" | "delete" | "remind" | "sentry" | "gym" | "settings" | "message";
+export type ScopeId = "inbox" | "lists" | "goals" | "rename" | "read" | "add" | "edit" | "done" | "delete" | "remind" | "focus" | "sentry" | "gym" | "settings" | "message";
 export interface ScopeDef { id: ScopeId; group: "where" | "what"; label: string; line: string; def: boolean }
 /** One switch per thing an AI may do (Settings, AI task API). Off unless switched on, except add, read and the inbox. */
 export const SCOPES: ScopeDef[] = [
@@ -42,12 +45,16 @@ export const SCOPES: ScopeDef[] = [
   { id: "done", group: "what", label: "Tick tasks done", line: "Tick a task done or open it again.", def: false },
   { id: "delete", group: "what", label: "Delete tasks", line: "Delete tasks for good.", def: false },
   { id: "remind", group: "what", label: "Set reminders", line: "Put a reminder on a task, change it or take it off.", def: false },
+  // PS 1.74 (Jan, 21 Nov 2026, for his AI coach: "read and set the working on task"). Its own switch, like Sentry mode and the gym:
+  // it changes what the island shows and starts the task's clock, which is neither editing a task nor ticking it.
+  { id: "focus", group: "what", label: "Working on", line: "See and set the task you are working on, the one the island shows.", def: false },
   // The developer, 13 Nov 2026: "tell Claude Code to deploy Sentry Mode and it will get the PS app to deploy Sentry mode too". Start only.
   { id: "sentry", group: "what", label: "Start Sentry mode", line: "Lock this Mac and keep it awake for AI jobs. An AI can never turn it off.", def: false },
   // The developer, 13 Nov 2026 (V1.57): "a new switch "gym" ... (off by default) ... The API can never answer Yes for me."
   { id: "gym", group: "what", label: "Gym reminder", line: "Read and change your gym reminder times. An AI can never say Yes for you.", def: false },
   // The developer, 13 Nov 2026 (V1.57): Invert swipe "accessible via the API as well, so you can just tell your Claude to do it".
-  { id: "settings", group: "what", label: "Change settings", line: "Read and change the settings listed for AI, for now Invert swipe.", def: false },
+  // PS 1.74: also the automatic Reset (on or off, its time) and the countdown's Day ends (Jan, 21 Nov 2026).
+  { id: "settings", group: "what", label: "Change settings", line: "Read and change the settings listed for AI: Invert swipe, the automatic Reset and its time, and Day ends.", def: false },
   // V1.58 (the developer, 13 Nov 2026: "I want the AI to write to me at the end of each chat instead of the AI completion cards").
   { id: "message", group: "what", label: "Send you messages", line: "Pop a short message up on the Dynamic Island, like what it finished. Words only.", def: false },
 ];
@@ -73,6 +80,9 @@ export interface ApiStore {
   settings(): Partial<Settings>;
   remind(): RemindRec | null;
   today(): string;                    // YYYY-MM-DD in the user's day
+  /** Clients (PS 1.73): the person's day by their day end (clients/clientsday.ts landDayNow), the day client tasks land on.
+   *  Missing: nothing waits, as before 1.74. */
+  land?(): string;
   now(): number;
   deviceTz(): string;
   red(): boolean;
@@ -84,6 +94,9 @@ export interface ApiStore {
   saveSettings(patch: Partial<Settings>): Promise<void>;
   saveRemind(change: (rec: RemindRec | null) => RemindRec | null): Promise<void>;
   newGroupId(): string;
+  /** PS 1.74: the tasks being worked on, in order (the first is the island's), as clicks on tasks make them: clocks start
+   *  for the new ones and stop for the ones taken off. core/taskapi.ts keeps the ones outside the AI's reach in the list. */
+  setFocus(ids: string[]): Promise<void>;
   /** Sentry mode, started exactly as the AI button starts it (views/Sentry.tsx startSentryForApi). There is no stop. */
   startSentry(): Promise<SentryStartResult>;
 }
@@ -92,7 +105,7 @@ export type SentryStartResult = { result: "engaged" | "already"; phase: "covered
   | { result: "refused"; note: string } | { result: "notStarted" } | { result: "noAnswer" } | { result: "unavailable" };
 
 export type ErrCode = "bad_request" | "bad_field" | "unknown_field" | "not_found" | "method_not_allowed" | "scope_off" | "locked"
-  | "wrong_section" | "not_a_task_list" | "inbox_full" | "too_many" | "internal" | "sentry_checks" | "sentry_refused" | "not_ready" | "rate_limited";
+  | "wrong_section" | "not_a_task_list" | "inbox_full" | "too_many" | "internal" | "sentry_checks" | "sentry_refused" | "not_ready" | "rate_limited" | "task_done" | "not_landed";
 export const fail = (status: number, code: ErrCode, message: string, extra: Record<string, unknown> = {}): ApiRes =>
   ({ status, body: { error: { code, message, ...extra } } });
 const ok = (body: unknown, status = 200): ApiRes => ({ status, body });
@@ -103,6 +116,8 @@ export interface ApiTask {
   id: string; title: string; notes: string | null; kind: "once" | "daily"; done: boolean; doneAt: string | null; due: string | null;
   p1: boolean; list: string; listName: string; section: string; sectionName: string; addedByAi: boolean; inInbox: boolean;
   createdAt: string | null; subtasks: { title: string; done: boolean }[];
+  /** Clients (PS 1.73): the do date of a task that waits out of the list until then (core/clientwork.ts waitsToLand), else null. */
+  waitsUntil: string | null;
   reminder: { date: string | null; time: string; until: string; on: boolean; message: string | null } | null;
 }
 type Ctx = ReturnType<typeof makeCtx>;
@@ -112,9 +127,11 @@ function makeCtx(store: ApiStore) {
   const names = cleanNames(st.tmNames);
   const order = pageOrder(st.tmPageOrder, pages);
   const all = store.todos();
-  const lists = tabLists(all, groups, store.today());
+  // As the Tab list shows it on the person's day (break-it 1.74): a client task waiting for its do date is not in it yet.
+  const land = store.land?.();
+  const lists = tabLists(all, groups, store.today(), undefined, land);
   const known = new Set(groups.map((g) => g.id));
-  return { st, groups, pages, full, byPage, names, order, all, lists, known, rem: store.remind() };
+  return { st, groups, pages, full, byPage, names, order, all, lists, known, land, rem: store.remind() };
 }
 const secName = (c: Ctx, key: string): string => {
   if (key === INBOX) return INBOX_NAME;
@@ -127,7 +144,8 @@ const listName = (c: Ctx, id: string): string => (id === INBOX ? INBOX_NAME : al
 export function sectionOf(t: Todo, known: Set<string>): string {
   if (inInbox(t)) return INBOX;
   if (t.group && known.has(t.group)) return groupKey(t.group);
-  if (t.type === "daily") return "daily";
+  // Clients (PS 1.73, core/groups.ts tabLists): a repeating client task with P1 on lands in Priority 1 on its days.
+  if (t.type === "daily") return t.p1 === true && isClientTask(t) ? "p1" : "daily";
   return t.p1 ? "p1" : "prio";
 }
 function view(d: Doc<Todo>, c: Ctx): ApiTask {
@@ -137,10 +155,11 @@ function view(d: Doc<Todo>, c: Ctx): ApiTask {
   const r = reminderOfTask(c.rem, d.id);
   return {
     id: d.id, title: t.title, notes: t.notes ?? null, kind: t.type === "daily" ? "daily" : "once", done: !!t.done, doneAt: t.doneAt ?? null,
-    due: t.due ?? null, p1: t.type !== "daily" && !!t.p1, list, listName: listName(c, list), section, sectionName: secName(c, section),
+    due: t.due ?? null, p1: t.type !== "daily" ? !!t.p1 : section === "p1", list, listName: listName(c, list), section, sectionName: secName(c, section),
     addedByAi: t.ai === true, inInbox: inInbox(t), createdAt: t.createdAt ?? null,
     subtasks: (t.subtasks ?? []).map((s) => ({ title: s.title, done: !!s.done })),
     reminder: r ? { date: r.date ?? null, time: r.at, until: r.until, on: r.on, message: r.text || null } : null,
+    waitsUntil: c.land && waitsToLand(t, c.land) ? t.doOn! : null,
   };
 }
 /** Can this AI reach this task with its switches. */
@@ -213,14 +232,22 @@ const ENDPOINTS = [
   "GET /v1", "GET /v1/lists", "PATCH /v1/lists/{id}", "PATCH /v1/sections/{key}",
   "GET /v1/tasks", "POST /v1/tasks", "GET /v1/tasks/{id}", "PATCH /v1/tasks/{id}", "DELETE /v1/tasks/{id}",
   "POST /v1/tasks/{id}/complete", "POST /v1/tasks/{id}/reopen", "PUT /v1/tasks/{id}/reminder", "DELETE /v1/tasks/{id}/reminder",
+  "GET /v1/focus", "PUT /v1/focus",
   "POST /v1/sentry/start",
   "GET /v1/gym", "PATCH /v1/gym",
   "GET /v1/settings", "PATCH /v1/settings",
   "POST /v1/island/message",
   "GET /v1/goals", "POST /v1/goals", "GET /v1/goals/{id}", "PATCH /v1/goals/{id}", "DELETE /v1/goals/{id}",
 ];
-/** The settings an AI may read and change (GET and PATCH /v1/settings): the API name, the settings record's field. */
-export const API_SETTINGS = { invertSwipe: "swipeInvert" } as const;
+/** The settings an AI may read and change (GET and PATCH /v1/settings): the API name, the settings record's field.
+ *  PS 1.74: autoReset (true or false: settings.autoReset "midnight" or "off"), autoResetAt ("HH:MM", core/resetday.ts) and
+ *  dayEnds (the countdown's Day ends beside the reset time, settings.countdown mode and at, core/daycount.ts). */
+export const API_SETTINGS = { invertSwipe: "swipeInvert", autoReset: "autoReset", autoResetAt: "autoResetAt", dayEnds: "countdown" } as const;
+/** The countdown's Day ends as the API says it: "reset" (it follows the reset time), "HH:MM" (Every day at), or "week"
+ *  (a time for each day, set in PS only). */
+export function apiDayEnds(cd: Pick<CdPrefs, "mode" | "at">): string {
+  return cd.mode === "reset" ? "reset" : cd.mode === "week" ? "week" : cd.at;
+}
 /** Said whenever anything but POST /v1/sentry/start is asked of Sentry mode. */
 export const SENTRY_NO_STOP = "Sentry mode can only be started through the API, never stopped, paused or changed. Leaving it needs the person's Mac password or Touch ID.";
 
@@ -360,14 +387,26 @@ async function route(req: ApiReq, sc: Scopes, store: ApiStore): Promise<ApiRes> 
     if (seg.length !== 2) return fail(404, "not_found", "The settings endpoints are GET /v1/settings and PATCH /v1/settings.");
     const no = allow("GET", "PATCH"); if (no) return no;
     if (!sc.settings) return scopeOff("settings");
-    const view = (st: Partial<Settings>) => ({ invertSwipe: st.swipeInvert === true });
+    const red = store.red();
+    const view = (st: Partial<Settings>) => ({ invertSwipe: st.swipeInvert === true, autoReset: st.autoReset === "midnight", autoResetAt: resetAtOf(st),
+      dayEnds: apiDayEnds(cleanCd(st.countdown, red)) });
     if (method === "GET") return ok({ settings: view(store.settings()) });
     const b = needBody(); if (!isObj(b)) return b;
     const u = unknownField(b, Object.keys(API_SETTINGS)); if (u) return u;
     if (!Object.keys(b).length) return fail(400, "bad_request", `Send at least one of: ${Object.keys(API_SETTINGS).join(", ")}.`);
+    // Everything is checked before anything is saved: one bad field changes nothing.
     if ("invertSwipe" in b && typeof b.invertSwipe !== "boolean") return badField("invertSwipe", "invertSwipe must be true or false.");
+    if ("autoReset" in b && typeof b.autoReset !== "boolean") return badField("autoReset", "autoReset must be true (your list resets by itself at autoResetAt) or false (only when you press Reset).");
+    if ("autoResetAt" in b && !okResetAt(b.autoResetAt)) return badField("autoResetAt", "autoResetAt is a 24 hour time like 04:00, from 00:00 (midnight) to 23:59.");
+    if ("dayEnds" in b && b.dayEnds !== "reset" && !okHm(b.dayEnds))
+      return badField("dayEnds", b.dayEnds === "week" ? "A time for each day is set in PS itself (Settings, Countdown text). Send \"reset\" or a time like 23:00." : "dayEnds is \"reset\" (the day ends at the reset time) or a 24 hour time like 23:00.");
+    const st = store.settings();
     const patch: Partial<Settings> = {};
     if (typeof b.invertSwipe === "boolean") patch.swipeInvert = b.invertSwipe;
+    if (typeof b.autoReset === "boolean") patch.autoReset = b.autoReset ? "midnight" : "off";
+    if (okResetAt(b.autoResetAt)) patch.autoResetAt = b.autoResetAt;
+    // As Settings' own Day ends does (views/AutoReset.tsx): a time is "Every day at" that time, "reset" follows the reset time.
+    if ("dayEnds" in b) patch.countdown = cdPatch(cleanCd(st.countdown, red), b.dayEnds === "reset" ? { mode: "reset" } : { mode: "daily", at: b.dayEnds as string });
     await store.saveSettings(patch);
     return ok({ settings: view({ ...store.settings(), ...patch }) });
   }
@@ -377,7 +416,16 @@ async function route(req: ApiReq, sc: Scopes, store: ApiStore): Promise<ApiRes> 
     if (seg.length !== 3 || seg[2] !== "message") return fail(404, "not_found", "The island endpoint is POST /v1/island/message.");
     const no = allow("POST"); if (no) return no;
     if (!sc.message) return scopeOff("message");
-    return islandMessage(body, store);
+    return islandMessage(body, sc, store);
+  }
+
+  // GET and PUT /v1/focus (PS 1.74): the task the person is working on, the one the island shows (a click on a task in the
+  // Tab list, settings.workingIds). Setting it is what that click does: the island shows it and its clock starts.
+  if (seg[1] === "focus") {
+    if (seg.length !== 2) return fail(404, "not_found", "The focus endpoints are GET /v1/focus and PUT /v1/focus.");
+    const no = allow("GET", "PUT"); if (no) return no;
+    if (!sc.focus) return scopeOff("focus");
+    return method === "GET" ? getFocus(sc, store) : putFocus(body, sc, store);
   }
 
   // /v1/goals (PS 1.72): the goals timeline, kept in the encrypted settings record like everything else.
@@ -447,15 +495,28 @@ async function route(req: ApiReq, sc: Scopes, store: ApiStore): Promise<ApiRes> 
 const openIn = (l: TabLists, key: string) => {
   const g = groupOf(key);
   if (g) return (l.groups.get(g) ?? []).filter((d) => !d.data.done).length;
-  return key === "p1" ? l.p1.length : key === "prio" ? l.prio.length : key === "daily" ? l.daily.filter((d) => !d.data.done).length : 0;
+  return key === "p1" ? l.p1.filter((d) => !d.data.done).length : key === "prio" ? l.prio.length : key === "daily" ? l.daily.filter((d) => !d.data.done).length : 0;
 };
 /** The task as saved now (a fake or slow store: what we sent, put on top of the copy we had). */
 /** POST /v1/island/message: checked, then kept in the encrypted settings, where the cards and the island pick it up. */
-async function islandMessage(body: unknown, store: ApiStore): Promise<ApiRes> {
+async function islandMessage(body: unknown, sc: Scopes, store: ApiStore): Promise<ApiRes> {
   if (!isObj(body)) return fail(400, "bad_request", "Send a JSON object as the body, with Content-Type: application/json: {\"from\": \"Claude Code\", \"text\": \"...\"}.");
   const u = unknownField(body, [...AI_MSG_FIELDS]); if (u) return u;
   const r = checkAiMsg(body);
   if ("field" in r) return badField(r.field, r.message);
+  // PS 1.74: a task for the card's Mark done, kept only when that click may tick it. Otherwise the message is shown as
+  // before, with no button, and the AI is told why (never an error: the message itself is fine).
+  let noDone: string | null = null;
+  const asSent = { ...r.msg };   // the same message sent again is found by what the AI sent, before any task is taken off
+  if (r.msg.task) {
+    const t = store.todos().find((x) => x.id === r.msg.task);
+    if (!sc.done) noDone = `The "${scopeLabel("done")}" switch is off, so the message has no Mark done button.`;
+    else if (!t) noDone = "No task with that id (it may have been deleted or cleared by a reset), so the message has no Mark done button.";
+    else if (!reach(t.data, sc)) noDone = `The "${scopeLabel(reachOff(t.data))}" switch is off for that task, so the message has no Mark done button.`;
+    else if (t.data.done) noDone = "That task is already done, so the message has no Mark done button.";
+    if (noDone) delete r.msg.task;
+  }
+  const doneInfo = (task: string | undefined) => (r.msg.task || noDone ? { markDone: !!task, ...(noDone ? { note: noDone } : {}) } : {});
   const st = store.settings();
   const now = store.now();
   const mode = aiNotesMode(st.aiNotes);
@@ -463,13 +524,61 @@ async function islandMessage(body: unknown, store: ApiStore): Promise<ApiRes> {
   if (mode !== "messages") return ok({ message: null, shown: false, note: mode === "plain"
     ? "The person chose plain finished cards in PS, so messages are not shown. Nothing to fix; carry on."
     : "The person switched AI pop ups off in PS. Nothing to fix; carry on." });
-  const again = sameAiMsg(st.aiMsgs, r.msg, now);
-  if (again) return ok({ message: { id: again.id, at: again.at }, shown: true, note: "The same message was already sent a moment ago." });
+  const again = sameAiMsg(st.aiMsgs, asSent, now) ?? sameAiMsg(st.aiMsgs, r.msg, now);
+  if (again) {
+    // Dismissed already: not on screen any more, so no button either (break-it 1.74). A reason for no button is kept.
+    const said = again.seen ? "The same message was already sent a moment ago, and the person has dismissed it." : "The same message was already sent a moment ago.";
+    return ok({ message: { id: again.id, at: again.at }, shown: !again.seen, ...doneInfo(noDone || again.seen ? undefined : again.task), note: noDone ? `${said} ${noDone}` : said });
+  }
   const wait = aiMsgWait(st.aiMsgs, now);
   if (wait) return fail(429, "rate_limited", `Too many messages: at most ${AI_MSG.burst} in ${AI_MSG.burstMs / 60_000} minutes. Send one short message at the end of a task, not one per step.`, { retryAfter: wait });
   const m = { id: newAiMsgId(), ...r.msg, at: new Date(now).toISOString() };
   await store.saveSettings({ aiMsgs: addAiMsg(st.aiMsgs, m, now, st.dnd) });
-  return ok({ message: { id: m.id, at: m.at }, shown: true }, 201);
+  return ok({ message: { id: m.id, at: m.at }, shown: true, ...doneInfo(m.task) }, 201);
+}
+
+/** The working task ids, as model.ts workingIdsOf (kept here so this file only imports types from model.ts). */
+const workingOf = (st: Partial<Settings>): string[] => [...new Set(st.workingIds ?? (st.workingOn ? [st.workingOn] : []))];
+// GET /v1/focus: the tasks being worked on now (open ones, as the island shows them), the first one being the island's.
+function focusView(c: Ctx, sc: Scopes) {
+  const byId = new Map(c.all.map((d) => [d.id, d]));
+  const ids = workingOf(c.st);
+  const working = ids.map((id) => byId.get(id)).filter((d): d is Doc<Todo> => !!d && !d.data.done);
+  const mine = working.filter((d) => reach(d.data, sc));
+  const tasks = mine.map((d) => view(d, c));
+  // hidden: worked on, but outside the AI Inbox or All lists switch this AI has.
+  return { task: tasks[0] ?? null, tasks, hidden: working.length - mine.length };
+}
+function getFocus(sc: Scopes, store: ApiStore): ApiRes {
+  if (!sc.read) return scopeOff("read");
+  return ok({ focus: focusView(makeCtx(store), sc) });
+}
+// PUT /v1/focus {"task": id}: this task, and only this one, is the one being worked on. {"task": null}: none.
+async function putFocus(body: unknown, sc: Scopes, store: ApiStore): Promise<ApiRes> {
+  if (!isObj(body)) return fail(400, "bad_request", "Send {\"task\": \"<task id>\"} to set the task being worked on, or {\"task\": null} for none.");
+  const u = unknownField(body, ["task"]); if (u) return u;
+  if (!("task" in body)) return badField("task", "task is a task id from GET /v1/tasks, or null for none.");
+  if (body.task !== null && (typeof body.task !== "string" || !ID_RE.test(body.task))) return badField("task", "task is a task id from GET /v1/tasks, or null for none.");
+  const c = makeCtx(store);
+  // Working tasks outside this AI's reach (AI Inbox or All lists switch) stay exactly as they are: it cannot see them, so
+  // it never takes them off or stops their clocks. Only what it can reach is replaced (or cleared with null).
+  const byId = new Map(c.all.map((x) => [x.id, x]));
+  const hidden = workingOf(c.st).filter((id) => { const x = byId.get(id); return !!x && !reach(x.data, sc); });
+  const hiddenOpen = hidden.filter((id) => !byId.get(id)!.data.done).length;
+  if (body.task === null) {
+    await store.setFocus(hidden);
+    return ok({ focus: { task: null, tasks: [], hidden: hiddenOpen } });
+  }
+  const d = byId.get(body.task);
+  if (!d) return fail(404, "not_found", "No task with that id (it may have been deleted or cleared by a reset).");
+  if (!reach(d.data, sc)) return scopeOff(reachOff(d.data));
+  if (d.data.done) return fail(409, "task_done", "That task is done. Open it again first (POST /v1/tasks/{id}/reopen) if the person is working on it again.");
+  // Break-it 1.74: a client task before its do date is in no list yet, so no click could make it the working task.
+  if (c.land && waitsToLand(d.data, c.land)) return fail(409, "not_landed", `That task comes into their list on ${d.data.doOn} (its do date). Ask the person before working on it early.`);
+  await store.setFocus([d.id, ...hidden]);
+  // Without the read switch the answer names the task by id only (PUT may set it, never read it).
+  const shown = sc.read ? view(d, c) : { id: d.id };
+  return ok({ focus: { task: shown, tasks: [shown], hidden: hiddenOpen } });
 }
 
 function fresh(id: string, store: ApiStore, before: Doc<Todo>, patch: Partial<Todo>): ApiTask {
@@ -604,12 +713,17 @@ async function editTask(d: Doc<Todo>, body: unknown, sc: Scopes, store: ApiStore
       if (!sc.lists) return scopeOff("lists");
       const here = sectionOf(t, c.known);
       const same = !inInbox(t) && (dest.key ? dest.key === here : pageOfSec(c.pages, here) === dest.page);
-      if (!same) { const p = await placeIn(dest, t.type, c, store); if ("status" in p) return p; Object.assign(patch, p, { aiInbox: false }); }
+      if (!same) {
+        const p = await placeIn(dest, t.type, c, store); if ("status" in p) return p; Object.assign(patch, p, { aiInbox: false });
+        // Break-it 1.74 round 2: a repeating client task reads as Priority 1 by its P1 flag (sectionOf), so out of p1 it goes off.
+        if (here === "p1" && t.type === "daily" && patch.group === null) patch.p1 = false;
+      }
     }
   }
   if ("p1" in body) {
     if (typeof body.p1 !== "boolean") return badField("p1", "p1 is true or false.");
-    if (body.p1 && t.type === "daily") return badField("p1", "A daily task cannot be Priority 1.");
+    // A repeating client task already in Priority 1 (Clients, PS 1.73) may be sent p1 true again: it changes nothing.
+    if (body.p1 && t.type === "daily" && !(t.p1 === true && isClientTask(t))) return badField("p1", "A daily task cannot be Priority 1.");
     const where = patch.group !== undefined ? patch.group : t.group;
     if (body.p1 && where && c.known.has(where)) return fail(409, "wrong_section", "This task is in a task group. Move it to section \"p1\" (or \"prio\") instead.", { field: "p1" });
     patch.p1 = body.p1;

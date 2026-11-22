@@ -169,4 +169,81 @@ ok("the cards, the island and Settings use it; no dashes in any words", () => {
   for (const t of [src("src/core/aimessage.ts"), view]) assert.ok(!/[–—]/.test(t), "no en or em dashes");
 });
 
+// ---------- PS 1.74: a message tied to a task, and its Mark done ----------
+ok("checkAiMsg: task is optional, kept as sent, refused when it is not a task id", () => {
+  const r = A.checkAiMsg({ text: "Send the invoice", task: "abc-123" });
+  assert.ok("msg" in r && r.msg.task === "abc-123");
+  for (const t of [undefined, null, ""]) { const x = A.checkAiMsg({ text: "a", task: t }); assert.ok("msg" in x && !("task" in x.msg), String(t)); }
+  for (const t of [5, "has space", "x".repeat(65), {}, "<b>"]) { const x = A.checkAiMsg({ text: "a", task: t }); assert.ok("field" in x && x.field === "task", JSON.stringify(t)); }
+  assert.ok((A.AI_MSG_FIELDS as readonly string[]).includes("task"));
+});
+ok("markDoneOk: an open task only; on the Mac the done switch and the task's reach, on the phone the send time check", () => {
+  const on = { done: true, inbox: true, lists: false };
+  assert.equal(A.markDoneOk({ done: false, aiInbox: true }, on), true);
+  assert.equal(A.markDoneOk({ done: false }, on), false, "a list task needs All lists");
+  assert.equal(A.markDoneOk({ done: false }, { ...on, lists: true }), true);
+  assert.equal(A.markDoneOk({ done: false, aiInbox: true }, { ...on, done: false }), false, "the done switch turned off after the message");
+  assert.equal(A.markDoneOk({ done: true, aiInbox: true }, on), false, "already ticked");
+  assert.equal(A.markDoneOk({ done: false, aiInbox: true, clearedAt: "2026-11-13T00:00:00Z" }, on), false, "cleared by a reset");
+  assert.equal(A.markDoneOk(null, on), false, "deleted");
+  assert.equal(A.markDoneOk({ done: false }, null), true, "the phone: no switches here");
+  assert.equal(A.markDoneOk(undefined, null), false);
+});
+ok("markDoneFor (break-it 1.74): a dismissed message never ticks, so a late phone tap cannot re-tick a task reopened since", () => {
+  const open = { done: false, aiInbox: true };
+  assert.equal(A.markDoneFor({ task: "t1" }, open, null), true);
+  assert.equal(A.markDoneFor({ task: "t1", seen: true }, open, null), false, "dismissed (the Mac's Mark done already ran)");
+  assert.equal(A.markDoneFor({ task: "t1", seen: true }, open, { done: true, inbox: true, lists: true }), false);
+  assert.equal(A.markDoneFor({}, open, null), false, "no task on the message");
+  assert.equal(A.markDoneFor(null, open, null), false, "message gone");
+  assert.equal(A.markDoneFor({ task: "t1" }, { ...open, done: true }, null), false);
+  // mailcards.ts apply() uses it for every Mark done.
+  const mc = readFileSync(new URL("../src/mailcards.ts", import.meta.url), "utf8");
+  assert.ok(/markDoneFor\(m, todoIn\(s, m\.task\), doneScopes\(\)\)/.test(mc));
+});
+ok("tapFresh (break-it 1.74): a phone tap waits for the second new copy after it (the first may be a fetch already running), then is applied", () => {
+  const w = A.tapWait(1000, "2026-11-21T09:59:00.000Z");
+  assert.deepEqual(A.tapFresh(w, "2026-11-21T09:59:00.000Z"), { fresh: false, fetch: false }, "the stored copy");
+  assert.deepEqual(A.tapFresh(w, "2026-11-21T10:00:01.000Z"), { fresh: false, fetch: true }, "a fetch that may have started before the tap: ask again");
+  assert.deepEqual(A.tapFresh(w, "2026-11-21T10:00:01.000Z"), { fresh: false, fetch: false }, "no new copy yet, asked once only");
+  assert.deepEqual(A.tapFresh(w, "2026-11-21T10:00:02.000Z"), { fresh: true, fetch: false });
+  // Unlock shows the stored copy first (its own lastSync, maybe from a clock that was fast): that is only the first.
+  const u = A.tapWait(1000, null);
+  assert.equal(A.tapFresh(u, "2027-01-01T00:00:00.000Z").fresh, false);
+  assert.equal(A.tapFresh(u, null).fresh, false);
+  assert.equal(A.tapFresh(u, "2026-11-21T10:00:05.000Z").fresh, true);
+  assert.equal(A.MARK_DONE_WAIT_MS, 600_000);
+  // Wired: the phone fetches at once, holds the tap (apply false keeps it in waiting), asks for the second fetch, drops it
+  // after the wait, all before any card poke or tick; local mode does not wait.
+  const mc = readFileSync(new URL("../src/mailcards.ts", import.meta.url), "utf8");
+  assert.ok(mc.includes('if (DEVICE === "phone") void syncVault();'));
+  assert.ok(mc.includes('if (tap && DEVICE === "phone" && !s.local && action === AI_MSG_DONE.action) {'));
+  assert.ok(mc.includes("if (f.fetch) void syncVault();") && mc.includes("if (!f.fresh) return false;"));
+  assert.ok(mc.includes("if (Date.now() - tap.at > MARK_DONE_WAIT_MS) return true;"));
+  assert.ok(mc.includes("w.forEach((a) => { if (!apply(a.id, a.action, a.tap)) waiting.push(a); });"), "a held tap stays queued");
+  const ap = mc.slice(mc.indexOf("function apply("));
+  assert.ok(ap.indexOf("if (!f.fresh) return false;") < ap.indexOf("pokeCardsAfterSave();"), "no card poke while it waits");
+  assert.ok(ap.indexOf("if (!f.fresh) return false;") < ap.indexOf("markDoneFor(m, todoIn(s, m.task)"), "checked before any tick");
+});
+ok("the card carries the task; the same words for another task are another message; a merge keeps it", () => {
+  const st = { aiMsgs: [msg("m1", 1, { task: "t1" })] };
+  assert.equal(A.aiCardsNow(st, now).msgs[0].task, "t1");
+  assert.equal(A.aiMsgOfCard(st.aiMsgs, A.aiMsgCardId({ id: "m1" }))?.task, "t1");
+  assert.equal(A.aiMsgOfCard(st.aiMsgs, "c:msg-nope"), null);
+  const m = { from: "Claude Code", text: "Fixed the fictional bug" };
+  assert.ok(A.sameAiMsg(st.aiMsgs, { ...m, task: "t1" }, now));
+  assert.equal(A.sameAiMsg(st.aiMsgs, { ...m, task: "t2" }, now), null);
+  assert.equal(A.sameAiMsg(st.aiMsgs, m, now), null);
+  const merged = A.mergeAiMsgs([msg("m1", 1, { task: "t1", seen: true })], st.aiMsgs)!;
+  assert.deepEqual([merged[0].task, merged[0].seen], ["t1", true]);
+});
+ok("Mark done is wired in: the card asks markDoneOk, the click checks again, ticks, then dismisses; the Mac passes its switches", () => {
+  const mc = src("src/mailcards.ts"), ps = src("src/ps.ts");
+  assert.ok(mc.includes("markDoneOk(todoIn(s, c.task), doneScopes())") && mc.includes("{ markDone: true }"));
+  assert.ok(mc.includes("action === AI_MSG_DONE.action") && mc.includes("setTodoDone(task, true).then"));
+  assert.ok(/startMailCards\(psPost, undefined, \(\) => \{ const a = psSettings\?\.taskApi; return a\?\.on \? cleanScopes\(a\.scopes\) : \{ done: false/.test(ps), "the Mac: its switches now, the AI task API off or none known means no button");
+  assert.ok(src("src/gos/bridge.ts").includes("startMailCards(card, (at) =>") && !/startMailCards\(card, [^\n]*doneScopes/.test(src("src/gos/bridge.ts")), "the phone: no switches, the send time check");
+  assert.ok(!/[\u2013\u2014]/.test(mc), "no en or em dashes");
+});
+
 console.log(`${n} passed`);

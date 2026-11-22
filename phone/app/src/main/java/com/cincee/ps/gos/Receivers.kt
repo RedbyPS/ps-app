@@ -39,6 +39,10 @@ object Receivers {
         val day = sp.getStringSet("day", emptySet())!!
         day.forEach { s -> runCatching { JSONObject(s) }.getOrNull()?.takeIf { it.optString("type") == "dayAct" }?.let { WebHost.post(it) } }
         if (day.isNotEmpty()) sp.edit().remove("day").apply()
+        // PS 1.74 Mark done on an AI message tapped while the page slept (MarkDone.kt): the page checks it again, then ticks.
+        val done = sp.getStringSet("done", emptySet())!!
+        done.forEach { WebHost.post(JSONObject().put("type", "cardAction").put("id", it).put("action", MarkDone.ACTION)) }
+        if (done.isNotEmpty()) sp.edit().remove("done").apply()
         if (ids.isEmpty() && reminds.isEmpty()) return
         ids.forEach { WebHost.post(JSONObject().put("type", "cardAction").put("id", it).put("action", "dismiss")) }
         reminds.forEach { r ->
@@ -73,6 +77,10 @@ object Receivers {
                 "dismiss" ->
                     if (WebHost.unlocked) WebHost.post(JSONObject().put("type", "cardAction").put("id", id).put("action", "dismiss"))
                     else sp.edit().putStringSet("dismiss", sp.getStringSet("dismiss", emptySet())!! + id).apply()
+                // PS 1.74 Mark done on an AI message (MarkDone.kt): the page ticks the task and dismisses the message everywhere.
+                MarkDone.ACTION ->
+                    if (WebHost.unlocked) WebHost.post(JSONObject().put("type", "cardAction").put("id", id).put("action", MarkDone.ACTION))
+                    else sp.edit().putStringSet("done", MarkDone.keep(sp.getStringSet("done", emptySet())!!, id)).apply()
                 // Remind me in 15 mins: saved in the vault (so the Mac hides it too) and back here on time.
                 "remind" -> {
                     val until = System.currentTimeMillis() + Reminds.NOTIFICATION_MINS * 60_000

@@ -13,7 +13,11 @@
 // plain "Claude finished" card for that same chat around the same time is not shown (messagedChat). A chat that sends
 // no message keeps its plain card. Settings picks: AI messages (that), Plain finished cards (messages are not shown), or
 // Off (neither). Text only: every word is shown as plain text, never as HTML. Pure: no React, no DOM.
-import type { AiNotes, AiMsg, ChatDone, Settings } from "./model";
+//
+// PS 1.74 (Jan, 21 Nov 2026, for his AI coach: "the card then shows a Mark done button that ticks that task with one click"): a
+// message may name one task ({"task": "<id>"}). The Task API keeps it only while the "Tick tasks done" switch is on and the
+// task is open and within the AI's reach (core/taskapi.ts); the card then has Mark done (markDoneOk), and one click ticks it.
+import type { AiNotes, AiMsg, ChatDone, Settings, Todo } from "./model";
 import { CHAT_DONE, chatDoneCards } from "./chatdone.ts";
 import { dndHeldMs, type Dnd } from "./dnd.ts";
 
@@ -50,12 +54,14 @@ const lines = (s: string) => s.replace(/\r\n?/g, "\n").replace(/\t/g, " ").repla
 /** A chat id as each AI tool gives it: letters, digits, - and _. */
 const chatId = (s: string) => s.replace(/[^\w-]/g, "").slice(0, AI_MSG.chatMax);
 
-export const AI_MSG_FIELDS = ["from", "text", "detail", "chat"] as const;
+export const AI_MSG_FIELDS = ["from", "text", "detail", "chat", "task"] as const;
+/** A task id as the Task API gives it (core/taskapi.ts ID_RE). */
+const TASK_ID = /^[A-Za-z0-9-]{1,64}$/;
 export type AiMsgCheck = { msg: Omit<AiMsg, "id" | "at"> } | { field: string; message: string };
 /** The body as the API got it: text is needed, the rest optional. Too long is refused (never cut), so the AI knows. */
 export function checkAiMsg(b: Record<string, unknown>): AiMsgCheck {
   const str = (k: string) => (b[k] === undefined || b[k] === null ? "" : b[k]);
-  const from = str("from"), text = str("text"), detail = str("detail"), chat = str("chat");
+  const from = str("from"), text = str("text"), detail = str("detail"), chat = str("chat"), task = str("task");
   if (typeof text !== "string" || !line(text)) return { field: "text", message: `text is needed: the message itself, 1 to ${AI_MSG.textMax} characters (one or two plain sentences).` };
   if (line(text).length > AI_MSG.textMax) return { field: "text", message: `text is over ${AI_MSG.textMax} characters. Keep it to one or two short sentences; put the rest in detail.` };
   if (typeof from !== "string") return { field: "from", message: "from must be text: who the message is from, like \"Claude Code\"." };
@@ -63,9 +69,10 @@ export function checkAiMsg(b: Record<string, unknown>): AiMsgCheck {
   if (typeof detail !== "string") return { field: "detail", message: "detail must be text." };
   if (lines(detail).length > AI_MSG.detailMax) return { field: "detail", message: `detail is over ${AI_MSG.detailMax} characters. Keep it short: what changed and anything the person must do.` };
   if (typeof chat !== "string") return { field: "chat", message: "chat must be text: this chat's id, or leave it out." };
+  if (typeof task !== "string" || (task !== "" && !TASK_ID.test(task))) return { field: "task", message: "task must be a task id from GET /v1/tasks, or leave it out." };
   const c = chatId(chat);
   const d = lines(detail);
-  return { msg: { from: line(from) || "AI", text: line(text), ...(d ? { detail: d } : {}), ...(c ? { chat: c } : {}) } };
+  return { msg: { from: line(from) || "AI", text: line(text), ...(d ? { detail: d } : {}), ...(c ? { chat: c } : {}), ...(task ? { task } : {}) } };
 }
 
 /** A new message's id: 12 letters and digits. */
@@ -85,7 +92,7 @@ export function aiMsgWait(list: AiMsg[] | undefined, now: number): number {
 /** The same message sent again (same chat, or both without one, the same words, a moment apart): the one already kept. */
 export function sameAiMsg(list: AiMsg[] | undefined, m: Omit<AiMsg, "id" | "at">, now: number): AiMsg | null {
   return (list || []).find((x) => (x.chat || "") === (m.chat || "") && x.from === m.from && x.text === m.text && (x.detail || "") === (m.detail || "")
-    && Math.abs(now - Date.parse(x.at)) < AI_MSG.again) ?? null;
+    && (x.task || "") === (m.task || "") && Math.abs(now - Date.parse(x.at)) < AI_MSG.again) ?? null;
 }
 
 const shownFrom = (x: AiMsg) => Math.max(Date.parse(x.at), x.remindAt ? Date.parse(x.remindAt) || 0 : 0);
@@ -127,9 +134,46 @@ export function aiCardsNow(st: Pick<Settings, "chatDone" | "aiMsgs" | "aiNotes" 
   const shown = mode === "messages" ? msgs.filter((x) => !x.seen && !reminding(x, now) && upFor(x, now, st.dnd) < AI_MSG.stay) : [];
   return {
     chats,
-    msgs: shown.map((x) => ({ id: aiMsgCardId(x), from: x.from, text: x.text, detail: x.detail, at: x.at, rev: `${x.at}|${x.remindAt || ""}`, fresh: upFor(x, now, st.dnd) < 180_000 })),
+    msgs: shown.map((x) => ({ id: aiMsgCardId(x), from: x.from, text: x.text, detail: x.detail, task: x.task, at: x.at, rev: `${x.at}|${x.remindAt || ""}`, fresh: upFor(x, now, st.dnd) < 180_000 })),
   };
 }
+
+// ---------- Mark done (PS 1.74) ----------
+/** The switches Mark done looks at: the AI task API's on this Mac (core/taskapi.ts cleanScopes). */
+export type MarkDoneScopes = { done: boolean; inbox: boolean; lists: boolean };
+/** May this message's Mark done tick its task right now? Only a task that is still in the list and open. `sc`: the Mac's
+ *  switches now ("Tick tasks done" on, and the AI Inbox or All lists switch for where the task is), so a switch turned off
+ *  after the message came takes the button away. null: a device without those switches (the phone), where the Task API's
+ *  own check when the message came stands (it keeps a task only while the switch is on). */
+export function markDoneOk(todo: Pick<Todo, "done" | "clearedAt" | "aiInbox"> | null | undefined, sc: MarkDoneScopes | null): boolean {
+  if (!todo || todo.done || todo.clearedAt) return false;
+  if (!sc) return true;
+  return sc.done && (todo.aiInbox === true ? sc.inbox : sc.lists);
+}
+/** May a Mark done click (or a phone tap, maybe sent late) on this message tick its task now? Never once the message is
+ *  dismissed: a tap queued on the phone after the Mac's Mark done must not tick again a task the person reopened since. */
+export function markDoneFor(m: Pick<AiMsg, "task" | "seen"> | null | undefined, todo: Pick<Todo, "done" | "clearedAt" | "aiInbox"> | null | undefined, sc: MarkDoneScopes | null): boolean {
+  return !!m?.task && !m.seen && markDoneOk(todo, sc);
+}
+/** A phone tap on Mark done waits until the phone has a copy fetched after the tap (break-it 1.74): its stored copy can be
+ *  from before the Mac's Mark done and a reopen, and must not tick the task again. Fetches never overlap and each one ends
+ *  with a new lastSync, so the SECOND new lastSync after the tap comes from a fetch that started after it (the first may be
+ *  a fetch already running at the tap, or the stored copy shown on unlock). The device clock is never compared. Older than
+ *  MARK_DONE_WAIT_MS: dropped. */
+export const MARK_DONE_WAIT_MS = 10 * 60_000;
+export type TapWait = { at: number; last: string | null; seen: number };
+export const tapWait = (at: number, lastSync: string | null | undefined): TapWait => ({ at, last: lastSync ?? null, seen: 0 });
+/** Counts a new lastSync (in place). fresh: the tap may be applied now. fetch: ask for the second fetch now. */
+export function tapFresh(w: TapWait, lastSync: string | null | undefined): { fresh: boolean; fetch: boolean } {
+  const now = lastSync ?? null;
+  let fetch = false;
+  if (now && now !== w.last) { w.last = now; w.seen++; fetch = w.seen === 1; }
+  return { fresh: w.seen >= 2, fetch };
+}
+/** The message a card is showing (its card id), or null. */
+export const aiMsgOfCard = (list: AiMsg[] | undefined, id: string): AiMsg | null => (list || []).find((x) => aiMsgCardId(x) === id) ?? null;
+/** The card's button, and the action it sends back (mailcards.ts, ps-mac AiMessageCard.swift, ps-gos Notifier.kt). */
+export const AI_MSG_DONE = { label: "Mark done", action: "done" } as const;
 
 /** The list with one message dismissed, or reminded for `mins` minutes (1 minute to 4 hours). null: no such card. */
 export function aiMsgAnswer(list: AiMsg[] | undefined, id: string, action: "dismiss" | number, now = Date.now()): AiMsg[] | null {
