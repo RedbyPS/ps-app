@@ -23,6 +23,7 @@ import { openChkScreen } from "../chkscreen";
 import { sfx } from "../ui/sfx";
 import { todayISO } from "../ui/kit";
 import { taskMapActions } from "./TaskMap";
+import { CheckEveryPicker } from "./IslandProgressSettings";
 import "./timeest.css";
 
 const reduced = () => typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -99,7 +100,7 @@ export function EstPicker({ value, onPick, compact }: { value: number | null; on
 
 /** The estimate from a task's right click menu: saved at once, with the same Undo as a new date. */
 export function setTaskEst(d: Doc<Todo>, m: number | null) {
-  void taskMapActions.update(d.id, { est: m, estBy: null } as Partial<Todo>);
+  void taskMapActions.update(d.id, { est: m, estBy: m === null ? "off" : null } as Partial<Todo>);   // PS 1.77: No time set picked stays none
 }
 
 // ---------- on the task ----------
@@ -109,7 +110,7 @@ export function EstBadge({ d }: { d: Doc<Todo> }) {
   const running = useTimeSel((v) => v.on && v.prefs.track && T.isRunning(v.live, d.id));
   const est = T.cleanEst(d.data.est);
   if (d.data.done || (!running && !(on && est))) return null;
-  const tip = [on && est ? `${T.TE_WORDS.estimate}: ${T.estLabel(est)}` : "", running ? T.TE_WORDS.running : ""].filter(Boolean).join(". ");
+  const tip = [on && est ? `${T.TE_WORDS.estimate}: ${T.estLabel(est)}${d.data.estBy === "past" ? `, ${T.TE_WORDS.learnedTip}` : ""}` : "", running ? T.TE_WORDS.running : ""].filter(Boolean).join(". ");
   return (
     <span className={`tm-due te-badge num${running ? " run" : ""}`} title={tip} aria-label={tip}>
       {running && <i className="te-dot" aria-hidden="true" />}
@@ -138,13 +139,17 @@ function useNow(on: boolean, ms: number): number {
 }
 
 /** Inside a task's Edit: the estimate (saved with Save), the usual time and the past times, and Start or Stop (at once). */
-export function EditTime({ d, title, est, setEst }: { d: Doc<Todo>; title: string; est: number | null; setEst: (m: number | null) => void }) {
+export function EditTime({ d, title, est, setEst, every, setEvery }: { d: Doc<Todo>; title: string; est: number | null; setEst: (m: number | null) => void;
+  /** PS 1.77 the task's island check-in interval (core/islandprogress.ts), saved with Save. */
+  every: number | null; setEvery: (m: number | null) => void }) {
   const v = timeView(useVaultSnap());
   const estOn = v.on && v.prefs.est, track = v.on && v.prefs.track;
   const running = track && T.isRunning(v.live, d.id);
   const now = useNow(running, 15_000);
-  const past = useMemo(() => (v.on ? T.pastTimes(v.done(), title || d.data.title, { id: d.id }) : []), [v, title, d.id, d.data.title]);
-  const usual = T.usualMin(past);
+  // PS 1.77: what PS learned from this task's real times (5 or more clean finishes), what it used and what it left out.
+  const learned = useMemo(() => (v.on ? T.learnedFor(v.done(), title || d.data.title, d.id) : { min: null, used: [], out: [] }), [v, title, d.id, d.data.title]);
+  const past = learned.used;
+  const own = T.estOwner(d.data) === "own";
   const sofar = running ? T.spentMin(v.live, d.id, now, v.away) : 0;
   if (!estOn && !track) return null;
   return (
@@ -155,15 +160,19 @@ export function EditTime({ d, title, est, setEst }: { d: Doc<Todo>; title: strin
           <EstPicker value={est} onPick={setEst} />
         </div>
       )}
-      {(past.length > 0 || track) && (
+      {track && <div className="te-edit-row"><CheckEveryPicker value={every} onPick={setEvery} label="te-label" rowCls="te-edit-cell" /></div>}
+      {(past.length > 0 || learned.out.length > 0 || track) && (
         <div className="te-edit-row te-facts">
-          {estOn && usual !== null && (
+          {estOn && learned.min !== null && (
             <span className="te-usual">
-              {T.TE_WORDS.usually(usual)}
-              {est !== usual && <button type="button" className="te-link" onClick={() => { sfx.click(); setEst(usual); }}>{T.TE_WORDS.set}</button>}
+              {T.TE_WORDS.learned(past.length, learned.min)}
+              {/* His own time wins; Learn it hands the task back to PS's learned time (saved at once, like Start). */}
+              {own && <button type="button" className="te-link" onClick={() => { sfx.click(); setEst(learned.min); void taskMapActions.update(d.id, { est: learned.min, estBy: "past" } as Partial<Todo>); }}>{T.TE_WORDS.learnIt}</button>}
             </span>
           )}
-          {past.length > 0 && <span className="te-past"><span className="te-label">{T.TE_WORDS.past}</span> <span className="num">{T.pastWords(past)}</span></span>}
+          {estOn && learned.min === null && past.length > 0 && <span className="te-usual">{T.TE_WORDS.learnsAfter(past.length)}</span>}
+          {past.length > 0 && <span className="te-past"><span className="te-label">{T.TE_WORDS.past}</span> <span className="num">{T.pastWords(past.slice(0, 8))}</span></span>}
+          {learned.out.length > 0 && <span className="te-past"><span className="te-label">{T.TE_WORDS.leftOut}</span> <span className="num">{T.outWords(learned.out.slice(0, 3))}</span></span>}
           {track && !d.data.done && (
             <span className="te-clock">
               {running && <span className="te-sofar num" aria-live="polite"><i className="te-dot" aria-hidden="true" />{T.TE_WORDS.spentSoFar(sofar)}</span>}
@@ -182,10 +191,11 @@ const useVaultSnap = () => useSyncExternalStore(vaultStore.subscribe, vaultStore
 /** PS 1.68: the estimate in the Add a task window's Advanced, the same picker as a task's Edit (Jan, 18 Nov 2026: adding a task
  *  offers what editing does). Left on No estimate, a name used before still gets its usual time when it is added. Only with
  *  estimates switched on. `row`: drawn as a label and a cell of the Advanced grid. */
-export function AddTime({ title, est, setEst, label, rowCls }: { title: string; est: number | null; setEst: (m: number | null) => void; label: string; rowCls: string }) {
+export function AddTime({ title, est, setEst, every, setEvery, label, rowCls }: { title: string; est: number | null; setEst: (m: number | null) => void;
+  every: number | null; setEvery: (m: number | null) => void; label: string; rowCls: string }) {
   const v = timeView(useVaultSnap());
   const estOn = v.on && v.prefs.est;
-  const usual = useMemo(() => (estOn && title.trim() ? T.usualMin(T.pastTimes(v.done(), title)) : null), [estOn, v, title]);
+  const usual = useMemo(() => (estOn && title.trim() ? T.learnedFor(v.done(), title).min : null), [estOn, v, title]);   // PS 1.77: 5 or more clean finishes
   if (!estOn) return null;
   return (
     <>
@@ -196,6 +206,7 @@ export function AddTime({ title, est, setEst, label, rowCls }: { title: string; 
           <span className="te-usual">{T.TE_WORDS.usually(usual)}<button type="button" className="te-link" onClick={() => { sfx.click(); setEst(usual); }}>{T.TE_WORDS.set}</button></span>
         )}
       </div>
+      {v.prefs.track && <CheckEveryPicker value={every} onPick={setEvery} label={label} rowCls={rowCls} />}
     </>
   );
 }

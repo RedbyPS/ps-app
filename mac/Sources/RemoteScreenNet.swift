@@ -1,9 +1,11 @@
 import CryptoKit
+import Darwin
 import Foundation
 import Network
 
 // Second Computer remote screen: the direct link (Network.framework). Same Wi-Fi, Ethernet or a Thunderbolt or USB-C cable
-// (Thunderbolt Bridge); never a relay, never a server, never the internet. The secondary listens only while it is a secondary
+// (Thunderbolt Bridge); the direct listener never takes a call from the internet. (PS 1.77: when the direct link cannot be made,
+// the same link runs through a relay both Macs dial out to, RemoteScreenRelay.swift; the listener here stays local only.) The secondary listens only while it is a secondary
 // with a paired primary and the feature is on; it advertises a name only a paired primary can recognise (RSName), accepts only
 // local addresses, and answers nothing until a signed hello from its paired primary checks out (RSHandshake). The primary looks
 // for exactly that name, tries the cable first when there is one, then any local path.
@@ -49,12 +51,12 @@ enum RSNet {
   }
 
   /// Reads whole frames from a connection into `buf` until `want` frames are there or the time is up.
-  static func readFrames(_ c: NWConnection, buf: Data, max: Int, timeout: Double, q: DispatchQueue, done: @escaping (Data?, Data) -> Void) {
+  static func readFrames(_ c: RSStream, buf: Data, max: Int, timeout: Double, q: DispatchQueue, done: @escaping (Data?, Data) -> Void) {
     var b = buf, finished = false
     let deadline = DispatchWorkItem { if !finished { finished = true; done(nil, b) } }
     q.asyncAfter(deadline: .now() + timeout, execute: deadline)
     func more() {
-      c.receive(minimumIncompleteLength: 1, maximumLength: 16 * 1024) { data, _, end, err in
+      c.receive { data, end, err in
         guard !finished else { return }
         if let data { b.append(data) }
         guard let frames = RSFrame.take(&b, max: max) else { finished = true; deadline.cancel(); done(nil, b); return }
@@ -63,12 +65,48 @@ enum RSNet {
           var rest = Data(); for x in frames.dropFirst() { rest.append(RSFrame.frame(x)) }; rest.append(b)
           finished = true; deadline.cancel(); done(f, rest); return
         }
-        if end || err != nil || b.count > max + 4 { finished = true; deadline.cancel(); done(nil, b); return }
+        if end || err || b.count > max + 4 { finished = true; deadline.cancel(); done(nil, b); return }
         more()
       }
     }
     more()
   }
+}
+
+/// The link's ordered, reliable part: a TCP connection on a direct link (RSTCPStream), or RSRelayPipe through the relay.
+protocol RSStream: AnyObject {
+  /// The next bytes there are (any amount), or the end, or an error. One call at a time.
+  func receive(_ f: @escaping (Data?, _ end: Bool, _ err: Bool) -> Void)
+  /// Bytes out, in order; `done` once they left (TCP) or arrived (the relay).
+  func send(_ d: Data, done: @escaping () -> Void)
+  func cancel()
+  /// The stream failed or closed (once).
+  var onDown: ((String) -> Void)? { get set }
+  /// How it goes, in plain words, for the state and the log: "Wi-Fi", "Ethernet", "cable", "this Mac", "relay".
+  var kindName: String { get }
+}
+
+final class RSTCPStream: RSStream {
+  let c: NWConnection
+  init(_ c: NWConnection) { self.c = c }
+  func receive(_ f: @escaping (Data?, Bool, Bool) -> Void) {
+    c.receive(minimumIncompleteLength: 1, maximumLength: 256 * 1024) { data, _, end, err in f(data, end, err != nil) }
+  }
+  func send(_ d: Data, done: @escaping () -> Void) { c.send(content: d, completion: .contentProcessed { _ in done() }) }
+  func cancel() { c.cancel() }
+  var onDown: ((String) -> Void)? {
+    didSet {
+      let f = onDown
+      c.stateUpdateHandler = { st in
+        switch st {
+        case .failed(let e): f?("link failed (\(RSLink.code(e)))")
+        case .cancelled: f?("link closed")
+        default: break
+        }
+      }
+    }
+  }
+  var kindName: String { RSLinkKind.of(c) }
 }
 
 /// One live session, on either Mac. Everything after the handshake is encrypted: TCP frames with an implicit counter, UDP packets
@@ -78,8 +116,19 @@ final class RSLink {
   let side: Side
   let peer: SecondPeer
   let keys: RSKeys
-  let tcp: NWConnection
+  /// The ordered part (handshake, input, commands): TCP on a direct link, the relay's reliable stream through the relay.
+  let stream: RSStream
+  /// The direct link's TCP connection (nil through the relay).
+  var tcp: NWConnection? { (stream as? RSTCPStream)?.c }
   private(set) var udp: NWConnection?
+  /// PS 1.77: through the relay, the sealed UDP packets go out here (the relay pipe), not on a UDP connection of their own.
+  private(set) var relayOut: RSDatagramOut?
+  /// True when the link goes through the relay (the 8 Mbps cap and the 1920 picture then apply).
+  var relayed: Bool { relayOut != nil }
+  /// Video bytes per UDP packet: 1300 direct, 1100 through the relay.
+  private(set) var chunk = RSPacket.chunk
+  /// "Wi-Fi", "Ethernet", "cable", "this Mac" or "relay".
+  var kindName: String { stream.kindName }
   private let q: DispatchQueue
   private let lock = NSLock()
   private let tcpOut: RSSealer, tcpIn: RSOpener, udpOut: RSSealer, udpIn: RSOpener
@@ -97,29 +146,29 @@ final class RSLink {
   /// Counters for the log and the feedback.
   private(set) var udpIn_ = 0, udpBad = 0, sentPackets = 0, sentBytes = 0
 
-  init(side: Side, peer: SecondPeer, keys: RSKeys, tcp: NWConnection, leftover: Data, q: DispatchQueue) {
-    self.side = side; self.peer = peer; self.keys = keys; self.tcp = tcp; self.q = q; buf = leftover
+  init(side: Side, peer: SecondPeer, keys: RSKeys, stream: RSStream, leftover: Data, q: DispatchQueue) {
+    self.side = side; self.peer = peer; self.keys = keys; self.stream = stream; self.q = q; buf = leftover
     let mine = side == .primary
     tcpOut = RSSealer(mine ? keys.p2sTcp : keys.s2pTcp); tcpIn = RSOpener(mine ? keys.s2pTcp : keys.p2sTcp)
     udpOut = RSSealer(mine ? keys.p2sUdp : keys.s2pUdp); udpIn = RSOpener(mine ? keys.s2pUdp : keys.p2sUdp)
   }
 
   func start() {
-    tcp.stateUpdateHandler = { [weak self] st in
-      switch st {
-      case .failed(let e): self?.close("link failed (\(RSLink.code(e)))")
-      case .cancelled: self?.close("link closed")
-      default: break
-      }
-    }
+    stream.onDown = { [weak self] why in self?.close(why) }
     q.async { [weak self] in self?.drain(); self?.receive() }
   }
 
+  /// Through the relay: the sealed packets go out through the pipe and come in from it, and the video goes that way from the
+  /// start (it is the same path as the controls, so there is nothing to prove first). Before start().
+  func useRelay(_ out: RSDatagramOut) {
+    lock.lock(); relayOut = out; udpReady = true; chunk = RSRelayRules.chunk; lock.unlock()
+  }
+
   private func receive() {
-    tcp.receive(minimumIncompleteLength: 1, maximumLength: 256 * 1024) { [weak self] data, _, end, err in
+    stream.receive { [weak self] data, end, err in
       guard let self else { return }
       if let data { self.buf.append(data); self.drain() }
-      if end || err != nil { self.close(end ? "the other Mac closed the link" : "link error"); return }
+      if end || err { self.close(end ? "the other Mac closed the link" : "link error"); return }
       if !self.isClosed { self.receive() }
     }
   }
@@ -141,10 +190,10 @@ final class RSLink {
     let f = RSFrame.frame(ct)
     tcpQueued += f.count
     // Sent while the lock is held, so the frames go out in counter order.
-    tcp.send(content: f, completion: .contentProcessed { [weak self] _ in
+    stream.send(f) { [weak self] in
       guard let self else { return }
       self.lock.lock(); self.tcpQueued -= f.count; self.lock.unlock()
-    })
+    }
     lock.unlock()
   }
   func sendJSON<T: Encodable>(_ t: RSCtl, _ v: T) { if let d = try? JSONEncoder().encode(v) { send(t, d) } }
@@ -179,12 +228,14 @@ final class RSLink {
 
   func sendUDP(_ bodies: [Data]) {
     lock.lock()
-    guard !closed, let u = udp else { lock.unlock(); return }
+    guard !closed, udp != nil || relayOut != nil else { lock.unlock(); return }
+    let u = udp, r = relayOut
     var out: [Data] = []; out.reserveCapacity(bodies.count)
     for b in bodies { if let p = udpOut.sealUDP(b, sid: keys.sid) { out.append(p) } }
     sentPackets += out.count; sentBytes += out.reduce(0) { $0 + $1.count }
     lock.unlock()
-    u.batch { for p in out { u.send(content: p, completion: .idempotent) } }
+    if let r { r.sendDatagrams(out); return }
+    if let u { u.batch { for p in out { u.send(content: p, completion: .idempotent) } } }
   }
 
   /// One encoded frame: over UDP in fragments when the primary proved its UDP path, else whole over TCP (skipped when TCP has
@@ -192,8 +243,8 @@ final class RSLink {
   @discardableResult
   func sendVideo(_ f: RSVideoFrame) -> Bool {
     let bytes = f.encode()
-    lock.lock(); let viaUdp = udpReady && udp != nil; let backlog = tcpQueued; lock.unlock()
-    if viaUdp { sendUDP(RSPacket.fragments(of: bytes, number: f.number)); return true }
+    lock.lock(); let viaUdp = udpReady && (udp != nil || relayOut != nil); let backlog = tcpQueued; let size = chunk; lock.unlock()
+    if viaUdp { sendUDP(RSPacket.fragments(of: bytes, number: f.number, chunk: size)); return true }
     if backlog > 2 * 1024 * 1024 && !f.keyframe { return false }
     send(.video, bytes)
     return true
@@ -204,8 +255,9 @@ final class RSLink {
     guard !closed else { lock.unlock(); return }
     closed = true
     let u = udp; udp = nil
+    let r = relayOut
     lock.unlock()
-    tcp.cancel(); u?.cancel()
+    stream.cancel(); u?.cancel(); r?.closeRelay()
     onClose(why)
   }
 
@@ -272,7 +324,14 @@ final class RSServer {
   private func accept(_ c: NWConnection) {
     guard RSNet.isLocal(c.endpoint) else { c.cancel(); return }   // never from outside this network
     c.start(queue: q)
-    RSNet.readFrames(c, buf: Data(), max: RSHandshake.maxHelloBytes, timeout: 3, q: q) { [weak self] f, rest in
+    accept(stream: RSTCPStream(c))
+  }
+
+  /// A session over any stream: the direct link's TCP connection, or the relay's pipe (PS 1.77: the second Mac dialled out to
+  /// the relay address in a signed offer from its own main Mac). The same signed hello, the same checks, the same silence
+  /// to anyone who does not prove they are the paired primary.
+  func accept(stream c: RSStream, relay: RSDatagramOut? = nil) {
+    RSNet.readFrames(c, buf: Data(), max: RSHandshake.maxHelloBytes, timeout: relay == nil ? 3 : 8, q: q) { [weak self] f, rest in
       guard let self else { c.cancel(); return }
       guard let f, let o = try? JSONSerialization.jsonObject(with: f), let env = SecondEnv(o) else { c.cancel(); return }
       switch RSHandshake.checkHello(env, identity: self.identity, nowMs: self.now()) {
@@ -284,9 +343,10 @@ final class RSServer {
         guard let ans = RSHandshake.answer(identity: self.identity, hello: env, eph: mine, nowMs: self.now(), app: self.app),
               let d = try? JSONSerialization.data(withJSONObject: ans.json),
               let keys = RSHandshake.keys(mine: mine, theirs: theirs, hello: env, answer: ans) else { c.cancel(); return }
-        c.send(content: RSFrame.frame(d), completion: .contentProcessed { _ in })
+        c.send(RSFrame.frame(d)) {}
         self.link?.close("replaced by a new session")
-        let l = RSLink(side: .secondary, peer: peer, keys: keys, tcp: c, leftover: rest, q: self.q)
+        let l = RSLink(side: .secondary, peer: peer, keys: keys, stream: c, leftover: rest, q: self.q)
+        if let relay { l.useRelay(relay); relay.onDatagram = { [weak l] p in _ = l?.openUDP(p) } }
         self.link = l
         self.onSession(l)
         // After the caller's own close handler (chained, never replaced): the listener forgets the session.
@@ -410,7 +470,7 @@ final class RSClient {
         guard !started else { return }
         started = true
         if let r = c.currentPath?.remoteEndpoint, !RSNet.isLocal(r) { c.cancel(); done(.failure(.network("not a local address"))); return }
-        self.handshake(c, done: done)
+        self.handshake(RSTCPStream(c), done: done)
       case .failed(let err): if !started { started = true; c.cancel(); done(.failure(.network(RSLink.code(err)))) }
       case .waiting(let err): if !started { started = true; c.cancel(); done(.failure(.network(RSLink.code(err)))) }
       default: break
@@ -420,12 +480,13 @@ final class RSClient {
     q.asyncAfter(deadline: .now() + (avoidWifi ? 1.2 : 3)) { if !started { started = true; c.cancel(); done(.failure(.network("timeout"))) } }
   }
 
-  private func handshake(_ c: NWConnection, done: @escaping (Result<RSLink, Fail>) -> Void) {
+  /// The signed hello and the check of the answer, over any stream (the direct link's TCP, or the relay's pipe).
+  func handshake(_ c: RSStream, relay: RSDatagramOut? = nil, done: @escaping (Result<RSLink, Fail>) -> Void) {
     let mine = Curve25519.KeyAgreement.PrivateKey()
     guard let hello = RSHandshake.hello(identity: identity, to: secondary.device, eph: mine, nowMs: now(), app: app),
           let d = try? JSONSerialization.data(withJSONObject: hello.json) else { c.cancel(); done(.failure(.refused("no key"))); return }
-    c.send(content: RSFrame.frame(d), completion: .contentProcessed { _ in })
-    RSNet.readFrames(c, buf: Data(), max: RSHandshake.maxHelloBytes, timeout: 3, q: q) { [weak self] f, rest in
+    c.send(RSFrame.frame(d)) {}
+    RSNet.readFrames(c, buf: Data(), max: RSHandshake.maxHelloBytes, timeout: relay == nil ? 3 : 8, q: q) { [weak self] f, rest in
       guard let self else { c.cancel(); return }
       // No answer: the secondary refused us (it never says why) or it is not PS.
       guard let f, let o = try? JSONSerialization.jsonObject(with: f), let env = SecondEnv(o) else { c.cancel(); done(.failure(.refused("no answer"))); return }
@@ -433,7 +494,8 @@ final class RSClient {
       case .failure(let w): c.cancel(); done(.failure(.refused(w.why)))
       case .success(let theirs):
         guard let keys = RSHandshake.keys(mine: mine, theirs: theirs, hello: hello, answer: env) else { c.cancel(); done(.failure(.refused("keys"))); return }
-        let l = RSLink(side: .primary, peer: self.secondary, keys: keys, tcp: c, leftover: rest, q: self.q)
+        let l = RSLink(side: .primary, peer: self.secondary, keys: keys, stream: c, leftover: rest, q: self.q)
+        if let relay { l.useRelay(relay); relay.onDatagram = { [weak l] p in _ = l?.openUDP(p) } }
         done(.success(l))
       }
     }
@@ -442,7 +504,7 @@ final class RSClient {
   /// The primary's UDP path to the secondary: the same address the TCP link reached, the secondary's UDP port. Sends hellos
   /// (encrypted, so only the session can open them) until the secondary says udpOK.
   static func openUDP(for l: RSLink, port: UInt16, q: DispatchQueue, loopback: Bool) {
-    guard let remote = l.tcp.currentPath?.remoteEndpoint, case let .hostPort(host, _) = remote, let p = NWEndpoint.Port(rawValue: port) else { return }
+    guard let remote = l.tcp?.currentPath?.remoteEndpoint, case let .hostPort(host, _) = remote, let p = NWEndpoint.Port(rawValue: port) else { return }
     let u = NWConnection(host: host, port: p, using: RSNet.udpParams(loopback: loopback))
     u.start(queue: q)
     l.attachUDP(u, receive: true)
@@ -454,5 +516,37 @@ final class RSClient {
       q.asyncAfter(deadline: .now() + 0.1, execute: hello)
     }
     hello()
+  }
+}
+
+/// How the link goes, for the state and the log (no names, no addresses). (Moved here from RemoteScreen.swift in PS 1.77,
+/// so the tests build with the link alone.)
+enum RSLinkKind {
+  static func of(_ c: NWConnection) -> String {
+    guard let p = c.currentPath else { return "unknown" }
+    if p.usesInterfaceType(.loopback) { return "this Mac" }
+    if p.availableInterfaces.first.map({ $0.name.hasPrefix("bridge") }) == true { return "cable" }
+    if p.usesInterfaceType(.wiredEthernet) { return "Ethernet" }
+    if p.usesInterfaceType(.wifi) { return "Wi-Fi" }
+    return "local network"
+  }
+
+  /// This Mac's private IPv4 addresses on Wi-Fi, Ethernet and Thunderbolt Bridge (for the heartbeat hint).
+  static func localAddresses() -> [String] {
+    var out: [String] = []
+    var ifa: UnsafeMutablePointer<ifaddrs>?
+    guard getifaddrs(&ifa) == 0, let first = ifa else { return [] }
+    defer { freeifaddrs(ifa) }
+    for p in sequence(first: first, next: { $0.pointee.ifa_next }) {
+      let i = p.pointee
+      guard let a = i.ifa_addr, a.pointee.sa_family == UInt8(AF_INET), i.ifa_flags & UInt32(IFF_UP) != 0, i.ifa_flags & UInt32(IFF_LOOPBACK) == 0 else { continue }
+      let name = String(cString: i.ifa_name)
+      guard name.hasPrefix("en") || name.hasPrefix("bridge") else { continue }
+      var host = [CChar](repeating: 0, count: Int(NI_MAXHOST))
+      guard getnameinfo(a, socklen_t(a.pointee.sa_len), &host, socklen_t(host.count), nil, 0, NI_NUMERICHOST) == 0 else { continue }
+      let ip = String(cString: host)
+      if RSNet.isLocal(.hostPort(host: NWEndpoint.Host(ip), port: 1)) { out.append(ip) }
+    }
+    return Array(out.prefix(6))
   }
 }

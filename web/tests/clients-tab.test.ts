@@ -42,6 +42,10 @@ const ops: ClientsOp[] = [
   { op: "saveTemplate", id: P, clientName: "Example Co", taskIds: [ID], today: "2026-11-22" },
   { op: "fromTemplate", id: P, tpl: ID, clientId: ID, today: "2026-11-22" },
   { op: "removeTemplate", id: ID },
+  // PS 1.77: the tab menu
+  { op: "unarchiveClient", id: ID },
+  { op: "deleteClient", id: ID },
+  { op: "clientSettings", id: ID, patch: { name: "Example Co", colour: "#7FB7F5", contactName: "Jo", email: null } },
 ];
 ok("every Clients op survives the trip to the main window unchanged", () => {
   for (const o of ops) assert.deepEqual(cleanClientsOp(travel(o)), o, o.op);
@@ -105,7 +109,8 @@ ok("every Clients save asks the relay first (nothing in Clients reaches vault.ts
   const a = src("../src/core/clientsact.ts");
   const saves = ["newClient", "renameClient", "orderClients", "removeClient", "newProject", "renameProject", "setProjectStatus", "setNowLine",
     "stageDone", "stageAdd", "stageEdit", "stageMove", "stageRemove", "checkAdd", "checkTick", "checkRemove", "saveNotes", "addClientTodo",
-    "editClientTodo", "tickClientTodo", "removeClientTodo", "saveTemplate", "projectFromTemplate", "removeTemplate"];
+    "editClientTodo", "tickClientTodo", "removeClientTodo", "saveTemplate", "projectFromTemplate", "removeTemplate",
+    "archiveClient", "unarchiveClient", "setClientSettings", "deleteClient"];   // PS 1.77: the tab menu
   const exported = [...a.matchAll(/^export (?:const|function|async function) (\w+)/gm)].map((m) => m[1]);
   for (const s of saves) {
     assert.ok(exported.includes(s), s);

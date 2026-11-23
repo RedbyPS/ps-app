@@ -5,8 +5,27 @@ import { useEffect, useRef, useState } from "react";
 
 type Live = {
   id: string; pointerId: number; touch: boolean; startY: number; startScroll: number; started: boolean;
-  scroller: HTMLElement | null; base: string[]; mids: number[]; step: number; from: number; to: number; x: number; y: number;
+  scroller: HTMLElement | null; base: string[]; mids: number[]; halves: number[]; step: number; from: number; to: number; onto: number | null; x: number; y: number;
 };
+
+/** How much of a row, round its middle, counts as ON it (PS 1.77): the middle half. Above or below that is between rows. */
+export const ONTO_BAND = 0.5;
+/**
+ * Where a dragged row would land. `mids` and `halves`: each row's middle and half height where it started; `centre`: the
+ * dragged row's middle now. Plain: `to` is its new index. With `canOnto`, a row whose middle half the dragged row is over
+ * (and that may be dropped onto) is `onto`: it stays where it is, the dragged row sits on it, and `to` puts the dragged
+ * row next to it on the side it came from.
+ */
+export function dragTarget(mids: number[], halves: number[], from: number, centre: number, canOnto?: (i: number) => boolean): { to: number; onto: number | null } {
+  let onto: number | null = null;
+  if (canOnto) for (let i = 0; i < mids.length; i++) {
+    if (i !== from && Math.abs(centre - mids[i]) <= halves[i] * ONTO_BAND && canOnto(i)) { onto = i; break; }
+  }
+  let to = 0;
+  mids.forEach((m, i) => { if (i !== from && i !== onto && m < centre) to++; });
+  if (onto !== null && onto < from) to++;
+  return { to, onto };
+}
 
 function scrollParent(el: HTMLElement | null): HTMLElement | null {
   for (let n = el?.parentElement; n; n = n.parentElement) {
@@ -16,15 +35,30 @@ function scrollParent(el: HTMLElement | null): HTMLElement | null {
   return null;
 }
 
-export type DragEnd = { id: string; next: string[]; moved: boolean; x: number; y: number };
+/** Each row's middle and half height where its layout puts it now, without the slide the drag gave it (its transform, read
+ *  as it is drawn, mid slide too). null when a row is missing (the list changed under the drag). */
+function livePlaces(rows: (HTMLElement | undefined)[]): { mids: number[]; halves: number[] } | null {
+  const mids: number[] = [], halves: number[] = [];
+  for (const el of rows) {
+    if (!el) return null;
+    const r = el.getBoundingClientRect(), tf = getComputedStyle(el).transform;
+    const ty = tf && tf !== "none" ? new DOMMatrixReadOnly(tf).m42 : 0;
+    mids.push(r.top + r.height / 2 - ty);
+    halves.push(r.height / 2);
+  }
+  return { mids, halves };
+}
+
+export type DragEnd = { id: string; next: string[]; moved: boolean; x: number; y: number; onto?: string };
 /** opts.onMove: the pointer while a row is dragged. opts.onEnd: called on every drop (even when the
  *  order did not change), instead of commit, with where the pointer was let go. opts.alone: a list
- *  of one row still drags (it can be let go somewhere else, see onEnd). */
-export function useDragOrder(ids: string[], commit: (ids: string[]) => void, opts: { onDrop?: () => void; onMove?: (x: number, y: number, id: string) => void; onEnd?: (e: DragEnd) => void; alone?: boolean } = {}) {
+ *  of one row still drags (it can be let go somewhere else, see onEnd). opts.canOnto (PS 1.77): which rows the dragged
+ *  row may be let go ON (the middle of the row); that row lights up (data-drop-on) and onEnd gets it as `onto`. */
+export function useDragOrder(ids: string[], commit: (ids: string[]) => void, opts: { onDrop?: () => void; onMove?: (x: number, y: number, id: string) => void; onEnd?: (e: DragEnd) => void; alone?: boolean; canOnto?: (over: string, dragged: string) => boolean } = {}) {
   const els = useRef(new Map<string, HTMLElement>());
   const live = useRef<Live | null>(null);
   const [dy, setDy] = useState(0);
-  const [drag, setDrag] = useState<{ id: string; from: number; to: number; step: number } | null>(null);
+  const [drag, setDrag] = useState<{ id: string; from: number; to: number; step: number; onto: string | null } | null>(null);
   const [pending, setPending] = useState<string[] | null>(null);
   const cb = useRef({ commit, opts });
   cb.current = { commit, opts };
@@ -51,14 +85,19 @@ export function useDragOrder(ids: string[], commit: (ids: string[]) => void, opt
         document.body.classList.add("is-dragging");
       }
       e.preventDefault();
-      const centre = l.mids[l.from] + d;
-      let to = 0;
-      l.mids.forEach((m, i) => { if (i !== l.from && m < centre) to++; });
+      // PS 1.77: where the rows sit now, not only where they sat at the press. On the phone a long pressed row is a little
+      // taller for a moment while it lifts, so the press time places were off by up to 17px (src/gos/touch.ts).
+      const now = livePlaces(l.base.map((x) => els.current.get(x)));
+      const mids = now?.mids ?? l.mids, halves = now?.halves ?? l.halves;
+      const centre = mids[l.from] + d;
+      const can = cb.current.opts.canOnto;
+      const { to, onto } = dragTarget(mids, halves, l.from, centre, can ? (i) => can(l.base[i], l.id) : undefined);
       l.to = to;
+      l.onto = onto;
       l.x = e.clientX; l.y = e.clientY;
       cb.current.opts.onMove?.(e.clientX, e.clientY, l.id);
       setDy(d);
-      setDrag({ id: l.id, from: l.from, to, step: l.step });
+      setDrag({ id: l.id, from: l.from, to, step: l.step, onto: onto === null ? null : l.base[onto] });
     };
     const end = (e: PointerEvent) => {
       const l = live.current;
@@ -73,7 +112,8 @@ export function useDragOrder(ids: string[], commit: (ids: string[]) => void, opt
         const next = l.base.filter((x) => x !== l.id);
         next.splice(l.to, 0, l.id);
         if (l.to !== l.from) setPending(next);
-        if (cb.current.opts.onEnd) cb.current.opts.onEnd({ id: l.id, next, moved: l.to !== l.from, x: e.clientX, y: e.clientY });
+        const onto = l.onto === null ? undefined : l.base[l.onto];
+        if (cb.current.opts.onEnd) cb.current.opts.onEnd({ id: l.id, next, moved: l.to !== l.from, x: e.clientX, y: e.clientY, ...(onto ? { onto } : {}) });
         else if (l.to !== l.from) cb.current.commit(next);
         cb.current.opts.onDrop?.();
       }
@@ -102,6 +142,7 @@ export function useDragOrder(ids: string[], commit: (ids: string[]) => void, opt
     return {
       ref: (el: HTMLElement | null) => { if (el) els.current.set(id, el); else els.current.delete(id); },
       "data-dragging": dragging || undefined,
+      "data-drop-on": (drag && drag.onto === id) || undefined,
       style: dragging ? { transform: `translateY(${dy}px)`, zIndex: 5, transition: "none" }
         : drag ? { transform: `translateY(${shift}px)` } : undefined,
       onPointerDown: (e: React.PointerEvent) => {
@@ -119,7 +160,7 @@ export function useDragOrder(ids: string[], commit: (ids: string[]) => void, opt
         live.current = {
           id, pointerId: e.pointerId, touch, startY: e.clientY, started: false, scroller,
           startScroll: scroller ? scroller.scrollTop : window.scrollY,
-          base: [...view], mids: rs.map((r) => r.top + r.height / 2), step: me.height + gap, from: i, to: i, x: e.clientX, y: e.clientY,
+          base: [...view], mids: rs.map((r) => r.top + r.height / 2), halves: rs.map((r) => r.height / 2), step: me.height + gap, from: i, to: i, onto: null, x: e.clientX, y: e.clientY,
         };
       },
     };

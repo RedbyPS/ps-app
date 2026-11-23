@@ -38,8 +38,8 @@ const mins = (hm: string) => { const [h, m] = hm.split(":").map(Number); return 
 
 // ---------- the words (every one for the developer's approval) ----------
 export const TE_WORDS = {
-  estimate: "Estimate",
-  noEstimate: "No estimate",
+  estimate: "Expected time",      // PS 1.77 (the developer: "expected time"); was "Estimate"
+  noEstimate: "No time set",      // PS 1.77; was "No estimate"
   other: "Other",
   typeHint: "Type it, like 45 or 1h 30",
   set: "Set",
@@ -47,7 +47,15 @@ export const TE_WORDS = {
   stop: "Stop",
   running: "Timing",
   usually: (m: number) => `Usually takes about ${estLabel(m)}`,
-  past: "Past times",
+  past: "Recent times",                   // PS 1.77; was "Past times"
+  // PS 1.77 learning from real times (learnFrom): every one waits for the developer's approval
+  learned: (n: number, m: number) => `Learned from your last ${n} times: ${estLabel(m)}`,
+  learnsAfter: (n: number) => `PS learns the expected time after ${LEARN.need} times (${n} so far)`,
+  learnIt: "Learn it",
+  leftOut: "Left out",
+  quick: "too quick",
+  far: "far from the rest",
+  learnedTip: "learned from your times",
   spentSoFar: (m: number) => `${estLabel(Math.max(1, m))} so far`,
   overload: (planned: number, free: number) => `You've planned ${hoursWords(planned)} with ${hoursWords(free)} free`,
   rethink: "Rethink",
@@ -63,7 +71,9 @@ export const TE_WORDS = {
 } as const;
 
 // ---------- the estimate ----------
-export const EST_CHOICES = [15, 30, 60, 120] as const;
+/** The quick picks (PS 1.77, the developer 23 Nov 2026: "10 min, 20 min, 30 min, 45 min, 1 h, 2 h, 5 h", and a box to type any time).
+ *  Before 1.77: 15 min, 30 min, 1 h, 2 h. A stored 15 still shows, as a typed time. */
+export const EST_CHOICES = [10, 20, 30, 45, 60, 120, 300] as const;
 export const EST_MAX = 24 * 60;
 /** A stored estimate: whole minutes from 1 to 24 hours, anything else is none. */
 export function cleanEst(v: unknown): number | null {
@@ -263,6 +273,11 @@ export function stopClock(l: TLive, id: string, now: number): TLive | null {
 /** The minutes a task took this round: its spans and the Pomodoro work done on it, without AFK breaks and Pomodoro breaks,
  *  plus any time carried over from an untick. Spans still running count up to `now`. */
 export function spentMin(l: TLive, id: string, now: number, away: Span[]): number {
+  return Math.max(0, Math.round(spentMs(l, id, now, away) / 60_000));
+}
+/** The same in milliseconds (PS 1.77, the island's progress check-ins and task timers, core/islandprogress.ts): the island counts
+ *  on from it by itself, so it must not jump by the rounding each time the page sends it. Carried minutes count as whole minutes. */
+export function spentMs(l: TLive, id: string, now: number, away: Span[]): number {
   const end = l.end[id] ?? 0;
   const own = afterEnd(l.run[id]?.sp ?? [], end).map(([s, e]): Span => [s, e === 0 ? now : Math.min(e, now)]);
   const pieces = Object.values(l.pomo).filter((p) => p[0] > end && p[0] < now);
@@ -270,7 +285,12 @@ export function spentMin(l: TLive, id: string, now: number, away: Span[]): numbe
   const off = [...away, ...pieces.filter((p) => p[2]).map((p): Span => [p[0], p[1]])];
   const ms = spanTotal(work) - overlapMs(work, off);
   const carry = l.carry[id] && l.carry[id][1] > end ? l.carry[id][0] : 0;
-  return Math.max(0, Math.round(ms / 60_000) + carry);
+  return Math.max(0, ms + carry * 60_000);
+}
+/** When this round of a task began: its first span since it was last finished (null: never started this round). */
+export function roundStart(l: TLive, id: string): number | null {
+  const own = afterEnd(l.run[id]?.sp ?? [], l.end[id] ?? 0);
+  return own.length ? Math.min(...own.map(([s]) => s)) : null;
 }
 
 /** The tick: the round's minutes are worked out, the clock is cleared and the finish is marked. `minutes` null: nothing was timed
@@ -446,13 +466,19 @@ export function allDone(months: Iterable<TMonth>): (TDone & { id: string })[] {
 }
 /** The past times of tasks with this name (the same task's earlier rounds count too), newest first, at most `n`. Same name first;
  *  only when there is none, the most alike very similar name. */
+/** Each title's key, worked out once and kept (titles repeat a lot; PS 1.77 relearns every open task after a finish). */
+const keyMemo = new Map<string, string>();
+function memoKey(t: string): string {
+  let v = keyMemo.get(t);
+  if (v === undefined) { if (keyMemo.size > 5000) keyMemo.clear(); v = nameKey(t); keyMemo.set(t, v); }
+  return v;
+}
 export function pastTimes(done: (TDone & { id: string })[], title: string, o: { n?: number; id?: string } = {}): number[] {
   const n = o.n ?? 6, key = nameKey(title);
   if (!key) return [];
   // Runs on every new task (core/actions.ts addTodo, on the main thread) over up to 24 months of finishes: each title's key is
   // worked out once, and each distinct name is compared once (not twice per finish, as before 17 Nov).
-  const keyOf = new Map<string, string>();
-  const k = (t: string) => { let v = keyOf.get(t); if (v === undefined) { v = nameKey(t); keyOf.set(t, v); } return v; };
+  const k = memoKey;
   const exact = done.filter((d) => (o.id && d.id === o.id) || k(d.n) === key);
   if (exact.length) return exact.slice(0, n).map((d) => d.m);
   let best = 0, bestKey = "";
@@ -475,6 +501,64 @@ export function usualMin(times: number[]): number | null {
   const step = mid < 120 ? 5 : mid < 240 ? 10 : 15;
   return Math.max(5, Math.round(mid / step) * step);
 }
+// ---------- learning from how long a task really took (PS 1.77, the developer, 23 Nov 2026) ----------
+// "after lets say 5 times of you completing the same task, it will say the expected time on the task which is the most common/
+// average time you usually complete that same task. Also ignore abnormalies ... if you tick it in 2 mins then ignore that, pick
+// the most accurate data."
+//  - quick: a finish under 2 minutes is a quick tick, not real work (left out).
+//  - far: a finish more than 3 times the middle of the recent ones, or under a third of it, is far from the rest (left out). A
+//    ratio, not the IQR fence: task times spread by ratio (30 to 45 minutes, sometimes an hour), and with only 5 to 10 finishes
+//    the quartiles are too shaky (the fence then drops ordinary times or keeps the 5 hour one). Middle x 3 keeps every normal
+//    day and drops the 5 hour day of a 30 to 45 minute task; middle / 3 drops a 10 minute rush of a 40 minute task.
+//  - Then the newest 20 clean finishes; with at least 5 of them, the expected time is their middle, rounded as usualMin does.
+//  - Fewer than 5 clean finishes: no learned time at all.
+export const LEARN = { need: 5, keep: 20, look: 60, quickMin: 2, far: 3 } as const;
+export interface LeftOut { m: number; why: "quick" | "far" }
+export interface Learned { min: number | null; used: number[]; out: LeftOut[] }
+const middle = (l: number[]) => { const x = [...l].sort((a, b) => a - b); return x.length % 2 ? x[(x.length - 1) / 2] : (x[x.length / 2 - 1] + x[x.length / 2]) / 2; };
+/** The learned time from past finishes (minutes, newest first): what was used, what was left out and why (only the left out ones
+ *  among the finishes looked at, newest first, for Edit). */
+export function learnFrom(times: number[]): Learned {
+  const all = times.filter((x) => Number.isFinite(x) && x > 0).slice(0, LEARN.look);
+  const real = all.filter((x) => x >= LEARN.quickMin);
+  if (!real.length) return { min: null, used: [], out: all.map((m) => ({ m, why: "quick" as const })) };
+  const mid = middle(real.slice(0, LEARN.keep));
+  const isFar = (x: number) => x > mid * LEARN.far || x < mid / LEARN.far;
+  const used: number[] = [], out: LeftOut[] = [];
+  for (const m of all) {
+    if (used.length >= LEARN.keep) break;
+    if (m < LEARN.quickMin) out.push({ m, why: "quick" });
+    else if (isFar(m)) out.push({ m, why: "far" });
+    else used.push(m);
+  }
+  return { min: used.length >= LEARN.need ? usualMin(used) : null, used, out };
+}
+/** The learned time for a task: its own earlier rounds and tasks with the same (or, with none, a very similar) name. */
+export const learnedFor = (done: (TDone & { id: string })[], title: string, id?: string): Learned => learnFrom(pastTimes(done, title, { n: LEARN.look, id }));
+
+/** Whose expected time a task has: "own" (picked or typed, or No time set picked: PS never touches it), "learned" (PS's, from real
+ *  times), or "none" yet (PS may learn one). */
+export function estOwner(t: Pick<Todo, "est" | "estBy">): "own" | "learned" | "none" {
+  if (t.estBy === "off") return "own";
+  if (t.estBy === "past") return cleanEst(t.est) ? "learned" : "none";
+  return cleanEst(t.est) ? "own" : "none";
+}
+/** The changes that bring each open task's learned time up to date: a new or changed learned time, or a learned time taken off
+ *  (fewer than 5 clean finishes, including old ones learned from a single time before 1.77). Own times are never touched. */
+export function relearn(tasks: { id: string; data: Pick<Todo, "title" | "est" | "estBy" | "done" | "example"> }[], done: (TDone & { id: string })[]): { id: string; est: number | null; estBy: "past" | null }[] {
+  const out: { id: string; est: number | null; estBy: "past" | null }[] = [];
+  for (const { id, data: t } of tasks) {
+    if (t.done || t.example || estOwner(t) === "own") continue;
+    const m = learnedFor(done, t.title, id).min;
+    const had = t.estBy === "past" ? cleanEst(t.est) : null;
+    if (m === had) continue;
+    out.push(m ? { id, est: m, estBy: "past" } : { id, est: null, estBy: null });
+  }
+  return out;
+}
+
+/** "2 min (too quick), 5 h (far from the rest)". */
+export const outWords = (l: LeftOut[]) => l.map((o) => `${estLabel(o.m)} (${o.why === "quick" ? TE_WORDS.quick : TE_WORDS.far})`).join(", ");
 /** "35, 50, 40 min" (newest first), or "1 h 10 min, 50 min" when any is an hour or more. */
 export function pastWords(times: number[]): string {
   if (!times.length) return "";

@@ -105,6 +105,18 @@ export function StageLine({ id, p, today, upright, say, popOpen }: {
     setEdit(n);
   };
 
+  // PS 1.77 (the developer, 23 Nov 2026): a new project starts with no stages, so the line starts as one plain invitation.
+  if (!n) {
+    return (
+      <div className={`clw-stl-wrap clw-stl-none${upright ? " up" : ""}`}>
+        <button type="button" className="clw-stl-first" onClick={() => void add()}>
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
+          <b>Add the first stage</b>
+          <span>No stages yet. Stages show where this project stands, named your way.</span>
+        </button>
+      </div>
+    );
+  }
   return (
     <div className={`clw-stl-wrap${upright ? " up" : ""}`}>
       <div className="clw-stl-top">

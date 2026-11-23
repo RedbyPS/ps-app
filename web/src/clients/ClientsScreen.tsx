@@ -6,14 +6,14 @@
 // or Signal, and nothing is ever sent to a client: 'Share with client' is only a placeholder for the next piece.
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ClientRec, Doc, Project, Todo } from "../core/model";
-import { allTodos, clientStatus, clientViews, type ClientView, type ProjectView } from "../core/select";
+import { allTodos, archivedClients, clientTabs, type ClientView, type ProjectView } from "../core/select";
 import { useVault, todayISO } from "../ui/kit";
 import {
-  colourOf, dayEndAt, dayWords, followCall, percentDone, projectTasks, reorder, stageLine, yourDayWords,
+  CLIENT_COLOURS, colourOf, dayEndAt, undoWindow, dayWords, followCall, percentDone, projectTasks, reorder, stageLine, yourDayWords,
 } from "../core/clientwork";
 import {
-  checkAdd, checkRemove, checkTick, editClientTodo, newClient, newProject, orderClients, projectFromTemplate, removeClient,
-  renameClient, renameProject, saveNotes, saveTemplate, setProjectStatus, templates, addClientTodo,
+  archiveClient, checkAdd, checkRemove, checkTick, deleteClient, editClientTodo, newClient, newProject, orderClients, projectFromTemplate,
+  renameClient, renameProject, saveNotes, saveTemplate, setClientSettings, setProjectStatus, templates, unarchiveClient, addClientTodo,
 } from "../core/clientsact";
 import { calEvents, dayRuleOf, endHmOf, landDayNow, nextCallOf, useLandTick } from "./clientsday";
 import { StageLine } from "./StageLine";
@@ -23,7 +23,6 @@ import "./clients.css";
 
 export { cwEscape };
 type Where = "mac" | "phone" | "web";
-const SHOWN = new Set(["client", "pending"]);
 const store = {
   get(k: string): string | null { try { return localStorage.getItem(k); } catch { return null; } },
   set(k: string, v: string) { try { localStorage.setItem(k, v); } catch { /* storage blocked: this run only */ } },
@@ -35,9 +34,23 @@ export function ClientsScreen({ onClose, where }: { onClose: () => void; where: 
   const [narrow, setNarrow] = useState(() => typeof window !== "undefined" && window.innerWidth < 760);
   useEffect(() => { const f = () => setNarrow(window.innerWidth < 760); window.addEventListener("resize", f); return () => window.removeEventListener("resize", f); }, []);
   const phone = where === "phone" || narrow;
-  const [msg, setMsg] = useState<{ t: string; n: number } | null>(null);
-  const say = (t: string) => setMsg((m) => ({ t, n: (m?.n ?? 0) + 1 }));
-  useEffect(() => { if (!msg) return; const h = window.setTimeout(() => setMsg(null), 4200); return () => window.clearTimeout(h); }, [msg]);
+  // A short line at the bottom; with `undo` it carries an Undo button and stays a little longer (PS 1.77).
+  const [msg, setMsg] = useState<{ t: string; n: number; undo?: () => void } | null>(null);
+  const say = (t: string, undo?: () => void) => setMsg((m) => ({ t, n: (m?.n ?? 0) + 1, undo }));
+  useEffect(() => { if (!msg) return; const h = window.setTimeout(() => setMsg(null), msg.undo ? undoWindow : 4200); return () => window.clearTimeout(h); }, [msg]);
+  // PS 1.77 Delete: the tab goes at once, the delete itself waits out its Undo (core/clienttag.ts undoWindow). Closing Clients
+  // before then deletes straight away, as the Undo is gone with the screen.
+  const [gone, setGone] = useState<ReadonlySet<string>>(new Set());
+  const waiting = useRef(new Map<string, number>());
+  const deleteLater = (id: string, name: string) => {
+    setGone((g) => new Set(g).add(id));
+    const back = () => setGone((g) => { const n = new Set(g); n.delete(id); return n; });
+    // Once sent it stays hidden: the client is gone, and on the Tab list the newest copy arrives a moment later.
+    const h = window.setTimeout(() => { waiting.current.delete(id); void deleteClient(id); }, undoWindow);
+    waiting.current.set(id, h);
+    say(`${name} deleted.`, () => { window.clearTimeout(h); waiting.current.delete(id); back(); });
+  };
+  useEffect(() => () => { for (const [id, h] of waiting.current) { window.clearTimeout(h); void deleteClient(id); } waiting.current.clear(); }, []);
 
   // Esc: the top popover first, never Clients and a popover in one press.
   useEffect(() => {
@@ -46,7 +59,8 @@ export function ClientsScreen({ onClose, where }: { onClose: () => void; where: 
     return () => window.removeEventListener("keydown", f, true);
   }, []);
 
-  const clients = useMemo(() => clientViews(s).filter((c) => c.client && SHOWN.has(clientStatus(c))), [s]);
+  const clients = useMemo(() => clientTabs(s).filter((c) => !gone.has(c.client!.id)), [s, gone]);
+  const archived = useMemo(() => archivedClients(s), [s]);
   const [sel, setSel] = useState<string | null>(() => store.get("ps-cw-client"));
   const cur = clients.find((c) => c.client!.id === sel) ?? clients[0] ?? null;
   const pick = (id: string) => { setSel(id); store.set("ps-cw-client", id); };
@@ -69,23 +83,35 @@ export function ClientsScreen({ onClose, where }: { onClose: () => void; where: 
 
   return (
     <div className={`clw-screen${phone ? " clw-phone" : ""}`}>
-      <Tabs clients={clients} cur={cur} pick={pick} onClose={onClose} phone={phone} say={say} />
+      <Tabs clients={clients} archived={archived} cur={cur} pick={pick} onClose={onClose} phone={phone} say={say} deleteLater={deleteLater} />
       <div className="clw-main clw-scrl">
         {cur ? <ClientPage key={cur.client!.id} c={cur} day={day} todos={todos} phone={phone} say={say} where={where} />
           : <div className="clw-inner"><div className="clw-none"><b>No clients yet</b><span>Add your first client with + at the top.</span></div></div>}
       </div>
-      {msg && <div key={msg.n} className="clw-toast" role="status">{msg.t}</div>}
+      {msg && <div key={msg.n} className={`clw-toast${msg.undo ? " act" : ""}`} role="status">{msg.t}
+        {msg.undo && <button type="button" className="clw-undo" onClick={() => { msg.undo!(); setMsg(null); }}>Undo</button>}</div>}
     </div>
   );
 }
 
 // ---------- the client tabs ----------
-function Tabs({ clients, cur, pick, onClose, phone, say }: { clients: ClientView[]; cur: ClientView | null; pick: (id: string) => void; onClose: () => void; phone: boolean; say: (t: string) => void }) {
+// PS 1.77 (the developer, 23 Nov 2026): the x on a tab archives it (hides the tab; the client, its projects and tasks stay) with Undo.
+// It did nothing before: its question box sat inside the tab strip, which scrolls sideways and so cut off anything below
+// it. Every box of a tab now opens under the strip instead (TabPop). A right click on a tab (a long press on the phone)
+// opens Rename, Delete, Archive, Settings. Archived clients come back from Archived at the end of the strip.
+type TabPopKind = "menu" | "ask" | "settings" | "archived";
+type Say = (t: string, undo?: () => void) => void;
+function Tabs({ clients, archived, cur, pick, onClose, phone, say, deleteLater }: {
+  clients: ClientView[]; archived: Doc<ClientRec>[]; cur: ClientView | null; pick: (id: string) => void; onClose: () => void; phone: boolean; say: Say;
+  deleteLater: (id: string, name: string) => void;
+}) {
   const [ren, setRen] = useState<string | null>(null);
   const [name, setName] = useState("");
   const [drag, setDrag] = useState<number | null>(null);
   const [over, setOver] = useState<number | null>(null);
-  const [ask, setAsk] = useState<string | null>(null);
+  const [pop, setPop] = useState<{ kind: TabPopKind; id: string | null; left: number } | null>(null);
+  const bar = useRef<HTMLDivElement>(null), wrap = useRef<HTMLDivElement>(null);
+  const press = useRef<{ t: number; x: number; y: number } | null>(null), pressed = useRef(false);
   const startRen = (c: Doc<ClientRec>) => { setRen(c.id); setName(c.data.name); };
   const endRen = () => { if (ren && name.trim()) void renameClient(ren, name); setRen(null); };
   const add = async () => {
@@ -95,44 +121,123 @@ function Tabs({ clients, cur, pick, onClose, phone, say }: { clients: ClientView
     pick(id);
     setRen(id); setName("New client");
   };
+  /** Opens one of the tab boxes under the strip, lined up with `el` (layout px, so a scaled screen does not move it). */
+  const open = (kind: TabPopKind, id: string | null, el: HTMLElement | null) => {
+    const w = wrap.current, b = bar.current;
+    const at = el && w ? el.offsetLeft - w.scrollLeft : 8;
+    setPop({ kind, id, left: Math.max(8, Math.min(at, (b?.clientWidth ?? 600) - 300)) });
+  };
+  const archive = (d: Doc<ClientRec>) => { setPop(null); void archiveClient(d.id); say(`${d.data.name} archived. It is under Archived.`, () => void unarchiveClient(d.id)); };
+  const target = pop?.id ? clients.find((c) => c.client!.id === pop.id)?.client ?? null : null;
+  const tabEl = (id: string) => wrap.current?.querySelector<HTMLElement>(`[data-client="${CSS.escape(id)}"]`) ?? null;
   return (
-    <div className="clw-tabs">
-      <div className="clw-tabwrap">
+    <div className="clw-tabs" ref={bar}>
+      <div className="clw-tabwrap" ref={wrap}>
         {clients.map((c, i) => {
           const d = c.client!;
           const on = cur?.client!.id === d.id;
           return (
-            <div key={d.id} className={`clw-tab${on ? " on" : ""}${over === i ? " over" : ""}`} style={{ ["--c" as string]: colourOf(d.data, i) }}
+            <div key={d.id} data-client={d.id} className={`clw-tab${on ? " on" : ""}${over === i ? " over" : ""}${pop?.id === d.id ? " menu" : ""}`} style={{ ["--c" as string]: colourOf(d.data, i) }}
               draggable={ren !== d.id} onDragStart={(e) => { setDrag(i); e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", d.data.name); }}
               onDragOver={(e) => { if (drag !== null) { e.preventDefault(); setOver(i); } }} onDragLeave={() => setOver((o) => (o === i ? null : o))}
               onDragEnd={() => { setDrag(null); setOver(null); }}
               onDrop={(e) => { e.preventDefault(); if (drag !== null && drag !== i) void orderClients(reorder(clients.map((x) => x.client!.id), drag, i)); setDrag(null); setOver(null); }}
-              onClick={() => { if (on && phone) startRen(d); else pick(d.id); }} onDoubleClick={() => startRen(d)} title="Double click to rename. Drag to move.">
+              onContextMenu={(e) => { e.preventDefault(); if (ren !== d.id) open("menu", d.id, e.currentTarget); }}
+              // The phone has no right click: a long press opens the same menu (and the click after it does nothing).
+              onPointerDown={(e) => {
+                if (e.pointerType === "mouse") return;
+                const el = e.currentTarget;
+                pressed.current = false;
+                press.current = { x: e.clientX, y: e.clientY, t: window.setTimeout(() => { pressed.current = true; press.current = null; open("menu", d.id, el); }, 500) };
+              }}
+              onPointerMove={(e) => { const p = press.current; if (p && Math.hypot(e.clientX - p.x, e.clientY - p.y) > 10) { window.clearTimeout(p.t); press.current = null; } }}
+              onPointerUp={() => { if (press.current) { window.clearTimeout(press.current.t); press.current = null; } }}
+              onPointerCancel={() => { if (press.current) { window.clearTimeout(press.current.t); press.current = null; } }}
+              onClick={() => { if (pressed.current) { pressed.current = false; return; } if (on && phone) startRen(d); else pick(d.id); }} onDoubleClick={() => startRen(d)}
+              title="Double click to rename. Drag to move. Right click for more.">
               <span className="clw-mono">{initials(d.data.name)}</span>
               {ren === d.id
                 ? <input className="clw-ren" autoFocus value={name} onChange={(e) => setName(e.target.value)} onBlur={endRen} onFocus={(e) => e.target.select()}
                     onKeyDown={(e) => { if (e.key === "Enter") endRen(); if (e.key === "Escape") { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); setRen(null); } }} onClick={(e) => e.stopPropagation()} />
                 : <span className="nm">{d.data.name}</span>}
-              {on && ren !== d.id && <button type="button" className="clw-tabx" aria-label={`Remove ${d.data.name}`} onClick={(e) => { e.stopPropagation(); setAsk(d.id); }}>{I.x}</button>}
-              {ask === d.id && (
-                <Pop className="clw-menu l clw-confirm" onClose={() => setAsk(null)}>
-                  <div className="clw-small">Remove {d.data.name} from Clients? Its projects and tasks stay in your vault.</div>
-                  <div className="row">
-                    <button type="button" className="clw-btn sm" onClick={() => setAsk(null)}>Cancel</button>
-                    <button type="button" className="clw-btn sm danger" onClick={() => { setAsk(null); void removeClient(d.id).then(() => say(`${d.data.name} removed.`)); }}>Remove</button>
-                  </div>
-                </Pop>
-              )}
+              {on && ren !== d.id && <button type="button" className="clw-tabx" aria-label={`Archive ${d.data.name}`} title="Archive: hides this tab. Bring it back from Archived."
+                onClick={(e) => { e.stopPropagation(); archive(d); }}>{I.x}</button>}
             </div>
           );
         })}
         <button type="button" className="clw-newc" aria-label="New client" title="New client" onClick={() => void add()}>{I.plus}</button>
+        {archived.length > 0 && <button type="button" className={`clw-arch${pop?.kind === "archived" ? " on" : ""}`} title="Archived clients"
+          onClick={(e) => (pop?.kind === "archived" ? setPop(null) : open("archived", null, e.currentTarget))}>Archived<span className="n">{archived.length}</span></button>}
       </div>
       <div className="clw-right">
         {!phone && <span className="clw-esc">Esc</span>}
         <button type="button" className="clw-x" aria-label="Close Clients" onClick={onClose}>{I.x}</button>
       </div>
+      {pop?.kind === "menu" && target && (
+        <Pop className="clw-menu clw-tabmenu" style={{ left: pop.left }} onClose={() => setPop(null)}>
+          <div className="k">{target.data.name}</div>
+          <button type="button" className="clw-mi" autoFocus onClick={() => { setPop(null); pick(target.id); startRen(target); }}>{I.pen}Rename</button>
+          <button type="button" className="clw-mi danger" onClick={() => open("ask", target.id, tabEl(target.id))}>{I.trash}Delete</button>
+          <button type="button" className="clw-mi" onClick={() => archive(target)}>{I.box}Archive</button>
+          <button type="button" className="clw-mi" onClick={() => open("settings", target.id, tabEl(target.id))}>{I.gear}Settings</button>
+        </Pop>
+      )}
+      {pop?.kind === "ask" && target && (
+        <Pop className="clw-menu clw-tabmenu clw-confirm" style={{ left: pop.left }} onClose={() => setPop(null)}>
+          <div className="clw-small">Delete {target.data.name}? Its projects, project steps and notes go too. Tasks stay in your list.</div>
+          <div className="row">
+            <button type="button" className="clw-btn sm" autoFocus onClick={() => setPop(null)}>Cancel</button>
+            <button type="button" className="clw-btn sm danger" onClick={() => { setPop(null); deleteLater(target.id, target.data.name); }}>Delete</button>
+          </div>
+        </Pop>
+      )}
+      {pop?.kind === "settings" && target && (
+        <ClientSettingsPop key={target.id} d={target} index={clients.findIndex((c) => c.client!.id === target.id)} left={pop.left} onClose={() => setPop(null)} say={say} />
+      )}
+      {pop?.kind === "archived" && (
+        <Pop className="clw-menu clw-tabmenu" style={{ left: pop.left }} onClose={() => setPop(null)}>
+          <div className="k">Archived clients</div>
+          {archived.map((a) => (
+            <div key={a.id} className="clw-mi clw-archrow">
+              <span className="clw-mono sm">{initials(a.data.name)}</span><span className="nm">{a.data.name}</span>
+              <button type="button" className="clw-btn sm" onClick={() => { void unarchiveClient(a.id); setPop(null); pick(a.id); say(`${a.data.name} is back.`); }}>Bring back</button>
+            </div>
+          ))}
+          {!archived.length && <div className="clw-mi muted">No archived clients.</div>}
+        </Pop>
+      )}
     </div>
+  );
+}
+
+/** Settings in a tab's menu: the name, the tab colour, the contact and the email. Save keeps them; Esc or Cancel leaves them. */
+function ClientSettingsPop({ d, index, left, onClose, say }: { d: Doc<ClientRec>; index: number; left: number; onClose: () => void; say: Say }) {
+  const [name, setName] = useState(d.data.name);
+  const [colour, setColour] = useState<string | null>(d.data.colour ?? null);
+  const [contact, setContact] = useState(d.data.contactName ?? "");
+  const [email, setEmail] = useState(d.data.email ?? "");
+  const shown = colour ?? colourOf(d.data, Math.max(0, index));
+  const save = () => {
+    void setClientSettings(d.id, { name: name.trim() || d.data.name, colour, contactName: contact, email });
+    onClose();
+    say(`${name.trim() || d.data.name} saved.`);
+  };
+  return (
+    <Pop className="clw-spop clw-tabmenu clw-cset" style={{ left }} onClose={onClose}>
+      <div className="h">Settings</div>
+      <label>Name<input className="clw-inp" autoFocus value={name} onChange={(e) => setName(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") save(); }} /></label>
+      <div className="clw-cset-l">Colour</div>
+      <div className="clw-sw-row" role="radiogroup" aria-label="Colour">
+        {CLIENT_COLOURS.map((c) => <button key={c} type="button" role="radio" aria-checked={shown.toLowerCase() === c.toLowerCase()} aria-label={c}
+          className={`clw-swatch${shown.toLowerCase() === c.toLowerCase() ? " on" : ""}`} style={{ background: c }} onClick={() => setColour(c)} />)}
+      </div>
+      <label>Contact<input className="clw-inp" value={contact} onChange={(e) => setContact(e.target.value)} /></label>
+      <label>Email<input className="clw-inp" type="email" value={email} onChange={(e) => setEmail(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") save(); }} /></label>
+      <div className="row"><span className="clw-sp" />
+        <button type="button" className="clw-btn sm" onClick={onClose}>Cancel</button>
+        <button type="button" className="clw-btn sm pri" disabled={!name.trim()} onClick={save}>Save</button>
+      </div>
+    </Pop>
   );
 }
 
@@ -201,7 +306,7 @@ function Head({ c, pv, projects, pick, say, today, list }: { c: ClientView; pv: 
     if (!t) return;
     const id = await newProject(client.data.ws, t, today);
     setMenu(null); setName(""); pick(id);
-    say(`${t} added with three stages to start. Click a stage to change it.`);
+    say(`${t} added. Add its first stage on the line.`);
   };
   const fromTpl = async (tid: string) => {
     setMenu(null);
@@ -304,7 +409,8 @@ function Checklist({ id, pv }: { id: string; pv: ProjectView }) {
   const add = () => { const t = text.trim(); if (!t) return; void checkAdd(id, t); setText(""); };
   return (
     <div className="clw-col">
-      <div className="clw-col-h"><b>Checklist</b><span>{list.length ? `${done} of ${list.length}` : ""}</span></div>
+      <div className="clw-col-h"><b>PROJECT STEPS</b><span>{list.length ? `${done} of ${list.length}` : ""}</span></div>
+      <div className="clw-col-hint">Only here. Tick them off as the project moves.</div>
       <div className="clw-prog"><i style={{ width: `${list.length ? (done / list.length) * 100 : 0}%` }} /></div>
       <div className="clw-rows">
         {list.map((x) => (

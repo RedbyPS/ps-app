@@ -24,8 +24,26 @@ declare module "./model" {
     screenNumbers?: boolean;
     /** Remote screen, Hold key: hold it to see the other Mac. Missing: § ("section"). */
     screenHoldKey?: ScreenHold;
+    /** PS 1.77 Remote screen, From anywhere: when the direct link cannot be made, go through the relay. Missing: off. */
+    screenAnywhere?: boolean;
+    /** PS 1.77: the relay Worker's address (https). The relay KEY is never here: it is typed on each Mac and kept there. */
+    screenRelayUrl?: string;
   }
 }
+
+/** The relay's address as the Mac takes it: https only, no name or password in it, no query; "" for anything else. */
+export function relayUrlClean(u: unknown): string {
+  if (typeof u !== "string") return "";
+  const t = u.trim();
+  if (t.length > 200 || !t.startsWith("https://")) return "";
+  try {
+    const x = new URL(t);
+    if (x.protocol !== "https:" || !x.hostname || x.username || x.password || x.search || x.hash) return "";
+    return t.replace(/\/+$/, "");
+  } catch { return ""; }
+}
+/** A relay key the Mac takes: 32 to 256 plain characters, no spaces (ps-mac RSRelayRules.keyOK). */
+export function relayKeyOK(k: string): boolean { return k.length >= 32 && k.length <= 256 && /^[\x21-\x7e]+$/.test(k); }
 
 /** The person's own switch against this build's registry (off by default; on for the developer through his layer). */
 export function screenSwitch(squadFeatures: unknown, account: Account): boolean {
@@ -37,19 +55,21 @@ export function screenOn(s: Pick<Snapshot, "status" | "role">, secondIsOn: boole
 }
 
 /** The settings as the Mac takes them ({type: "screenPrefs", picture, numbers}); anything unknown falls back to the default. */
-export function screenPrefsMsg(settings: { screenPicture?: unknown; screenNumbers?: unknown; screenHoldKey?: unknown }): { picture: ScreenPicture; numbers: boolean; hold: ScreenHold } {
+export function screenPrefsMsg(settings: { screenPicture?: unknown; screenNumbers?: unknown; screenHoldKey?: unknown; screenAnywhere?: unknown; screenRelayUrl?: unknown }): { picture: ScreenPicture; numbers: boolean; hold: ScreenHold; anywhere: boolean; relayUrl: string } {
   const p = settings.screenPicture, h = settings.screenHoldKey;
   return {
     picture: SCREEN_PICTURES.includes(p as ScreenPicture) ? (p as ScreenPicture) : "sharp",
     numbers: settings.screenNumbers === true,
     hold: SCREEN_HOLDS.includes(h as ScreenHold) ? (h as ScreenHold) : "section",
+    anywhere: settings.screenAnywhere === true,
+    relayUrl: relayUrlClean(settings.screenRelayUrl),
   };
 }
 
 /** The words in Settings (Second Computer, Remote screen): the developer approves them. */
 export const SCREEN_WORDS = {
   name: "Remote screen",
-  line: "See and control your other Mac from this one, on the same network.",
+  line: "See and control your other Mac from this one.",
   picture: "Picture",
   pictureLine: "Faster is a little softer and quicker to react.",
   pictures: { sharp: "Sharp", faster: "Faster", fastest: "Fastest" } as Record<ScreenPicture, string>,
@@ -60,4 +80,19 @@ export const SCREEN_WORDS = {
   holds: { section: "§", grave: "`", f13: "F13", f14: "F14", f15: "F15", f16: "F16", off: "Off" } as Record<ScreenHold, string>,
   switchTip: "Remote screen",
   switchLine: "See and control your other Mac",
+  // PS 1.77, From anywhere (new words for the developer's yes).
+  anywhere: "From anywhere",
+  anywhereLine: "Connect from any network, through a relay. The picture stays locked, so the relay cannot see it.",
+  relayUrl: "Relay address",
+  relayUrlLine: "Your relay's web address. The same on both Macs.",
+  relayUrlHint: "https://",
+  relayUrlBad: "This must start with https://",
+  relayKey: "Relay key",
+  relayKeyLine: "Type it on each Mac. It stays on this Mac and is never shown again.",
+  relayKeyHint: "Paste the relay key",
+  relayKeySave: "Save",
+  relayKeyRemove: "Remove",
+  relayKeySaved: "Saved on this Mac.",
+  relayKeyMissing: "Not set on this Mac yet.",
+  relayKeyBad: "That is not a relay key.",
 };

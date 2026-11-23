@@ -15,12 +15,12 @@ import { visibleEvents } from "./core/meethide";
 import { meetingEvents } from "./core/calpick";
 import { saveSettings, toggleTodo } from "./core/actions";
 import { clockStart } from "./core/timesave";
-import { workingIdsOf, type Doc, type Reply, type Todo } from "./core/model";
+import { workingIdsOf, type Doc, type Reply, type Settings, type Todo } from "./core/model";
 import { mailCards } from "./core/mailcards";
 import { leadCards } from "./core/leadcards";
 import { AI_MSG_PRIVATE, aiCardsNow } from "./core/aimessage";
 import { irepFeed } from "./mailcards";
-import { ISLAND_EVENT_MS, ISLAND_FRESH_MS, TASK_ONLY_FEATURE, canPrivateOff, canTick, canUndo, islandState, pickEvent, type IslandCard, type IslandEvent, type IslandState, type IslandTick } from "./core/island";
+import { ISLAND_EVENT_MS, ISLAND_FRESH_MS, TASK_ONLY_FEATURE, canPrivateOff, canTick, canUndo, islandPrefs, islandState, pickEvent, type IslandCard, type IslandEvent, type IslandState, type IslandTick } from "./core/island";
 import { todayISO } from "./ui/kit";
 import { breakWindows, cleanRun, pomoIsland, pomoPrefs } from "./core/pomodoro";
 import { afkAskIsland, afkAskPatch } from "./core/afkask";
@@ -38,6 +38,8 @@ import { workoutPatch } from "./fitness/store";
 import { asleepNames, lowPower } from "./core/lowpower.ts";
 import { dayIsland, dayIslandAction } from "./daycount";
 import { landDayNow } from "./clients/clientsday";
+import { TE_FEATURE, TE_KIND, awaySpans, cleanTe, foldTime, isRunning, roundStart, spentMs } from "./core/timeest";
+import { progressAskPatch, progressIsland, type ProgressIsland } from "./core/islandprogress";
 
 type Post = (m: object) => void;
 let post: Post = () => {};
@@ -123,7 +125,24 @@ function sync(force = false) {
   const afkAsk = afkAskIsland(st);
   // PS 1.70 the day countdown in the task area (src/daycount.ts): its end, at zero, and the shown task's own Priority 1 timer.
   const day = shown.task && !st.privateMode ? dayIsland(s, shown.task.id, now) : dayIsland(s, null, now);
-  send({ ...shown, meets, pomo, stand, meet, welcome, workout, fit: fitIslandPart(now), lp, afkAsk, day }, force);
+  // PS 1.77 progress check-ins and task timers (core/islandprogress.ts): the task's start on the wall clock, so the Mac counts by itself.
+  send({ ...shown, meets, pomo, stand, meet, welcome, workout, fit: fitIslandPart(now), lp, afkAsk, day, progress: progressPart(s, st, shown, now) }, force);
+}
+/** PS 1.77: what the Mac needs for check-ins and the task's timer, or null. Only the island's own task, only while its time spent clock
+ *  runs (core/timeest.ts: Working on or Start, AFK breaks taken off). */
+function progressPart(s: Snapshot, st: Partial<Settings>, shown: IslandState, now: number): ProgressIsland | null {
+  const task = shown.task;
+  if (!task || task.dim || shown.mode === "off") return null;
+  const te = cleanTe(st.timeEst);
+  const recs = [...s.docs.values()].filter((d) => d.kind === TE_KIND && (d.data as { t?: unknown } | null)?.t === "live");
+  const live = foldTime(recs).live;
+  const running = isRunning(live, task.id);
+  const todo = s.docs.get(task.id)?.data as Todo | undefined;
+  return progressIsland({
+    prefs: islandPrefs(st.island).progress, featureOn: feature("island-progress") && feature(TE_FEATURE), trackOn: te.track,
+    task, todo, spent: running ? spentMs(live, task.id, now, awaySpans(st.awayLog)) : null, round: running ? roundStart(live, task.id) : null,
+    now, quiet: dndMutes(st.dnd, "island", now),
+  });
 }
 function fitWorkouts(s: Snapshot): { id: string; data: FitWorkout }[] {
   const out: { id: string; data: FitWorkout }[] = [];
@@ -157,6 +176,13 @@ export function islandMessage(m: { type?: string; action?: string; id?: string }
     const st = settingsData(s);
     const patch = standAskPatch(m.id, st.standup);
     if (patch && (st.standAsk !== true || patch.standup)) void saveSettings(patch).then(() => sync(true));
+    return true;
+  }
+  // PS 1.77 the progress check-ins' one question (ps-mac IslandProgress.swift): Turn on or Not now. Saved once, only while it is due.
+  if (m.action === "progressAsk") {
+    const st = settingsData(s);
+    const patch = progressAskPatch(m.id, st.island);
+    if (patch) void saveSettings({ island: { ...islandPrefs(st.island), ...patch } }).then(() => sync(true));
     return true;
   }
   // PS 1.66 the AFK timer's question (ps-mac Afk.swift): Turn off or Keep it on. Saved once; the Mac switches its timer off itself.
@@ -200,6 +226,10 @@ export function islandMessage(m: { type?: string; action?: string; id?: string }
   return true;
 }
 
+/** PS 1.77 Settings, Dynamic Island, Progress check-ins, Show me: one sample buzz on this Mac now (never saved, nothing counted). */
+export function islandProgressTest(look: string, title: string | null) {
+  post({ type: "islandProgressTest", look, title: title || null });
+}
 /** Send the island's state now (a Pomodoro phase just changed). */
 export function islandNow() { sync(true); }
 /** Settings, Stand-up reminders, Try it now: one stand-up 15 seconds from now, on this Mac only (never saved). */

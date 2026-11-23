@@ -399,5 +399,14 @@
   "en": [
    "Tasks for a later day now wait in Scheduled at the bottom of your list by default. To see every task in your list again, switch off \"Hide tasks until their day\" in Settings, Your list."
   ]
+ },
+ "1.77": {
+  "en": [
+   "Two tasks on Priority 2 now share one Priority 2 box, however you set them.",
+   "Your island can check in while you work, with four timer looks for a task's expected time. Off until you say yes.",
+   "PS learns a task's expected time after 5 finishes, leaving out quick ticks and odd days.",
+   "Clients: each client's name shows on its tasks, tabs have a right click menu, the x works, and new projects start empty.",
+   "Remote screen can connect from anywhere through a relay, once you set it up."
+  ]
  }
 }

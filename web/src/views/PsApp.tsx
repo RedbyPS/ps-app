@@ -178,7 +178,7 @@ export function PsOverlay() {
     taskMapActions.headline = async (text) => psPost({ type: "headline", text });
     taskMapActions.add = async (t) => psPost({ type: "add", title: t.title, due: t.due, kind: t.type, order: t.order, repeat: t.repeat ?? null, p1: t.p1 ?? false, clientId: t.clientId ?? null, notes: t.notes ?? null, unranked: t.unranked === true, ...(t.prioGroup ? { prioGroup: t.prioGroup } : {}),
       ...(t.sqOn === true ? { sqOn: true } : {}), ...(typeof t.sqAnon === "boolean" ? { sqAnon: t.sqAnon } : {}), ...(t.group ? { group: t.group } : {}), ...(t.remind ? { remind: t.remind } : {}),
-      ...(t.reminder ? { reminder: t.reminder } : {}), ...(t.est ? { est: t.est } : {}) });   // PS 1.68: the Add window's reminder and estimate
+      ...(t.reminder ? { reminder: t.reminder } : {}), ...(t.est ? { est: t.est } : {}), ...(typeof t.checkEvery === "number" ? { checkEvery: t.checkEvery } : {}) });   // PS 1.68: the Add window's reminder and estimate; PS 1.77 its island check-in interval
     taskMapActions.sound = async (patch) => psPost({ type: "sound", ...patch });
     taskMapActions.homeTz = async (id) => psPost({ type: "homeTz", id });
     taskMapActions.timelines = async (list) => psPost({ type: "timelines", list });

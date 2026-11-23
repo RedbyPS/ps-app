@@ -94,8 +94,29 @@ export function clockFinish(id: string, at?: number): Promise<void> {
     const recId = T.teRecId(s.userId!, mo);
     await put(T.TE_KIND, rec, { id: recId, ws: null });
     for (const old of had?.ids || []) if (old !== recId) await remove(old);
+    await relearnIn(vaultStore.get());   // PS 1.77: a new real time, so the learned expected times may move
   });
 }
+
+/** PS 1.77: every open task whose expected time is PS's to set gets the one learned from its real times (core/timeest.ts relearn):
+ *  5 or more clean finishes, else none. Own times are never touched. Runs in the lane, after a finish and once when the vault opens
+ *  (then at most every 6 hours), only where the vault is held and estimates and time spent are on. */
+async function relearnIn(s: Snapshot) {
+  if (!trackOn(s) || !estOn(s)) return;
+  const { months } = T.foldTime(docs(T.TE_KIND, null));
+  const done = T.allDone([...months.values()].map((m) => m.rec));
+  const tasks = [...s.docs.values()].filter((d) => d.kind === "todo").map((d) => ({ id: d.id, data: d.data as Todo }));
+  for (const p of T.relearn(tasks, done)) {
+    const d = vaultStore.get().docs.get(p.id);
+    if (d?.kind !== "todo") continue;
+    const t = d.data as Todo;
+    if (T.estOwner(t) === "own") continue;   // picked meanwhile: his own time wins
+    await put<Todo>("todo", { ...t, est: p.est, estBy: p.estBy }, { id: p.id, ws: null });
+  }
+}
+let relearnAt = 0;
+const RELEARN_EVERY_MS = 6 * 3_600_000;
+export function relearnNow(): Promise<void> { relearnAt = Date.now(); return inLane(() => relearnIn(vaultStore.get())); }
 /** An untick: the last finish (within 12 hours) is taken back and its minutes carry over to the next tick. */
 export function clockUntick(id: string): Promise<void> {
   return inLane(async () => {
@@ -140,7 +161,11 @@ function lookTicked() {
   if (later !== Infinity && lookTimer === null) lookTimer = setTimeout(lookTicked, later + 500);
 }
 const TICK_GRACE_MS = 2 * 60_000;
-if (typeof window !== "undefined") vaultStore.subscribe(() => { if (lookTimer === null) lookTimer = setTimeout(lookTicked, 1500); });
+if (typeof window !== "undefined") vaultStore.subscribe(() => {
+  if (lookTimer === null) lookTimer = setTimeout(lookTicked, 1500);
+  // PS 1.77: the learned expected times, once the vault is open and then at most every 6 hours (a daily task learns again on its new day).
+  if (Date.now() - relearnAt > RELEARN_EVERY_MS && trackOn() && estOn()) { relearnAt = Date.now(); setTimeout(() => void inLane(() => relearnIn(vaultStore.get())), 4000); }
+});
 
 /** A Pomodoro phase changed on this device (src/pomodoro.ts): the phase that ended becomes a piece, with the tasks worked on. */
 export function notePomo(was: Parameters<typeof T.pomoPiece>[0], next: Parameters<typeof T.pomoPiece>[1], working: string[]): void {
@@ -156,9 +181,9 @@ export function cleanTimeOp(v: unknown): TimeOp | null {
 }
 export const runTimeOp = (o: TimeOp) => (o.op === "start" ? clockStart(o.id) : clockStop(o.id));
 
-/** Learning, for a new task: the usual time of tasks with the same or a very similar name, or null. */
+/** Learning, for a new task: the learned time of tasks with the same or a very similar name (PS 1.77: at least 5 clean finishes), or null. */
 export function learnedEst(title: string, s: Snapshot = vaultStore.get()): number | null {
   if (!estOn(s) || s.status !== "unlocked") return null;
   const { months } = T.foldTime(docs(T.TE_KIND, null));
-  return T.usualMin(T.pastTimes(T.allDone([...months.values()].map((m) => m.rec)), title));
+  return T.learnedFor(T.allDone([...months.values()].map((m) => m.rec)), title).min;   // PS 1.77: 5 or more clean finishes, else none
 }

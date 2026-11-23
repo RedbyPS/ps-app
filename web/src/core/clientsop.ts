@@ -17,6 +17,9 @@ export type ClientsOp =
   | { op: "renameClient"; id: string; name: string }
   | { op: "orderClients"; ids: string[] }
   | { op: "removeClient"; id: string }
+  | { op: "unarchiveClient"; id: string }
+  | { op: "deleteClient"; id: string }
+  | { op: "clientSettings"; id: string; patch: ClientSettings }
   | { op: "newProject"; id: string; ws: string; title: string; today: string }
   | { op: "renameProject"; id: string; title: string }
   | { op: "projectStatus"; id: string; status: NonNullable<Project["status"]> }
@@ -91,7 +94,8 @@ export function cleanClientsOp(v: unknown): ClientsOp | null {
     case "newClient": { const name = text(v.name, 80), order = int(v.order, 10_000); return id && name !== null && order !== null && today ? { op: "newClient", id, name, order, today } : null; }
     case "renameClient": { const name = text(v.name, 80); return id && name !== null ? { op: "renameClient", id, name } : null; }
     case "orderClients": { const ids = Array.isArray(v.ids) ? v.ids.filter(okId).slice(0, 500) : null; return ids && ids.length === (v.ids as unknown[]).length ? { op: "orderClients", ids } : null; }
-    case "removeClient": case "removeTodo": case "removeTemplate": return id ? { op: v.op, id } : null;
+    case "removeClient": case "removeTodo": case "removeTemplate": case "unarchiveClient": case "deleteClient": return id ? { op: v.op, id } : null;
+    case "clientSettings": { const patch = cleanClientSettings(v.patch); return id && Object.keys(patch).length ? { op: "clientSettings", id, patch } : null; }
     // Break-it 1.74: a tick says which way (done or not), so a second tap or an out of date copy never flips it back.
     case "tickTodo": return id ? { op: "tickTodo", id, ...(typeof v.done === "boolean" ? { done: v.done } : {}) } : null;
     case "newProject": { const title = text(v.title, 120); return id && okId(v.ws) && title !== null && today ? { op: "newProject", id, ws: v.ws, title, today } : null; }
@@ -120,6 +124,23 @@ export function cleanClientsOp(v: unknown): ClientsOp | null {
     case "fromTemplate": return id && okId(v.tpl) && okId(v.clientId) && today ? { op: "fromTemplate", id, tpl: v.tpl, clientId: v.clientId, today } : null;
     default: return null;
   }
+}
+
+/** PS 1.77, a tab's Settings: the client record's fields Clients lets him change there. */
+export type ClientSettings = { name?: string; colour?: string | null; contactName?: string | null; email?: string | null };
+/** Only those fields, with the right types: a name (never empty), a colour "#rrggbb" or none, a contact and an email. */
+export function cleanClientSettings(v: unknown): ClientSettings {
+  const p = isObj(v) ? v : {};
+  const o: ClientSettings = {};
+  if (typeof p.name === "string" && p.name.trim()) o.name = p.name.trim().slice(0, 80);
+  if (p.colour === null || (typeof p.colour === "string" && /^#[0-9a-fA-F]{6}$/.test(p.colour))) o.colour = (p.colour as string | null) ?? null;
+  if (p.contactName === null || typeof p.contactName === "string") o.contactName = typeof p.contactName === "string" ? p.contactName.trim().slice(0, 120) || null : null;
+  if (p.email === null || typeof p.email === "string") o.email = typeof p.email === "string" ? p.email.trim().slice(0, 200) || null : null;
+  return o;
+}
+/** The projects of the client with workspace `ws`: shared ones live in it, private ones carry it as clientWs. */
+export function clientProjects<T extends { ws: string | null; data: { clientWs?: string | null } }>(projects: T[], ws: string): T[] {
+  return projects.filter((p) => (p.ws ?? p.data.clientWs ?? null) === ws);
 }
 
 /** Steps for Clients run one after another, in the order they were asked for (a new client, then its rename, never the

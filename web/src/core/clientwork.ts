@@ -270,8 +270,8 @@ export function clientDueToday<T extends { id: string; data: Todo }>(list: T[], 
 
 // ---------- the stage line ----------
 
-/** The starting stages of a new project (and a new client's First project): Kickoff, Build, Launch from `from`. */
-export const STARTER: { name: string; days: number }[] = [{ name: "Kickoff", days: 3 }, { name: "Build", days: 14 }, { name: "Launch", days: 3 }];
+// PS 1.77 (the developer, 23 Nov 2026): a new project starts with no stages (the Kickoff, Build, Launch starter is gone); a template
+// still lays out its own (layStages).
 /** How many days a stage spans (both ends counted); 1 without dates. */
 export function stageDays(s: Pick<Stage, "start" | "due">): number {
   if (!isISO(s.start) || !isISO(s.due)) return 1;
@@ -429,6 +429,8 @@ export function fromTemplate(tpl: ProjectTpl, client: string, today: string, key
 // ---------- clients ----------
 
 /** The tab colours, given in turn to clients that have none. */
+/** PS 1.77: how long an Undo (Archive, Delete) stays on screen; a Delete waits this long before it happens. */
+export const undoWindow = 8000;
 export const CLIENT_COLOURS = ["#F28B6B", "#7FB7F5", "#8FD19E", "#E7B35A", "#C49BF0", "#F27BA8", "#5FC9C2", "#B8C26A"];
 export function colourOf(c: { colour?: string | null }, index: number): string {
   return typeof c.colour === "string" && /^#[0-9a-fA-F]{6}$/.test(c.colour) ? c.colour : CLIENT_COLOURS[((index % CLIENT_COLOURS.length) + CLIENT_COLOURS.length) % CLIENT_COLOURS.length];

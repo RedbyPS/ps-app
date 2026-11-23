@@ -7,8 +7,8 @@ import type { ChecklistItem, ClientRec, Doc, Project, Stage, Todo } from "./mode
 import { uid } from "./model";
 import { NEEDS_SYNC, doc, docs, put, remove, vaultStore } from "./vault";
 import { addClient, addProject, addTodo, deleteTodo, privOf, setTodoDone, toggleTodo, updateClient, updatePrivate, updateProject, updateTodo } from "./actions";
-import { STARTER, addStage, cleanTpl, fromTemplate, layStages, moveStage, removeStage, setDone, templateOf, type ProjectTpl } from "./clientwork";
-import { OpLane, cleanTaskPatch, stageAt, type ClientsOp } from "./clientsop";
+import { addStage, cleanTpl, fromTemplate, moveStage, removeStage, setDone, templateOf, type ProjectTpl } from "./clientwork";
+import { OpLane, cleanClientSettings, cleanTaskPatch, clientProjects, stageAt, type ClientSettings, type ClientsOp } from "./clientsop";
 
 const key = () => uid().replace(/-/g, "").slice(0, 12);
 
@@ -22,7 +22,8 @@ const sent = (op: ClientsOp) => { relay!(op); return Promise.resolve(); };
 
 // ---------- clients ----------
 
-/** + on the tabs: a new client (its own workspace and key) with a First project of three stages. Returns the client id. */
+/** + on the tabs: a new client (its own workspace and key) with an empty First project (PS 1.77: no starter stages). Returns
+ *  the client id. */
 export async function newClient(name: string, order: number, today: string, id?: string): Promise<string> {
   if (relay) {
     // The main window would refuse these two (vault.ts createWorkspace) with only a log line: say why here, where the click was.
@@ -48,15 +49,41 @@ export async function orderClients(ids: string[]): Promise<void> {
 }
 /** Remove a tab: the client is archived (kept in the vault with its projects and tasks, as the vault's Clients page does). */
 export const removeClient = (id: string) => relay ? sent({ op: "removeClient", id }) : updateClient(id, { archived: true });
+/** PS 1.77: the x on a tab and Archive in its right click menu: the tab hides, the client and everything of it stay. */
+export const archiveClient = (id: string) => relay ? sent({ op: "removeClient", id }) : updateClient(id, { archived: true });
+/** PS 1.77: Bring back (the archived clients list, and Undo after Archive): the tab shows again. */
+export const unarchiveClient = (id: string) => relay ? sent({ op: "unarchiveClient", id }) : updateClient(id, { archived: false });
+/** PS 1.77, Settings in a tab's right click menu: the few fields the client record has that Clients shows. */
+export const setClientSettings = (id: string, patch: ClientSettings) => {
+  const p = cleanClientSettings(patch);
+  return relay ? sent({ op: "clientSettings", id, patch: p }) : updateClient(id, p);
+};
+/**
+ * PS 1.77, Delete in a tab's right click menu (asked first, and the screen waits out its Undo before calling this): the
+ * client record, its projects and their steps and notes. Tasks it put in the developer's list stay there (they are his tasks; they
+ * just lose the client tag). The client's workspace and key are left as they are.
+ */
+export async function deleteClient(id: string): Promise<void> {
+  if (relay) return sent({ op: "deleteClient", id });
+  const c = doc<ClientRec>(id);
+  if (!c || c.kind !== "client") return;
+  for (const p of clientProjects(docs<Project>("project"), c.data.ws)) {
+    const pr = privOf(p.id);
+    if (pr) await remove(pr.id);
+    await remove(p.id);
+  }
+  await remove(id);
+}
 
 // ---------- projects ----------
 
-/** A new project for the client's workspace: owner private until it is shared, three starter stages from today. */
+/** A new project for the client's workspace: owner private until it is shared. PS 1.77 (the developer, 23 Nov 2026): it starts
+ *  EMPTY, no Kickoff, Build, Launch; fully his from the start. A template still brings its own stages. */
 export function newProject(ws: string, title: string, today: string, stages?: Stage[], id?: string): Promise<string> {
   if (relay && !stages) { const nid = id ?? uid(); relay({ op: "newProject", id: nid, ws, title, today }); return Promise.resolve(nid); }
   if (id && doc(id)) return Promise.resolve(id);
   return addProject(ws, "custom", title.trim().slice(0, 120) || "New project", {
-    stages: stages ?? layStages(STARTER, today, key), current: 0, pipeline: "in_build", clientVisible: false, startDate: today, status: "on_track",
+    stages: stages ?? [], current: 0, pipeline: "in_build", clientVisible: false, startDate: today, status: "on_track",
   }, { id });
 }
 export const renameProject = (id: string, title: string) => relay ? sent({ op: "renameProject", id, title }) : updateProject(id, { title: title.trim().slice(0, 120) || "Project" });
@@ -151,7 +178,7 @@ export function runClientsOp(o: ClientsOp): Promise<unknown> {
     if (relay) return;   // never on the Tab list itself
     // Each op only ever touches its own kind of record.
     const kind = (id: string) => doc(id)?.kind;
-    const CLIENT = new Set(["renameClient", "removeClient"]), PROJECT = new Set(["renameProject", "projectStatus", "nowLine", "stageDone", "stageAdd",
+    const CLIENT = new Set(["renameClient", "removeClient", "unarchiveClient", "deleteClient", "clientSettings"]), PROJECT = new Set(["renameProject", "projectStatus", "nowLine", "stageDone", "stageAdd",
       "stageEdit", "stageMove", "stageRemove", "checkAdd", "checkTick", "checkRemove", "notes", "saveTemplate"]);
     const oid = "id" in o ? o.id : "";
     if (CLIENT.has(o.op) && kind(oid) !== "client") return;
@@ -164,6 +191,9 @@ export function runClientsOp(o: ClientsOp): Promise<unknown> {
       case "renameClient": return renameClient(o.id, o.name);
       case "orderClients": return orderClients(o.ids);
       case "removeClient": return removeClient(o.id);
+      case "unarchiveClient": return unarchiveClient(o.id);
+      case "deleteClient": return deleteClient(o.id);
+      case "clientSettings": return setClientSettings(o.id, o.patch);
       case "newProject": return newProject(o.ws, o.title, o.today, undefined, o.id);
       case "renameProject": return renameProject(o.id, o.title);
       case "projectStatus": return setProjectStatus(o.id, o.status);

@@ -87,7 +87,8 @@ final class SecondKeychainRaw: SecondRaw {
 final class SecondKeychain: SecondStore {
   static let service = "com.cincee.ps.second"
   /// Every item Second Computer keeps (device key and id, pairing list, outsourcing keys): what an update hands over.
-  static let accounts = ["key", "device", "trust", "okeys", "osign", "opeers"]
+  /// PS 1.77: "relay", the Remote screen relay key (RemoteScreenRelay.swift, RSRelayConfig), lives with them.
+  static let accounts = ["key", "device", "trust", "okeys", "osign", "opeers", "relay"]
   /// The one item that holds them all (V1.44).
   static let bundle = "all"
   /// Who may touch these items at all: main.swift sets it to Owner.red (the developer's own account on his own project) before
@@ -248,6 +249,11 @@ final class SecondIdentity {
   }
 
   var ready: Bool { lock.lock(); defer { lock.unlock() }; return key != nil }
+  /// PS 1.77: the Remote screen's relay key (Settings, Second Computer, Remote screen, From anywhere), kept with this Mac's
+  /// device key in the same store. Never sent to the page, never logged.
+  var relaySecret: String? { store.read("relay").flatMap { String(data: $0, encoding: .utf8) } }
+  @discardableResult
+  func setRelaySecret(_ k: String?) -> Bool { store.write("relay", Data((k ?? "").utf8)) }
   var pub: String { lock.lock(); defer { lock.unlock() }; return key?.publicKey.x963Representation.base64EncodedString() ?? "" }
   var peers: [SecondPeer] { lock.lock(); defer { lock.unlock() }; return trusted }
   func peer(_ device: String) -> SecondPeer? { peers.first { $0.device == device } }
