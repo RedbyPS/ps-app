@@ -29,7 +29,8 @@ export function withEst(docs: Doc[]): Doc[] {
   docs.push({ id: "dev-te-new", kind: "todo", ws: null, author: "dev", updatedAt: new Date().toISOString(), data: { title: "Write the weekly report", type: "once", done: false, order: 9, createdAt: new Date(now - 10_000).toISOString(), source: "manual", est: 40, estBy: "past" } } as unknown as Doc);
   let mo: TMonth | null = null;
   const month = monthOf(now, tz);
-  for (const [i, m] of [35, 50, 40].entries()) mo = addDone(mo, month, `dev-te-old${i}`, { n: "Write the weekly report", m, e: 30, at: now - (i + 1) * 7 * 24 * H });
+  // PS 1.77 learning: seven finishes, one a 1 minute tick and one a 5 hour day (both left out), five clean ones: learned 40 min.
+  for (const [i, m] of [35, 50, 1, 40, 300, 45, 38].entries()) mo = addDone(mo, month, `dev-te-old${i}`, { n: "Write the weekly report", m, e: 30, at: now - (i + 1) * 2 * 24 * H });
   mo = addDone(mo, month, "dev-te-x", { n: "Update the case study page with the new numbers", m: 80, e: 90, at: now - 30 * 24 * H });
   docs.push({ id: teRecId("dev", month), kind: "ttime", ws: null, author: "dev", updatedAt: new Date().toISOString(), data: mo } as unknown as Doc);
   if (running) docs.push({ id: teRecId("dev", "live"), kind: "ttime", ws: null, author: "dev", updatedAt: new Date().toISOString(), data: startClock(emptyLive(), running, "Update the case study page with the new numbers", now - 25 * 60_000) } as unknown as Doc);

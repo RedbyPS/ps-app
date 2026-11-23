@@ -86,6 +86,8 @@ import { CdSetting } from "./CountdownSettings";
 import { AssistAiRow, AssistOnRow, AssistPopRow, AssistRequestsRow } from "./AssistSettings";
 import { PostureSetting } from "./PostureSettings";
 import { MeetBubbleSetting, StandSetting, WelcomeBackSetting, WorkoutMacSetting } from "./IslandTimersSettings";
+import { ProgressBody, ProgressSwitch } from "./IslandProgressSettings";
+import { PROGRESS_FEATURE } from "../core/islandprogress";
 import { LinkIphoneRow } from "./LinkIphone";
 import { MacUpdateRow } from "./MacUpdate";
 import { WhatsNewEntry } from "./WhatsNew";
@@ -438,6 +440,10 @@ export const CONTROLS: Controls = {
     const v = useVault();
     const mine = cleanSwitches(settingsData(v).squadFeatures);
     return <SetRow e={e} right={<OnOff label={e.name} on={feature(TASK_ONLY_FEATURE)} ready={v.status === "unlocked"} set={(on) => save({ squadFeatures: { ...mine, [TASK_ONLY_FEATURE]: on } })} />} />;
+  },
+  // PS 1.77 progress check-ins and task timers (core/islandprogress.ts, views/IslandProgressSettings.tsx): off until the person says yes.
+  "island-progress": function IslandProgressRow({ e }) {
+    return feature(PROGRESS_FEATURE) ? <SetRow e={e} className="gs-has-switch" right={<ProgressSwitch label={e.name} />} body={<ProgressBody />} /> : null;
   },
   // PS 1.67 Hatch: the start animation, this Mac only (ps-mac Hatch.swift); on unless switched off.
   "start-animation": function StartAnimation({ e }) {

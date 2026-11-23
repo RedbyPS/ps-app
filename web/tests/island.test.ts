@@ -14,7 +14,7 @@ const S = (x: Record<string, unknown> = {}) => I.islandState({ ...base, settings
 const ev = { id: "m:r1", kind: "mail" as const, title: "Jane just sent an email", sub: "Northwind Silk · Homepage draft", url: "https://mail.google.com/mail/#all/t1" };
 
 ok("defaults: around the notch, next Priority 1 when nothing is in progress", () => {
-  const looks = { pill: { style: "classic", fill: null, color: null, size: "regular", icon: false }, notch: { style: "drop", fill: null, color: null, icon: false }, hide: 60, cards: true, top: [], fsMove: true, tickSide: "left", sounds: true };
+  const looks = { pill: { style: "classic", fill: null, color: null, size: "regular", icon: false }, notch: { style: "drop", fill: null, color: null, icon: false }, hide: 60, cards: true, top: [], fsMove: true, tickSide: "left", sounds: true, progress: { on: null, every: 30, look: "ring" } };   // PS 1.77 progress check-ins: off until asked
   assert.deepEqual(I.islandPrefs(undefined), { mode: "notch", idle: "next", ...looks });
   assert.deepEqual(I.islandPrefs({ mode: "pill", idle: "none" }), { mode: "pill", idle: "none", ...looks });
   assert.deepEqual(I.islandPrefs({ mode: "evil", idle: 3 }), { mode: "notch", idle: "next", ...looks });

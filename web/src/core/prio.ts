@@ -312,3 +312,47 @@ export function newTaskRank(t: Partial<Todo>): Partial<Todo> {
   if ((t.type ?? "once") === "daily" || t.p1 === true || t.unranked !== undefined || t.order !== undefined || t.group || t.aiInbox === true) return {};
   return { unranked: true };
 }
+
+// ---------- PS 1.77: two tasks on Priority 2 make one Priority 2 group (the developer, 23 Nov 2026) ----------
+// "I make one task P2, and another P2, and one of them changes to P3/P4 instead." The picker in Add task and in Edit used
+// to pick a PLACE in the list (Place #2 twice gave P2, P3, P4). It now picks the priority LEVEL, the P number the list
+// shows, and joins it (placeInLevel, levelMove). A drop ON a lone numbered task joins its level too (dropOnto).
+
+type LevelItem = { id: string; p1?: boolean; unranked?: boolean; prioGroup?: string | null };
+const levelItems = (l: LevelItem[]): PrioItem[] => l.map((x) => ({ id: x.id, p1: x.p1 === true, unranked: x.unranked === true, prioGroup: x.prioGroup ?? null }));
+
+/** The priority picker's range and start: the levels as the list shows them now. `max` is one past the last level of the
+ *  other tasks (a level of its own at the end), never below 2. `current`: the task's own level (2 or more), or null for a
+ *  new task, a Priority 1 task or one with no priority. `ranked` is the one-off list as shown (sortPrio). */
+export function levelPick(ranked: LevelItem[], id?: string | null): { current: number | null; max: number } {
+  const nums = prioNumbers(levelItems(ranked));
+  let top = 1;
+  for (const [k, n] of nums) if (k !== id && n > top) top = n;
+  const own = id ? nums.get(id) ?? null : null;
+  return { current: own != null && own >= 2 ? own : null, max: top + 1 };
+}
+
+/** A drag may let go ON row `over` to join its level: a numbered task that is alone on its level (no box yet), and not
+ *  already on the moved task's level. Rows in a box are joined by letting go inside the box (levelAfterMove). */
+export function canDropOnto(items: PrioItem[], over: string, moved: string): boolean {
+  if (over === moved) return false;
+  const run = prioRuns(items).find((r) => r.ids.includes(over));
+  return !!run && run.ids.length === 1;
+}
+
+/**
+ * A task let go ON a lone numbered task (`over`): they become one level. `next` is the new order the drag gave (the moved
+ * task next to `over`); a task with no priority is put just above `over`, so it gets a number (unrankedAfterMove). The
+ * level keeps `over`'s tag when it has one; otherwise both get a new tag (`pair` is `over`'s write).
+ */
+export function dropOnto(next: string[], moved: string, over: string, tags: Map<string, string | null>, unranked: Set<string>, tag: () => string = newLevelTag): { next: string[]; prioGroup: string; pair?: { id: string; prioGroup: string } } {
+  let order = next;
+  if (unranked.has(moved)) {
+    order = next.filter((x) => x !== moved);
+    order.splice(Math.max(0, order.indexOf(over)), 0, moved);
+  }
+  const own = tags.get(over) ?? null;
+  if (own) return { next: order, prioGroup: own };
+  const g = tag();
+  return { next: order, prioGroup: g, pair: { id: over, prioGroup: g } };
+}

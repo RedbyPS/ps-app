@@ -267,7 +267,8 @@ export interface Todo {
   ai?: boolean;                  // Task API: an AI on this Mac added it (the small AI marker, kept wherever it goes), core/aiinbox.ts
   aiInbox?: boolean;             // Task API: still in the AI Inbox (Dimension X), on no list yet; moving it anywhere clears it
   est?: number | null;           // Time estimate (PS 1.65, core/timeest.ts): minutes, 1 to 1440; none = no estimate
-  estBy?: "past" | null;         // the estimate came from the past times of tasks with this name ("Usually takes about"), not typed or picked
+  estBy?: "past" | "off" | null; // past: the estimate came from the past times of tasks with this name ("Usually takes about"), not typed or picked; off (PS 1.77): No time set picked, so PS never learns one for it
+  checkEvery?: number | null;    // PS 1.77 island check-ins on this task (core/islandprogress.ts): minutes, 0 = none on this task, none = the Settings interval
   doOn?: string | null;          // Clients (PS 1.73): a one day task stays out of the list until this day starts at the day end (core/clientwork.ts)
   deadline?: import("./clientwork").Deadline | null;   // Clients (PS 1.73): when it is due, maybe a calendar call; apart from `due` so overdue and pushes keep their meaning
 }
@@ -494,7 +495,7 @@ export interface Settings {
   tmTrail?: TrailPrefs;          // the Mouse trail over the tasks (core/trail.ts, V1.43): the effect, Burst on click, each effect's colour, size, intensity. Unset = Glow
   tmSubOpen?: string[];          // tasks whose mini tasks are shown expanded (PS and the website), see core/subtasks.ts
   tmDailyFirst?: boolean;        // the Tab list: "Every day" dragged above the main tasks (the developer, 23 Oct 2026). Default below
-  island?: { mode: "notch" | "pill" | "off"; idle: "next" | "none"; pill?: PillLook; notch?: NotchLook; hide?: number; cards?: boolean; top?: string[] };   // hide: seconds a click on the grab line hides it (V1.40, 60 unless set); cards: the Mac's notification cards come out of the island (V1.55, on unless false)| "pill" | "off"; idle: "next" | "none"; pill?: PillLook; notch?: NotchLook };   // pill, notch: their looks (core/islandlook.ts)   // PS Dynamic Island (core/island.ts): around the notch, a pill below it, or off; what shows when nothing is in progress
+  island?: { mode: "notch" | "pill" | "off"; idle: "next" | "none"; pill?: PillLook; notch?: NotchLook; hide?: number; cards?: boolean; top?: string[]; progress?: { on?: boolean | null; every?: number; look?: string } };   // hide: seconds a click on the grab line hides it (V1.40, 60 unless set); cards: the Mac's notification cards come out of the island (V1.55, on unless false)| "pill" | "off"; idle: "next" | "none"; pill?: PillLook; notch?: NotchLook };   // pill, notch: their looks (core/islandlook.ts)   // PS Dynamic Island (core/island.ts): around the notch, a pill below it, or off; what shows when nothing is in progress
   pomodoro?: Partial<import("./pomodoro").PomoPrefs>;   // Pomodoro (core/pomodoro.ts, V1.58): the button on or off, work and break lengths, sessions before a long break, auto start, sound, time left on the island
   pomoRun?: import("./pomodoro").PomoRun | null;         // the Pomodoro running now, by wall clock end times (survives a restart, sleep and a lock); null when stopped
   posture?: Partial<import("./posture").PosturePrefs>;   // Posture Reminder (core/posture.ts, PS 1.65): on, how often, from and to times (missing = on, every 45 minutes, 09:00 to 18:00)

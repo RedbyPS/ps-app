@@ -167,6 +167,11 @@ final class RSWindowController: NSObject, NSWindowDelegate {
 
   var isVisible: Bool { window?.isVisible == true }
 
+  /// PS 1.77: which way the live link goes, under the window's title: "Direct" or "Through the relay" (nil: not connected).
+  enum Via { case direct, relay }
+  var via: Via? { didSet { window?.subtitle = RSWindowController.words(via) } }
+  static func words(_ v: Via?) -> String { v == .relay ? "Through the relay" : v == .direct ? "Direct" : "" }
+
   private func make() -> NSWindow {
     let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1280, height: 800), styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
     w.title = "Second Computer"

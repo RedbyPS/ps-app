@@ -144,7 +144,7 @@ export function cleanLooks(p: Record<string, unknown>): Partial<Settings> {
   return o;
 }
 import { cleanChk } from "./core/chkremind";
-import { islandMessage, islandNow, islandStandTest, startIsland } from "./island";
+import { islandMessage, islandNow, islandProgressTest, islandStandTest, startIsland } from "./island";
 import { lowPower } from "./core/lowpower.ts";
 import { bindLowPowerShell, lowPowerPatch, lowPowerShellMessage, lpForShell, setLowPowerMirror, startLowPowerMirror } from "./lowpower";
 import { runPomoOp, startPomodoro } from "./pomodoro";
@@ -222,6 +222,7 @@ import { postureShellMessage, startPostureWatch } from "./posturewatch";
 import { startChkWatch } from "./chkwatch";
 import { cleanTimeOp, runTimeOp } from "./core/timesave";
 import { cleanEst, cleanTe } from "./core/timeest";
+import { cleanCheckEvery } from "./core/islandprogress";
 import { cleanSleepMode } from "./core/sleepmode";
 import { dirCardMessage, runSquadOp, squadStore, squadView, startSquad } from "./squad/engine";
 import { boardWake, runBoardOp, startSquadBoard } from "./squad/board";
@@ -334,7 +335,7 @@ type ShellMsg = { type: "tick"; id: string; done?: boolean } | { type: "work"; i
       standing?: { title: string; items: { id: string; text: string }[] }[] }
   | { type: "timelineOrder"; ids: string[] } | { type: "timelineHidden"; ids: string[] }
   | { type: "timelines"; list: TimelineItem[] } | { type: "headline"; text: string } | { type: "sound"; tmSound?: number; tmMuted?: boolean }
-  | { type: "add"; title: string; due: string | null; kind: "once" | "daily"; order?: number; repeat?: unknown; p1?: unknown; clientId?: unknown; notes?: unknown; unranked?: unknown; prioGroup?: unknown; sqOn?: unknown; sqAnon?: unknown; group?: unknown; remind?: unknown; reminder?: unknown; est?: unknown } | { type: "sync" } | { type: "tap"; on: boolean }
+  | { type: "add"; title: string; due: string | null; kind: "once" | "daily"; order?: number; repeat?: unknown; p1?: unknown; clientId?: unknown; notes?: unknown; unranked?: unknown; prioGroup?: unknown; sqOn?: unknown; sqAnon?: unknown; group?: unknown; remind?: unknown; reminder?: unknown; est?: unknown; checkEvery?: unknown } | { type: "sync" } | { type: "tap"; on: boolean }
   | { type: "psSettings"; data: PsSettings }
   | { type: "tab"; enabled: boolean; trusted: boolean; on: boolean }
   | { type: "waReply"; id: string } | { type: "mailOpen"; via: string }
@@ -460,7 +461,9 @@ function cleanPatch(p: Record<string, unknown>) {
   if ("repeat" in (p || {})) o.repeat = cleanRepeat(p.repeat, o.due || todayISO());
   // Time estimates (PS 1.65, core/timeest.ts): minutes or none, and whether it was learned from past times.
   if ("est" in (p || {})) o.est = cleanEst(p.est);
-  if (p?.estBy === null || p?.estBy === "past") o.estBy = p.estBy as "past" | null;
+  if (p?.estBy === null || p?.estBy === "past" || p?.estBy === "off") o.estBy = p.estBy as "past" | "off" | null;   // off: No time set picked (PS 1.77)
+  // PS 1.77 the task's own island check-in interval (core/islandprogress.ts): minutes, 0 for none on it, null for the Settings one.
+  if ("checkEvery" in (p || {})) o.checkEvery = cleanCheckEvery(p.checkEvery);
   return o;
 }
 
@@ -776,6 +779,8 @@ export function startPsBridge() {
         // Time spent (PS 1.65, core/timesave.ts): Start and Stop on a task, from its menu or Edit in the Tab list.
         { const o = cleanTimeOp(patch.timeOp); if (o) void runTimeOp(o); }
         if (patch.standTest === true) islandStandTest();   // Settings, Stand-up reminders, Try it now (src/island.ts)
+        // PS 1.77 Settings, Dynamic Island, Progress check-ins, Show me: one sample buzz on this Mac (src/island.ts, never saved).
+        if (patch.progressTest && typeof patch.progressTest === "object") { const t = patch.progressTest as { look?: unknown }; islandProgressTest(typeof t.look === "string" ? t.look : "ring", null); }
         // The Time zones screen in the Tab list: a person added, renamed, moved or taken off.
         if (patch.tzZonesOp) void runTzZonesOp(patch.tzZonesOp).catch(() => psPost({ type: "log", text: "time zones: a list change from the Tab list failed" }));
         // Edit mode in the Tab list: panels moved, removed or brought back (one small record).
@@ -864,7 +869,9 @@ export function startPsBridge() {
           // V1.55: typed while one of the developer's own lists showed: into that list's task group (core/lists.ts addGroupFor).
           ...(typeof m.group === "string" && /^[a-z0-9]{4,24}$/.test(m.group) ? { group: m.group } : {}),
           // PS 1.68: an estimate picked in the Add a task window (core/timeest.ts cleanEst).
-          ...(cleanEst(m.est) ? { est: cleanEst(m.est), estBy: null } : {}) })
+          ...(cleanEst(m.est) ? { est: cleanEst(m.est), estBy: null } : {}),
+          // PS 1.77: the island check-in interval picked in the Add a task window (core/islandprogress.ts cleanCheckEvery).
+          ...(cleanCheckEvery(m.checkEvery) !== null ? { checkEvery: cleanCheckEvery(m.checkEvery) } : {}) })
           // PS 1.65: a time typed in plain words becomes a reminder on the new task (core/nlremind.ts). PS 1.68: a reminder set up
           // in the Add a task window wins over it (one reminder per task); it is cleaned again in core/remind.ts addDraftTaskReminder.
           .then((id) => {

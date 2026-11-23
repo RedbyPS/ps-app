@@ -120,13 +120,15 @@ import { LocalLine } from "./LocalFirst";
 import { clearDuePatch, isOverdue, nextOverdueAt, overdueZone, splitOverdue } from "../core/overdue";
 import { overdueLookOf, type OverdueLook } from "../core/overduelook";
 import { OverdueFxLayer, useOverdueCard, useOverdueLook } from "./OverdueLook";
-import { BG_DESIGNS, LEVEL_GROUP_MIN, LV_PLAIN, P1_COLORS, P1_DESIGNS, bgDesign, colorHue, hueColor, isImageBg, isVideoBg, isP1, levelAfterMove, lvLook, lvLookPatch, movedId, p1AfterMove, p1Color, p1Design, p1Tones, prioNumbers, prioRuns, sortPrio, type LvLook } from "../core/prio";
+import { ClientTag } from "./ClientTag";
+import { BG_DESIGNS, LEVEL_GROUP_MIN, LV_PLAIN, P1_COLORS, P1_DESIGNS, bgDesign, colorHue, hueColor, isImageBg, isVideoBg, isP1, canDropOnto, dropOnto, levelAfterMove, levelMove, levelPick, lvLook, lvLookPatch, movedId, p1AfterMove, p1Color, p1Design, p1Tones, placeInLevel, prioNumbers, prioRuns, sortPrio, type LvLook } from "../core/prio";
 import { Storm, type StormKind } from "./Storm";
 import { rainLayers } from "../core/looksample";
 import { DimensionX, dimxIsOpen, morph } from "./DimensionX";
 import { ChecklistScreens } from "./ChecklistReminder";
 import { AddTime, EditTime, EstBadge, EstHint, OverloadLine } from "./TimeEstimate";
 import { cleanEst } from "../core/timeest";
+import { cleanCheckEvery } from "../core/islandprogress";
 import { openSettings, useSettingsWanted, type Preview, type SettingsOwner } from "./SettingsScreen";
 import { SettingsHost } from "./SettingsGroups";
 import { BgBrightControls, BgDim, GosAddVideoTile } from "./BgBright";
@@ -192,7 +194,7 @@ import { okTaskId } from "../core/remind";
 
 // What a tick or a click does. The PS Mac app's floating window swaps these for messages to
 // its main window, which holds the keys (see src/ps.ts).
-export type TodoPatch = Partial<Pick<Todo, "title" | "notes" | "due" | "type" | "clientId" | "order" | "repeat" | "p1" | "unranked" | "prioGroup" | "group" | "aiInbox" | "est" | "estBy">>;
+export type TodoPatch = Partial<Pick<Todo, "title" | "notes" | "due" | "type" | "clientId" | "order" | "repeat" | "p1" | "unranked" | "prioGroup" | "group" | "aiInbox" | "est" | "estBy" | "checkEvery">>;
 
 /** The order value that puts a task at priority p (1 = top) in a ranked list, between its new
  *  neighbours, so only that one task changes. */
@@ -205,17 +207,18 @@ export function orderForPriority(list: Doc<Todo>[], p: number) {
   return 0;
 }
 
-// − 3 + : where in the list a task goes (1 is the top). Priority 1 itself is a switch (core/prio.ts).
+// − P3 + : the priority LEVEL, the P number the list shows (PS 1.77, the developer 23 Nov 2026: two tasks on Priority 2 are one
+// Priority 2 group). Picking a number another task has joins it (core/prio.ts levelPick, placeInLevel, levelMove); one past
+// the last level makes a level of its own at the end. Priority 1 itself is a switch.
 function PriorityPicker({ value, max, onChange }: { value: number; max: number; onChange: (n: number) => void }) {
-  const set = (n: number) => { const v = Math.max(1, Math.min(max, n)); if (v !== value) { onChange(v); sfx.hover(); } };
+  const set = (n: number) => { const v = Math.max(2, Math.min(max, n)); if (v !== value) { onChange(v); sfx.hover(); } };
   return (
-    <span className="tm-prio-pick" title="Place in the list: 1 is the top">
-      <span className="tm-prio-pick-l">Place</span>
-      <button type="button" onClick={() => set(value - 1)} disabled={value <= 1} aria-label="Higher up">−</button>
-      <span className="tm-prio-pick-v num">#<input type="number" min={1} max={max} value={value} aria-label="Place in the list"
-        onChange={(e) => { const n = Number(e.target.value); if (Number.isFinite(n) && n >= 1) set(Math.round(n)); }} /></span>
-      <button type="button" onClick={() => set(value + 1)} disabled={value >= max} aria-label="Lower down">+</button>
-      <span className="tm-prio-pick-of">of {max}</span>
+    <span className="tm-prio-pick" title="Priority: the P number it shows. The same number as another task puts them together">
+      <span className="tm-prio-pick-l">Priority</span>
+      <button type="button" onClick={() => set(value - 1)} disabled={value <= 2} aria-label="Higher priority">−</button>
+      <span className="tm-prio-pick-v num">P<input type="number" min={2} max={max} value={value} aria-label="Priority number"
+        onChange={(e) => { const n = Number(e.target.value); if (Number.isFinite(n) && n >= 2) set(Math.round(n)); }} /></span>
+      <button type="button" onClick={() => set(value + 1)} disabled={value >= max} aria-label="Lower priority">+</button>
     </span>
   );
 }
@@ -261,7 +264,7 @@ export const taskMapActions: {
   editing: (on: boolean) => void; clearClipboard: () => Promise<unknown>;
   headline: (text: string) => Promise<unknown>;
   add: (t: { title: string; due: string | null; type: Todo["type"]; order?: number; repeat?: Repeat | null; p1?: boolean; clientId?: string | null; notes?: string | null; unranked?: boolean; prioGroup?: string | null; sqOn?: boolean; sqAnon?: boolean; group?: string | null;
-    remind?: TimeRemind | null; reminder?: Reminder | null; est?: number | null }) => Promise<unknown>;   // remind: PS 1.65, a typed time (core/nlremind.ts), added once the task has its id
+    remind?: TimeRemind | null; reminder?: Reminder | null; est?: number | null; checkEvery?: number | null }) => Promise<unknown>;   // remind: PS 1.65, a typed time (core/nlremind.ts), added once the task has its id
   // reminder (PS 1.68): the annoying reminder set up in the Add a task window, added once the task has its id (it wins over a typed time); est: its estimate
   sound: (patch: { tmSound?: number; tmMuted?: boolean }) => Promise<unknown>;
   homeTz: (id: string | null) => Promise<unknown>;
@@ -343,9 +346,9 @@ export const taskMapActions: {
   timelines: (list) => saveSettings({ timelines: list }),
   homeTz: (id) => saveSettings({ tmHomeTz: id }),
   headline: (text) => saveSettings({ tmHeadline: text }),
-  add: async ({ remind, reminder, est, ...t }) => {
-    const e = cleanEst(est);
-    const id = await addTodo({ ...t, order: t.order ?? undefined, ...(e ? { est: e, estBy: null } : {}) });
+  add: async ({ remind, reminder, est, checkEvery, ...t }) => {
+    const e = cleanEst(est), every = cleanCheckEvery(checkEvery);   // PS 1.77: the island check-in interval picked in Add task
+    const id = await addTodo({ ...t, order: t.order ?? undefined, ...(e ? { est: e, estBy: null } : {}), ...(every !== null ? { checkEvery: every } : {}) });
     if (typeof id === "string") { if (reminder) void addDraftReminder(id, reminder); else if (remind) void addTimeReminder(id, remind); }
     return id;
   },
@@ -1985,13 +1988,14 @@ function AddTaskWindow({ prio, clients, docked, onClose }: { prio: Doc<Todo>[]; 
   const tp = useTypedPrio(title, shown.kind === "once");
   const pick = (p: Partial<AddOpts>) => { tp.picked(); set(p); };
   const ranked = prio.filter((d) => !d.data.unranked);
-  const max = ranked.length + 1;
+  const max = levelPick(prio.map((d) => ({ id: d.id, ...d.data }))).max;   // PS 1.77: the picker picks a level (P2...), one past the last makes a new one
   const [added, setAdded] = useState<{ n: number; last: string } | null>(null);
   const [sq, setSq] = useState<SquadAdd>({ sqOn: false });   // G Squad: Share with G Squad (off to start, V1.43), Anonymise this task? (views/GSquadTask.tsx)
   // PS 1.68 (Jan, 18 Nov 2026: adding a task offers what editing does): the annoying reminder and the estimate, for this task only.
   const [rem, setRem] = useState<Reminder | null>(null);
   const [remOpen, setRemOpen] = useState(false);
   const [est, setEst] = useState<number | null>(null);
+  const [every, setEvery] = useState<number | null>(null);   // PS 1.77 the island check-in interval for this task (null: as in Settings)
   const [gate] = useState(() => addGate());
   const titleRef = useRef<HTMLInputElement>(null);
   const win = useRef<HTMLDivElement>(null);
@@ -2074,23 +2078,26 @@ function AddTaskWindow({ prio, clients, docked, onClose }: { prio: Doc<Todo>[]; 
     const due = typedN ? (typedN.kind === "daily" ? null : typedN.due) : sh.repeat ? r?.due ?? null : sh.due === "today" ? iso(0) : sh.due === "tomorrow" ? iso(1) : sh.due === "date" ? o.date || null : null;
     const groupSize = prio.filter((d) => d.data.p1).length;
     const at = typedP ? typedOrder(prio.map((d) => ({ id: d.id, ...d.data })), typedP.prio) : null;
-    if (at?.pair && sh.type !== "daily") void taskMapActions.update(at.pair.id, { prioGroup: at.pair.prioGroup });   // PS 1.73: that level was one task, now a group
+    // PS 1.77: a priority picked in Advanced is a LEVEL: it joins the tasks showing that P number (core/prio.ts placeInLevel).
+    const lv = !at && sh.type !== "daily" && !sh.p1 && !sh.unranked && o.place != null ? placeInLevel(prio.map((d) => ({ id: d.id, ...d.data })), Math.min(o.place, max)) : null;
+    const pair = at?.pair ?? lv?.pair;
+    if (pair && sh.type !== "daily") void taskMapActions.update(pair.id, { prioGroup: pair.prioGroup });   // PS 1.73: that level was one task, now a group
     const id = taskMapActions.add({
       title: v, type: sh.type, due, repeat: r?.repeat ?? null,
-      order: sh.type === "daily" ? undefined : at ? at.order : sh.unranked ? orderForPriority(prio, prio.length + 1) : orderForPriority(ranked, sh.p1 ? groupSize + 1 : Math.min(o.place ?? max, max)),
+      order: sh.type === "daily" ? undefined : at ? at.order : lv ? lv.order : sh.unranked ? orderForPriority(prio, prio.length + 1) : orderForPriority(ranked, sh.p1 ? groupSize + 1 : Math.min(o.place ?? max, max)),
       p1: at ? at.p1 : sh.p1, clientId: o.clientId || null, notes: o.notes.trim() || null, ...(sh.unranked && !at ? { unranked: true } : {}),
-      ...(at?.prioGroup ? { prioGroup: at.prioGroup } : {}),
+      ...((at ?? lv)?.prioGroup ? { prioGroup: (at ?? lv)!.prioGroup } : {}),
       ...(sq.sqOn ? { sqOn: true } : {}), ...(typeof sq.sqAnon === "boolean" ? { sqAnon: sq.sqAnon } : {}),
       // V1.55: typed while one of the developer's own lists shows: it joins that list's group, at its end (views/ListPager.tsx).
       ...(addGroupHere(sh.type) ? { group: addGroupHere(sh.type), order: undefined } : {}),
       ...(typedN?.time ? { remind: nl.reminderFor(typedN) } : {}),
-      ...(rem ? { reminder: rem } : {}), ...(est ? { est } : {}),
+      ...(rem ? { reminder: rem } : {}), ...(est ? { est } : {}), ...(every !== null ? { checkEvery: every } : {}),
     });
     sfx.drop();
     // Clear at once and keep the keyboard: the next one can be typed straight away. Advanced was for this task only.
     type("");
     if (el) { el.value = ""; if (document.activeElement !== el) el.focus({ preventScroll: true }); el.setSelectionRange(0, 0); }
-    setO(quickDefaults(todayISO())); setRule(freshRule()); setAdv(false); tp.reset(); nl.reset(); setSq({ sqOn: false }); setRem(null); setEst(null);
+    setO(quickDefaults(todayISO())); setRule(freshRule()); setAdv(false); tp.reset(); nl.reset(); setSq({ sqOn: false }); setRem(null); setEst(null); setEvery(null);
     setAdded((a) => ({ n: (a?.n ?? 0) + 1, last: v }));
     void Promise.resolve(id).then((x) => { if (typeof x === "string") showRow(x); }).catch(() => {});
   };
@@ -2160,8 +2167,8 @@ function AddTaskWindow({ prio, clients, docked, onClose }: { prio: Doc<Todo>[]; 
                     <span className="tm-p1-knob" aria-hidden="true" />Priority 1
                   </button>
                   {!o.p1 && (o.place === null
-                    ? <button type="button" className="tm-add-chip tm-add-place" onClick={() => { sfx.hover(); pick({ place: max }); }} title="Give it a place in the numbered list">Give it a place</button>
-                    : <><PriorityPicker value={Math.min(o.place, max)} max={max} onChange={(n) => pick({ place: n })} />
+                    ? <button type="button" className="tm-add-chip tm-add-place" onClick={() => { sfx.hover(); pick({ place: max }); }} title="Give it a priority number">Give it a priority</button>
+                    : <><PriorityPicker value={Math.max(2, Math.min(o.place, max))} max={max} onChange={(n) => pick({ place: n })} />
                       <button type="button" className="tm-add-chip" onClick={() => { sfx.hover(); pick({ place: null }); }} title="No priority: it waits below the numbered tasks">No priority</button></>)}
                 </div>
               </>}
@@ -2180,7 +2187,7 @@ function AddTaskWindow({ prio, clients, docked, onClose }: { prio: Doc<Todo>[]; 
               </>}
               {/* PS 1.68: the estimate and the Annoying 15 min reminder, as in a task's Edit. The reminder is kept with this task and
                   saved once it is added (core/remind.ts addDraftTaskReminder). */}
-              <AddTime title={title} est={est} setEst={setEst} label="tm-add-l" rowCls="tm-add-row" />
+              <AddTime title={title} est={est} setEst={setEst} every={every} setEvery={setEvery} label="tm-add-l" rowCls="tm-add-row" />
               <span className="tm-add-l">{ADD_REM_LABEL}</span>
               <div className="tm-add-row">
                 <button type="button" className={`tm-ed-chip tm-ed-rem${rem ? " on" : ""}`} onClick={() => { sfx.click(); setRemOpen(true); }}>
@@ -2970,17 +2977,27 @@ function Section({ skey, kind, title, list, working, today, numbered, editing, o
   const ids = list.map((d) => d.id);
   const byId = new Map(list.map((d) => [d.id, d]));
   // PS 1.73 priority levels: a level just dropped into shows at once, before the saved list comes back.
-  const [lvPend, setLvPend] = useState<{ id: string; tag: string | null; until: number } | null>(null);
-  const tagOf = (id: string) => { const t = byId.get(id)?.data; return lvPend && lvPend.id === id && lvPend.until > Date.now() ? lvPend.tag : t?.prioGroup ?? null; };
-  useEffect(() => { if (lvPend && (byId.get(lvPend.id)?.data.prioGroup ?? null) === lvPend.tag) setLvPend(null); });
+  // PS 1.77: a drop onto a lone task changes two tasks' levels at once, so this holds each one.
+  const [lvPend, setLvPend] = useState<{ tags: Map<string, string | null>; until: number } | null>(null);
+  const tagOf = (id: string) => { const t = byId.get(id)?.data; return lvPend && lvPend.tags.has(id) && lvPend.until > Date.now() ? lvPend.tags.get(id)! : t?.prioGroup ?? null; };
+  useEffect(() => { if (lvPend && [...lvPend.tags].every(([id, g]) => (byId.get(id)?.data.prioGroup ?? null) === g)) setLvPend(null); });
+  const pend = (tags: [string, string | null][]) => setLvPend({ tags: new Map(tags), until: Date.now() + 2500 });
   const sel = useSelection();
   const el = useRef<HTMLElement | null>(null);
+  const ontoSeen = useRef<string | null>(null);   // the row last lit for a drop onto it (one hover sound each)
   // A row dragged within its section reorders it. Let go over another section and it moves there
   // (into Priority 1 makes it P1, out of a group takes it out); that section opens room for it.
   // Priority 1 and Priorities share one order (core/groups.ts).
   const { order, row, dragging } = useDragOrder(ids, () => {}, {
     alone: true,
     onDrop: () => sfx.drop(),
+    // PS 1.77 (the developer, 23 Nov 2026: "I make one task P2, and another P2, and one of them changes to P3/P4"): let go ON a numbered
+    // task that is alone on its level (the middle of its row) and the two become one level, in a box. Between rows places it.
+    canOnto: kind === "prio" ? (over, moved) => {
+      const items = ids.map((id) => ({ id, p1: false, unranked: !!byId.get(id)?.data.unranked, prioGroup: tagOf(id) }));
+      if (canDropOnto(items, over, moved)) { if (ontoSeen.current !== over) { ontoSeen.current = over; sfx.hover(); } return true; }
+      return false;
+    } : undefined,
     onMove: (x, y, id) => {
       const r = el.current?.querySelector<HTMLElement>(":scope > .tm-list > .tm-row[data-dragging]");
       const t = crossHint(el.current, x, y, skey, [byId.get(id)?.data.type ?? "once"], r ? r.offsetHeight + 10 : 60);
@@ -2991,6 +3008,7 @@ function Section({ skey, kind, title, list, working, today, numbered, editing, o
     },
     onEnd: (e: DragEnd) => {
       listDragHint(null);
+      ontoSeen.current = null;
       const box = lvBoxAt(e.x, e.y);
       hintLv(null);
       const to = listDropAt(e.x, e.y);
@@ -2999,6 +3017,16 @@ function Section({ skey, kind, title, list, working, today, numbered, editing, o
       if (t) { void taskMapActions.moveTasks({ ids: [e.id], to: t.key, index: t.index, ...(t.key === "prio" ? { level: box } : {}) }); return; }
       const root = el.current?.closest(".tm-overlay");
       if (kind === "prio" && root && aboveIsP1(root, lists.p1.length, e.x, e.y)) { hintP1(false); void taskMapActions.moveTasks({ ids: [e.id], to: "p1", index: lists.p1.length }); return; }
+      if (kind === "prio" && e.onto) {
+        // PS 1.77: dropped ON a lone numbered task: they share its level now (core/prio.ts dropOnto).
+        const unr = new Set(e.next.filter((id) => byId.get(id)?.data.unranked));
+        const tags = new Map(e.next.map((id) => [id, tagOf(id)]));
+        const j = dropOnto(e.next, e.id, e.onto, tags, unr);
+        pend([[e.id, j.prioGroup], ...(j.pair ? [[j.pair.id, j.pair.prioGroup] as [string, string]] : [])]);
+        if (j.pair) void taskMapActions.update(j.pair.id, { prioGroup: j.pair.prioGroup });
+        void taskMapActions.reorder([...lists.p1.map((d) => d.id), ...j.next], undefined, { id: e.id, prioGroup: j.prioGroup });
+        return;
+      }
       if (kind === "prio" && !(!lists.p1.length && e.next[0] === e.id && e.moved)) {
         // PS 1.73: let go inside a Priority 2, 3... box it joins that level (even in the same place in the list); between
         // two tasks of one level too; anywhere else it is a level of its own (core/prio.ts levelAfterMove). A task with no
@@ -3008,7 +3036,7 @@ function Section({ skey, kind, title, list, working, today, numbered, editing, o
         const tags = new Map(numberedIds.map((id) => [id, tagOf(id)]));
         const tag = unr && !e.moved ? tagOf(e.id) : levelAfterMove(numberedIds, e.id, tags, box);
         if (!e.moved && tag === tagOf(e.id)) return;
-        if (tag !== tagOf(e.id)) setLvPend({ id: e.id, tag, until: Date.now() + 2500 });
+        if (tag !== tagOf(e.id)) pend([[e.id, tag]]);
         void taskMapActions.reorder([...lists.p1.map((d) => d.id), ...e.next], undefined, { id: e.id, prioGroup: tag });
         return;
       }
@@ -3795,7 +3823,7 @@ function Row({ d, n, working, today, drag, onEdit, fresh, sel, ticked }: { d: Do
   };
   return (
     <li className={`tm-row${isDone ? " done" : ""}${ticked ? " ticking" : ""}${working ? " working" : ""}${late ? " late" : ""}${fresh ? " plop-in" : ""}${n === 1 ? " p1" : ""}${mini.open ? " mini-open" : ""}${allDone ? " mini-all" : ""}${sel ? " sel" : ""}`}
-      ref={(el) => { drag.ref(el); flip.current = el; }} style={drag.style} data-dragging={drag["data-dragging"]} data-id={d.id} data-type={t.type}
+      ref={(el) => { drag.ref(el); flip.current = el; }} style={drag.style} data-dragging={drag["data-dragging"]} data-drop-on={drag["data-drop-on"]} data-id={d.id} data-type={t.type}
       onPointerDown={(e) => { ripple(e); pressRow(e, d.id, working); if (!startBundle(e, d.id)) drag.onPointerDown(e); }}
       onContextMenu={(e) => openTaskMenu(e, d.id, "list")}
       onKeyDown={(e) => { if (e.key === "ContextMenu" || (e.key === "F10" && e.shiftKey)) { e.preventDefault(); openTaskMenuAt(e.currentTarget, d.id, "list"); } }}
@@ -3817,6 +3845,7 @@ function Row({ d, n, working, today, drag, onEdit, fresh, sel, ticked }: { d: Do
         {working && <span className="tm-working">Working on</span>}
         <span className="tm-t">{t.title}</span>
         {t.ai && <span className="tm-ai" title="Added by an AI (AI task API)">AI</span>}
+        <ClientTag t={t} at="line" />
         {rep && <span className="tm-due tm-rep">{rep}</span>}
         {when && <span className={`tm-due num${late ? " late" : ""}`}>{when}</span>}
         {t.deadline && !isDone && <span className="tm-due tm-dl">{deadlinePill(t.deadline, landDayNow(vaultStore.get()))}</span>}
@@ -3827,6 +3856,7 @@ function Row({ d, n, working, today, drag, onEdit, fresh, sel, ticked }: { d: Do
       <TaskBell task={d.id} done={isDone} />
       <MiniToggle d={d} open={mini.open} onToggle={mini.toggle} />
       {t.p1 && !isDone && <P1Timer t={t} />}   {/* PS 1.70: its 24 hour clock (views/DayCountdown.tsx); its right click wins over the task's */}
+      <ClientTag t={t} />   {/* PS 1.77: the client it came from, just left of the P badge (views/ClientTag.tsx) */}
       {n != null && <span className="tm-prio num" data-p={Math.min(n, 4)} title={`Priority ${n}`}>P{n}</span>}
       <StreakBadge n={t.type === "daily" ? t.streak : 0} className="tm-streak" rule={t.repeat} best={t.bestStreak} />
       <button type="button" className="tm-edit no-drag" onClick={onEdit} aria-label={`Edit: ${t.title}`} title="Edit">
@@ -3840,8 +3870,12 @@ function Row({ d, n, working, today, drag, onEdit, fresh, sel, ticked }: { d: Do
 // Edit a task right in the list: name, notes, one-off or every day, date, client. Delete too.
 export function Editor({ d, clients, onDone, ranked }: { d: Doc<Todo>; clients: ClientOpt[]; onDone: () => void; ranked?: Doc<Todo>[] }) {
   const t = d.data;
-  const startP = ranked ? ranked.findIndex((x) => x.id === d.id) + 1 : 0;
-  const [p, setP] = useState(startP);
+  // PS 1.77: the picker is the task's priority LEVEL (its P number). With no level yet (Priority 1, no priority): P2 for a
+  // Priority 1 task (switched off it joins Priority 2), the end for a task with no priority.
+  const lvRange = ranked ? levelPick(ranked.map((x) => ({ id: x.id, ...x.data })), d.id) : { current: null, max: 2 };
+  const startP = lvRange.current ?? (t.p1 ? 2 : lvRange.max);
+  const [pPicked, setP] = useState<number | null>(null);   // null until the picker is touched: a list that changes while editing moves nothing
+  const p = pPicked ?? startP;
   const [p1, setP1] = useState(!!t.p1);
   const [title, setTitle] = useState(t.title);
   const [notes, setNotes] = useState(t.notes || "");
@@ -3852,6 +3886,7 @@ export function Editor({ d, clients, onDone, ranked }: { d: Doc<Todo>; clients: 
   const [clientId, setClientId] = useState(t.clientId || "");
   const [sure, setSure] = useState(false);
   const [est, setEst] = useState<number | null>(() => cleanEst(t.est));   // PS 1.65 time estimates, saved with Save
+  const [every, setEvery] = useState<number | null>(() => cleanCheckEvery(t.checkEvery));   // PS 1.77 the island check-in interval, saved with Save
   const reminder = useTaskReminder(d.id);
   const schedOn = scheduledOn();   // PS 1.75: the date is when it is scheduled for (feature "scheduled-tasks")
   const pick = (k: RepeatDraft["kind"]) => { setRule((r) => ({ ...r, kind: k, from: k === "repeat" && r.kind !== "repeat" ? due || todayISO() : r.from })); sfx.hover(); };
@@ -3875,19 +3910,27 @@ export function Editor({ d, clients, onDone, ranked }: { d: Doc<Todo>; clients: 
     const r = patchOf(rule, todayISO(), t);
     const dueNow = typedN?.due ?? due;
     const patch: TodoPatch = { title: name, notes: notes.trim() || null, type: r.type, repeat: r.repeat, due: r.type === "once" ? dueNow || null : r.due ?? null, clientId: clientId || null };
-    if (est !== cleanEst(t.est)) { patch.est = est; patch.estBy = null; }
+    if (est !== cleanEst(t.est)) { patch.est = est; patch.estBy = est === null ? "off" : null; }   // PS 1.77: No time set picked stays none (never learned over)
+    if (every !== cleanCheckEvery(t.checkEvery)) patch.checkEvery = every;
     // A new priority number moves just this task between its new neighbours.
     if (typedP && ranked && type === "once") {
       const e = typedEdit(ranked.map((x) => ({ id: x.id, ...x.data })), d.id, typedP.prio);
       if (e) { patch.p1 = e.p1; patch.order = e.order; patch.prioGroup = e.prioGroup; if (e.pair) void taskMapActions.update(e.pair.id, { prioGroup: e.pair.prioGroup }); }
       if (t.unranked) patch.unranked = false;
-    } else if (ranked && type === "once" && p1 !== !!t.p1) {
-      // Priority 1 on: to the end of the P1 group. Off: just below it. (A one-off only.)
+    } else if (ranked && type === "once" && p1 && !t.p1) {
+      // Priority 1 on: to the end of the P1 group. (A one-off only.)
       const rest = ranked.filter((x) => x.id !== d.id);
-      patch.p1 = p1;
+      patch.p1 = true;
       patch.order = orderForPriority(rest, rest.filter((x) => x.data.p1).length + 1);
       patch.prioGroup = null;
-    } else if (ranked && type === "once" && p !== startP) { patch.order = orderForPriority(ranked.filter((x) => x.id !== d.id), p); patch.prioGroup = null; }   // a new place: a level of its own
+    } else if (ranked && type === "once" && !p1 && (!!t.p1 || (pPicked !== null && pPicked !== startP))) {
+      // PS 1.77: a priority number picked (or Priority 1 switched off): it joins the tasks showing that number, at their
+      // end; one past the last level is a level of its own at the end (core/prio.ts levelMove).
+      const e = levelMove(ranked.map((x) => ({ id: x.id, ...x.data })), d.id, p);
+      if (t.p1) patch.p1 = false;
+      if (e) { patch.order = e.order; patch.prioGroup = e.prioGroup; if (e.pair) void taskMapActions.update(e.pair.id, { prioGroup: e.pair.prioGroup }); }
+      if (t.unranked) patch.unranked = false;
+    }
     if (type !== "once" && t.p1) patch.p1 = false;
     void taskMapActions.update(d.id, patch);
     sfx.drop();
@@ -3926,14 +3969,14 @@ export function Editor({ d, clients, onDone, ranked }: { d: Doc<Todo>; clients: 
           )}
         </div>
         {kind === "repeat" && <RepeatPicker value={rule} onChange={setRule} cls={TM_REPEAT} />}
-        <EditTime d={d} title={title} est={est} setEst={setEst} />
+        <EditTime d={d} title={title} est={est} setEst={setEst} every={every} setEvery={setEvery} />
         {ranked && type === "once" && (
           <div className="tm-ed-row">
             <button type="button" role="switch" aria-checked={p1} className={`tm-p1-switch${p1 ? " on" : ""}`} onClick={() => { tp.picked(); setP1((v) => !v); sfx.click(); }}
               title={p1 ? "In the Priority 1 group at the top. Click to take it out" : "Put it in the Priority 1 group at the top"}>
               <span className="tm-p1-knob" aria-hidden="true" />Priority 1
             </button>
-            {!p1 && <PriorityPicker value={p} max={ranked.length} onChange={(v) => { tp.picked(); setP(v); }} />}
+            {!p1 && <PriorityPicker value={Math.min(p, lvRange.max)} max={lvRange.max} onChange={(v) => { tp.picked(); setP(v); }} />}
           </div>
         )}
         <div className="tm-ed-row">

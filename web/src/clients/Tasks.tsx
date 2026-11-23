@@ -57,7 +57,9 @@ export function Tasks({ clientId, projectId, list, day, endHm, dayLine, call, sa
   };
   return (
     <div className="clw-col clw-tasks">
-      <div className="clw-col-h"><b>Tasks</b><span>{list.filter((d) => !d.data.done).length || ""}</span></div>
+      {/* PS 1.77: the words the developer approved (23 Nov 2026), so Tasks and Project steps are told apart at a glance. */}
+      <div className="clw-col-h"><b>TASKS FOR YOUR LIST</b><span>{list.filter((d) => !d.data.done).length || ""}</span></div>
+      <div className="clw-col-hint">These go into your to-do list on their day.</div>
       <div className="clw-dayline">{dayLine}</div>
       <div className="clw-rows">
         {!list.length && <div className="clw-empty">No tasks for this project yet.</div>}

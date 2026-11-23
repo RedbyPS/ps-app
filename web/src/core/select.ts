@@ -121,6 +121,20 @@ export function clientStatus(c: ClientView): ClientStatus {
   return "lead";
 }
 
+/** The clients with a tab on the Clients screen (PS 1.73), in tab order. */
+const TAB_STATUS = new Set(["client", "pending"]);
+export function clientTabs(s: Snapshot): ClientView[] {
+  return clientViews(s).filter((c) => c.client && TAB_STATUS.has(clientStatus(c)));
+}
+/** Every client record (owner), archived ones too: for the client tag on tasks and the archived clients list (PS 1.77). */
+export function allClients(s: Snapshot): Doc<ClientRec>[] {
+  return s.role === "owner" ? byKind<ClientRec>(s, "client") : [];
+}
+/** PS 1.77: the archived clients, by name, for the Clients screen's Archived list (Bring back). */
+export function archivedClients(s: Snapshot): Doc<ClientRec>[] {
+  return allClients(s).filter((c) => c.data.archived).sort((a, b) => a.data.name.localeCompare(b.data.name));
+}
+
 export function clientViews(s: Snapshot): ClientView[] {
   const pv = projectViews(s);
   const metas = byKind<WsMeta>(s, "wsmeta");

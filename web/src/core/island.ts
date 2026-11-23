@@ -10,6 +10,7 @@ import { waitsToLand } from "./clientwork.ts";
 import { scheduledOn } from "./scheduled.ts";
 import { overdueZone } from "./overdue.ts";
 import { dndMutes } from "./dnd.ts";
+import { PROGRESS_DEFAULT, progressPrefs, type ProgressPrefs } from "./islandprogress.ts";
 import { NOTCH_DEFAULT, PILL_DEFAULT, notchLook, notchTones, pillLook, pillTones, type NotchLook, type NotchTones, type PillLook, type PillTones } from "./islandlook.ts";
 
 export type IslandMode = "notch" | "pill" | "off";
@@ -34,7 +35,9 @@ export type TickSide = "left" | "right";
  *  and everything else show on hover, inside the open island (ps-mac Island.swift, IslandCloseCore.swift). On for everyone;
  *  its switch is in Settings, Dynamic Island, and in From the squad. Off: the full closed island as before. */
 export const TASK_ONLY_FEATURE = "island-task-only";
-export interface IslandPrefs { mode: IslandMode; idle: "next" | "none"; pill: PillLook; notch: NotchLook; hide: number; cards: boolean; top: CardKind[]; fsMove: boolean; tickSide: TickSide; sounds: boolean }
+export interface IslandPrefs { mode: IslandMode; idle: "next" | "none"; pill: PillLook; notch: NotchLook; hide: number; cards: boolean; top: CardKind[]; fsMove: boolean; tickSide: TickSide; sounds: boolean;
+  /** PS 1.77 progress check-ins and task timers (core/islandprogress.ts): off until the person says yes. */
+  progress: ProgressPrefs }
 /** The kinds of card, as ps-mac NoteDropCore.swift (NoteDrop.kinds, NoteDrop.kind) sorts them. red: only the developer's account
  *  ever gets them (his Gmail and Instantly feeds), so nobody else is shown the choice. */
 export type CardKind = "mail" | "chats" | "leads" | "meetings" | "network" | "mac" | "reminders" | "update" | "helper" | "notes" | "sound";
@@ -71,7 +74,7 @@ export function withCardPlace(p: IslandPrefs, k: CardKind, place: "island" | "to
 export const HIDE_DEFAULT = 60, HIDE_MIN = 5, HIDE_MAX = 3600;
 /** The ready made hide times in Settings; anything else from 5 s to 1 hour is a custom time. */
 export const HIDE_CHOICES = [5, 30, 60, 300, 900];
-export const ISLAND_DEFAULT: IslandPrefs = { mode: "notch", idle: "next", pill: PILL_DEFAULT, notch: NOTCH_DEFAULT, hide: HIDE_DEFAULT, cards: true, top: [], fsMove: true, tickSide: "left", sounds: true };
+export const ISLAND_DEFAULT: IslandPrefs = { mode: "notch", idle: "next", pill: PILL_DEFAULT, notch: NOTCH_DEFAULT, hide: HIDE_DEFAULT, cards: true, top: [], fsMove: true, tickSide: "left", sounds: true, progress: PROGRESS_DEFAULT };
 
 /** A hide time: whole seconds from 5 s to 1 hour; anything that is not a number is the 1 minute default. */
 export function hideTime(v: unknown): number {
@@ -136,6 +139,7 @@ export function islandPrefs(v: unknown): IslandPrefs {
     fsMove: o.fsMove !== false,
     tickSide: o.tickSide === "right" ? "right" : "left",
     sounds: o.sounds !== false,
+    progress: progressPrefs(o.progress),
   };
 }
 

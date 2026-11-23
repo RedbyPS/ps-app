@@ -16,7 +16,9 @@ final class RSSender {
   private(set) var framesOut = 0, skipped = 0
   var log: (String) -> Void = { _ in }
 
-  init(link: RSLink) { self.link = link }
+  /// PS 1.77: through the relay the bitrate is held to 8 Mbps at most (RSRelayRules.rate), so a month stays inside the free
+  /// 1,000 GB; a direct link keeps the home network's own range.
+  init(link: RSLink) { self.link = link; rate = RSRelayRules.rate(relayed: link.relayed) }
 
   /// Makes the encoder for this picture size. Returns what the primary needs to know (sent by the caller with the UDP port).
   func configure(width: Int, height: Int, points: CGSize, fps: Int = 60, codec: RSCodec = .h264) -> RSScreenInfo? {

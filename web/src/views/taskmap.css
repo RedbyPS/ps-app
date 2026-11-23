@@ -90,6 +90,21 @@ body.is-dragging, body.is-dragging * { cursor: grabbing !important; user-select:
 }
 .tm-list > .tm-row.p1 .tm-prio { background: var(--k-acc, #EC4E86); color: var(--k-on-acc, #FFFFFF); border-color: var(--k-acc, #EC4E86); box-shadow: 0 0 16px color-mix(in srgb, var(--k-acc, #EC4E86) 60%, transparent); }
 .tm-row.working .tm-prio { background: var(--k-surface, #17121A); color: var(--k-fg, #FFFFFF); border-color: var(--k-surface, #17121A); box-shadow: none; }
+/* PS 1.77: the client tag, just left of the P badge (views/ClientTag.tsx): quiet, in the client's tab colour, cut short. */
+.tm-ctag {
+  flex: 0 1 auto; min-width: 0; max-width: min(15ch, 24%); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-size: calc(calc(13px * var(--z)) * var(--k-fs, 1)); font-weight: 750; letter-spacing: .01em; line-height: 1.3;
+  padding: calc(4px * var(--z)) calc(11px * var(--z)); border-radius: 999px;
+  color: color-mix(in srgb, var(--ctag) 78%, var(--k-fg, #FFFFFF)); background: color-mix(in srgb, var(--ctag) 13%, transparent);
+  border: 1px solid color-mix(in srgb, var(--ctag) 34%, transparent);
+}
+.tm-ctag.plain { --ctag: var(--k-fg, #FFFFFF); color: color-mix(in srgb, var(--k-fg, #FFFFFF) 70%, transparent); background: color-mix(in srgb, var(--k-fg, #FFFFFF) 7%, transparent); }
+.tm-row.working .tm-ctag { color: var(--k-surface, #17121A); background: color-mix(in srgb, var(--k-surface, #17121A) 10%, transparent); border-color: color-mix(in srgb, var(--k-surface, #17121A) 30%, transparent); }
+.tm-row.done .tm-ctag { opacity: .55; }
+/* A narrow list (the phone, the website at phone width): beside the badge it would squeeze the title to a few letters, so the
+   tag rides on the title's own line instead, next to "Today". */
+.tm-ctag.line { display: none; align-self: center; max-width: 100%; font-size: calc(calc(12px * var(--z)) * var(--k-fs, 1)); padding: calc(2px * var(--z)) calc(8px * var(--z)); }
+@media (max-width: 560px) { .tm-ctag.side { display: none; } .tm-ctag.line { display: inline-block; } }
 .tm-sec-note { margin-left: 12px; font-size: calc(11px * var(--k-fs, 1)); letter-spacing: .04em; text-transform: none; font-weight: 600; color: color-mix(in srgb, var(--k-fg, #FFFFFF) min(100%, calc(40% * var(--k-ia, 1))), transparent); }
 /* size sliders (task size top right, clock size in the clocks panel) */
 .tm-size {
@@ -1507,6 +1522,8 @@ html.gos .tm-done-row { -webkit-touch-callout: none; -webkit-user-select: none; 
 .tm-lv-frame.lv-plain { border: 1px solid color-mix(in srgb, var(--k-fg, #FFFFFF) min(100%, calc(16% * var(--k-ia, 1))), transparent); background: color-mix(in srgb, var(--k-fg, #FFFFFF) min(100%, calc(3% * var(--k-ia, 1))), transparent); }
 .tm-lv-frame.lv-plain.lvc { border-color: color-mix(in srgb, var(--lvc) 75%, transparent); background: color-mix(in srgb, var(--lvc) 7%, transparent); }
 .tm-lv-frame.drop-lv { box-shadow: 0 0 0 2px var(--k-acc-t, #FF6FA5), inset 0 0 22px color-mix(in srgb, var(--k-acc, #FF508C) 22%, transparent); }
+/* PS 1.77: a task dragged ON a lone numbered task (the middle of its row) lights it up, as a box does: let go and they share its level. */
+.tm-list[data-sec="prio"] > .tm-row[data-drop-on] { box-shadow: 0 0 0 2px var(--k-acc-t, #FF6FA5), 0 0 24px 6px color-mix(in srgb, var(--k-acc, #FF508C) 45%, transparent), inset 0 0 22px color-mix(in srgb, var(--k-acc, #FF508C) 22%, transparent) !important; }   /* over the phone layouts' own row shadow */
 .tm-lv-frame.lvc.tm-p1-frame:is(.p1d-red, .p1d-purple, .p1d-gold):not(.drop-lv) { border-color: var(--p1acc); box-shadow: 0 0 18px rgba(var(--p1glow), .55), inset 0 0 14px rgba(var(--p1glow), .2); }
 .tm-lv-frame.lvc.tm-p1-frame:is(.p1d-crown, .p1d-radar, .p1d-spotlight, .p1d-converge, .p1d-tunnel, .p1d-hypno):not(.drop-lv) { border-color: var(--p1acc); box-shadow: 0 0 22px rgba(var(--p1glow), .5); }
 .tm-lv-frame.lvc.tm-p1-frame:is(.p1d-red-glisten, .p1d-white-glisten, .p1d-rainbow, .p1d-glitch, .p1d-neon):not(.drop-lv) { box-shadow: 0 0 22px rgba(var(--p1glow), .5); }

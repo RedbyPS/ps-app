@@ -1,3 +1,5 @@
+// Dev only: ?mute on the dev server silences every sound (src/dev/devmute.ts). First, before anything can play.
+import "./dev/devmute";
 // V1.41 Esc always backs out (ui/escape.ts): first of all, so every screen's Esc listener added after it is known
 // and the newest (the top screen) is asked first. PS only.
 import "./escstart";

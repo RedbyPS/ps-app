@@ -1801,6 +1801,8 @@ final class App: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMess
       Island.shared.setEditing(msg["on"] as? Bool ?? false)
     case "island:reset" where fromMain || fromOverlay:   // Mac settings or Edit mode: back to the top centre
       Island.shared.resetPos()
+    case "islandProgressTest" where fromMain:   // PS 1.77 Settings, Dynamic Island, Progress check-ins, Show me (src/island.ts, IslandProgress.swift)
+      IslandProgress.shared.test(look: (msg["look"] as? String) ?? "ring", title: msg["title"] as? String)
     case "island:show" where fromMain || fromOverlay:    // V1.58 Show it now: back from its right click menu's away at once
       Island.shared.showNow()
     case "meetCard" where fromMain:             // a meeting alert card (src/meetwatch.ts)
@@ -1809,6 +1811,12 @@ final class App: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMess
       if let h = (msg["restartH"] as? NSNumber)?.intValue { HelperAlert.shared.setSentryRestart(h) }
     case "screenPrefs" where fromMain:          // the remote screen's Picture, Delay numbers and Hold key (src/screenprefs.ts, PS 1.69)
       RemoteScreen.shared.setPrefs(msg)
+    case "screenRelayKey" where fromMain:       // PS 1.77 From anywhere: the relay key, typed once; kept with Second Computer's keys, never echoed
+      let key = msg["key"] as? String ?? ""
+      let ok = RemoteScreen.shared.setRelayKey(key)
+      RemoteScreen.shared.relayState(saved: key.isEmpty ? nil : ok, removed: key.isEmpty && ok)
+    case "screenRelay:get" where fromMain:      // PS 1.77: is the relay key set on this Mac (yes or no, never the key)
+      RemoteScreen.shared.relayState()
     case "screen:toggle" where fromMain || fromOverlay:   // the Tab list's Remote screen switch (views/ScreenSwitch.tsx, PS 1.69)
       hideOverlay(force: true, giveBack: false)
       RemoteScreen.shared.toggle()

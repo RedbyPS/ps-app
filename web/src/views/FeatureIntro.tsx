@@ -39,6 +39,7 @@ import type { CalendarSnap } from "../core/model";
 import { GOS } from "../gos/bridge";
 import { accountOlderThan, LOCAL_KEY as WN_SEEN_KEY } from "../core/whatsnew";
 import { TASK_ONLY_FEATURE, islandPrefs } from "../core/island";
+import { PROGRESS_FEATURE } from "../core/islandprogress";
 import { saveSettings } from "../core/actions";
 import { cleanShareOpts } from "../core/squadshare";
 import { P1_FEATURE, p1Default } from "../core/squadp1";
@@ -186,6 +187,9 @@ const DONE_PROBES: Record<string, (can: boolean, s: Snapshot) => Promise<"done" 
   // PS 1.74 only the task on the closed island: only on a Mac (the island is the Mac's), while the feature is on for an owner; Ok ends it for good.
   // PS 1.76 scheduled tasks (on by default): while the feature is on for an owner; Ok ends it for good.
   "scheduled-tasks-176": async (_can, s) => (feature("scheduled-tasks") && s.status === "unlocked" && s.role === "owner" ? "open" : "unknown"),
+  // PS 1.77 progress check-ins: only on a Mac, while the feature is on for an owner; already switched on in Settings: nothing to tell.
+  "island-progress-177": async (_can, s) => (!PS || !feature(PROGRESS_FEATURE) || s.status !== "unlocked" || s.role !== "owner" ? "unknown"
+    : islandPrefs(settingsData(s).island).progress.on === true ? "done" : "open"),
   "island-task-only-174": async (_can, s) => (PS && feature(TASK_ONLY_FEATURE) && s.status === "unlocked" && s.role === "owner" ? "open" : "unknown"),
   screenrec: async () => { askScreenRec(); return introAudience({ mac: PS, st: screenRecNow() }); },
   whatsapp: async (can) => {

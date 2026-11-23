@@ -209,6 +209,8 @@ struct IslandState: Equatable {
   var day: DayIn?
   /// PS 1.74: the closed island shows only the task, the rest on hover (IslandCloseCore.swift, web core/island.ts taskOnly).
   var taskOnly = true
+  /// PS 1.77 progress check-ins and the task's timer (IslandProgressCore.swift, web core/islandprogress.ts): nil with nothing to count.
+  var progress: ProgressIn?
 
   /// A hide time from the page: whole seconds from 5 s to 1 hour, anything else the 1 minute default.
   static func hideTime(_ v: Any?) -> Double {
@@ -249,6 +251,7 @@ struct IslandState: Equatable {
     s.meets = IslandAwayCore.meets(d["meets"])
     s.timers = TimersCore.from(d)   // V1.58 island timers
     s.day = Features.on(DayCore.feature) ? DayIn.from(d["day"]) : nil   // PS 1.70 (web src/daycount.ts dayIsland)
+    s.progress = Features.on("island-progress") ? IslandProgressCore.from(d["progress"]) : nil   // PS 1.77 (IslandProgressCore.feature, written out for the registry check)
     if Features.on("low-power"), let l = d["lp"] as? [String: Any] {
       s.lp = ((l["names"] as? [Any]) ?? []).prefix(40).compactMap { $0 as? String }.map { String($0.replacingOccurrences(of: "\n", with: " ").prefix(40)) }
     }
@@ -314,6 +317,7 @@ final class IslandModel: ObservableObject {
   @Published var tin = TimersIn()
   @Published var meetOpen: TMeet?
   @Published var lpOpen = false             // PS 1.65: the leaf was clicked: what is asleep, and Wake everything
+  @Published var buzzOut = false            // PS 1.77: its copy is out for a check-in (IslandProgress.swift), so the real one hides
   var lowPowerWake: () -> Void = {}
   var timerOn: Bool { !tshow.middle.isTask || meetOpen != nil }
   var bigTimer: Bool { tshow.middle.isStand || meetOpen != nil }
@@ -621,6 +625,7 @@ struct IslandView: View {
         .scaleEffect(x: IslandPlace.leanScale(m.travel).x, y: IslandPlace.leanScale(m.travel).y, anchor: m.travel < 0 ? .trailing : .leading)
         .offset(x: r.minX, y: r.minY)
         .opacity(m.hasContent ? 1 : 0)
+        .opacity(m.buzzOut ? 0 : 1)   // PS 1.77: the check-in's copy of the island is out (IslandProgress.swift)
         gripLayer
         // The bubble beside the island (a stand-up in 15 seconds, the next meeting) has its own window since V1.59, sized
         // to its words (IslandBubble.swift BubbleWindow), so it is never cut by this window's edge.
@@ -873,6 +878,8 @@ struct IslandView: View {
     } else if let t = m.st.task {
       HStack(spacing: 6) {
         Text(t.title).font(.system(size: size, weight: .semibold)).foregroundColor(t.dim ? dimC : fg).lineLimit(1).truncationMode(.tail)
+          .overlay(alignment: .bottom) { ProgressLine(m: m, color: accent).offset(y: 3) }   // PS 1.77 the Line look, under the task
+        ProgressMark(m: m, color: accent, size: size)   // PS 1.77 the ring, the sand timer or the time left, beside the task
         if clocks {
           WorkClock(m: m, color: dimC)   // V1.58: Pomodoro time left, only with its setting on
           DayClocks(m: m, color: dimC, size: max(10, size - 1))   // PS 1.70: the task's Priority 1 timer, then the day countdown (DayCountdown.swift)
@@ -1146,6 +1153,8 @@ final class Island {
   private var gripAt: Date?
   /// Hidden by the grab line until then (V1.36): the window is ordered out, so every click reaches what is behind.
   private(set) var hiddenUntil: Date?
+  /// PS 1.77: away now, by its grab line or its right click menu (no check-in buzzes then, IslandProgress.swift).
+  var awayNow: Bool { hiddenUntil != nil || away != nil || model.away }
   /// How long the grab line hides it: the page's setting (IslandState.hide), or the self test's own.
   var testHide: Double?
   var hideSeconds: Double { testHide ?? model.st.hide }
@@ -1236,6 +1245,7 @@ final class Island {
     let s = IslandState.from(d)
     if s.lp == nil && model.lpOpen { model.lpOpen = false }   // Low power mode ended: its card goes with it
     IslandTimers.shared.update(s.timers, islandOn: s.mode != "off")   // V1.58: also with the island off (pop-up cards then)
+    IslandProgress.shared.update(s.mode == "off" ? nil : s.progress)   // PS 1.77 progress check-ins and the task's timer
     if s.mode == "off" && panel == nil { return }
     setUp()
     var pop = s.event.flatMap { e -> IslandEvent? in seen.contains(e.id) ? nil : e }

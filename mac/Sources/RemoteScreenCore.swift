@@ -6,7 +6,8 @@ import Foundation
 // TeamViewer, with the lowest delay possible). Values and bytes only, no window, no screen, no network, so tests/remote-screen-test.swift
 // checks every rule here without macOS asking anything.
 //
-// The link is direct, Mac to Mac on the same network or a Thunderbolt or USB-C cable, never through a relay or a server:
+// The link is direct, Mac to Mac on the same network or a Thunderbolt or USB-C cable (PS 1.77: or, when that cannot be made,
+// through a relay both Macs dial out to, which only ever passes on these sealed packets: RemoteScreenRelayCore.swift):
 //  - TCP (no delay) carries the handshake, then input, cursor, pings and commands, encrypted.
 //  - UDP carries the video, encrypted per packet, with a replay window. If UDP cannot get through, the video rides on TCP.
 // Who may connect: ONLY the paired primary, proved by the same device keys Second Computer already pairs with the six digit
@@ -389,7 +390,7 @@ enum RSPacket {
   static let maxFragments = 4096   // ~5 MB, far more than any keyframe
 
   /// A whole encoded frame cut into packet bodies: [kind][u32 frame][u16 index][u16 count][piece].
-  static func fragments(of frame: Data, number: UInt32) -> [Data] {
+  static func fragments(of frame: Data, number: UInt32, chunk: Int = RSPacket.chunk) -> [Data] {
     let count = max(1, (frame.count + chunk - 1) / chunk)
     guard count <= maxFragments else { return [] }
     var out: [Data] = []; out.reserveCapacity(count)
