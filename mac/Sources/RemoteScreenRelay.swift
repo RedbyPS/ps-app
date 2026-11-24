@@ -1,19 +1,9 @@
 import Darwin
 import Foundation
+import Network
 
-// Remote screen from anywhere (PS 1.77), the network half. The rules and the bytes are in RemoteScreenRelayCore.swift.
-//
-//   main Mac (primary)                     Cloudflare TURN                       second Mac (secondary)
-//   asks the Worker for a short lived  ->  Allocate: relay address R
-//   relay password (never the key)
-//   signed offer "send to R"  ---------- the Worker's room (text only) ---------->  checks the signature (its paired primary)
-//                                                                                   asks Cloudflare's STUN for its own address P
-//                              <--------- signed answer "I am P" ----------------  starts sending to R (opens its NAT)
-//   CreatePermission(P's address)  ->   R lets P in, and only P
-//   the screen's signed hello, keys, input   <== sealed packets through R ==>       the picture, sealed
-//
-// The main Mac holds the one allocation and the second Mac sends straight to it, so the picture is billed once. Both Macs
-// only dial out. Nothing here changes a network, firewall or VPN setting, and the VPN app is left as it is.
+// The paired Macs exchange signed, encrypted offers over Second Computer.
+// Both dial out to TURN, using TLS on 443 first. Media and input remain sealed by RSLink.
 
 /// The relay's datagram side, for RSLink: sealed packets out, sealed packets in.
 protocol RSDatagramOut: AnyObject {
@@ -113,26 +103,25 @@ struct RSWhy: Error, CustomStringConvertible { let description: String; init(_ s
 
 /// Requests with retries (RFC 8489: 250 ms, doubling), matched by transaction id.
 final class RSStunTransport {
-  let server: RSAddr
-  let sock: RSUdpSocket
+  private let send: (Data) -> Void
   private let q: DispatchQueue
   private var waiting: [Data: (raw: Data, tries: Int, done: (RSStun.Msg?, Data?) -> Void)] = [:]
   var maxTries = 7
 
-  init(server: RSAddr, sock: RSUdpSocket, q: DispatchQueue) { self.server = server; self.sock = sock; self.q = q }
+  init(q: DispatchQueue, send: @escaping (Data) -> Void) { self.q = q; self.send = send }
 
   func request(_ m: RSStun.Msg, key: Data?, done: @escaping (RSStun.Msg?, _ raw: Data?) -> Void) {
     let raw = m.encode(key: key)
     waiting[m.tid] = (raw, 1, done)
-    sock.send(raw, to: server)
-    retry(m.tid, after: 0.25)
+    send(raw)
+    retry(m.tid, after: maxTries == 1 ? 4 : 0.25)
   }
   private func retry(_ tid: Data, after s: Double) {
     q.asyncAfter(deadline: .now() + s) { [weak self] in
       guard let self, var w = self.waiting[tid] else { return }
       if w.tries >= self.maxTries { self.waiting[tid] = nil; w.done(nil, nil); return }
       w.tries += 1; self.waiting[tid] = w
-      self.sock.send(w.raw, to: self.server)
+      self.send(w.raw)
       self.retry(tid, after: min(s * 2, 1.6))
     }
   }
@@ -144,20 +133,10 @@ final class RSStunTransport {
   func cancelAll() { waiting = [:] }
 }
 
-enum RSStunProbe {
-  /// This socket's address as the STUN server sees it (Cloudflare's STUN is free and needs no password).
-  static func request() -> RSStun.Msg { RSStun.Msg(RSStun.binding, .request) }
-  static func mapped(_ m: RSStun.Msg?) -> RSAddr? {
-    guard let m, m.kind == .success, m.method == RSStun.binding else { return nil }
-    return m.attr(RSStun.aMapped).flatMap(RSStun.unXorAddr)
-  }
-}
-
 /// A TURN client (RFC 8656) on one socket: one allocation, permissions for one peer's address, an optional channel, and the
-/// refreshes that keep them. Long term credentials from the Worker (a user name and a password that expire). All on `q`.
+/// refreshes that keep them. Short-lived TURN credentials from the vault. All on `q`.
 final class RSTurnClient {
-  let server: RSAddr
-  let sock: RSUdpSocket
+  private let sendPacket: (Data) -> Void
   private let q: DispatchQueue
   private let username: String, password: String
   private let tx: RSStunTransport
@@ -175,9 +154,14 @@ final class RSTurnClient {
   var log: (String) -> Void = { _ in }
   private(set) var bytesIn = 0
 
-  init(server: RSAddr, username: String, password: String, sock: RSUdpSocket, q: DispatchQueue) {
-    self.server = server; self.username = username; self.password = password; self.sock = sock; self.q = q
-    tx = RSStunTransport(server: server, sock: sock, q: q)
+  convenience init(server: RSAddr, username: String, password: String, sock: RSUdpSocket, q: DispatchQueue) {
+    self.init(username: username, password: password, q: q, stream: false) { sock.send($0, to: server) }
+  }
+
+  init(username: String, password: String, q: DispatchQueue, stream: Bool, send: @escaping (Data) -> Void) {
+    self.username = username; self.password = password; self.q = q; sendPacket = send
+    tx = RSStunTransport(q: q, send: send)
+    if stream { tx.maxTries = 1 }
   }
 
   /// Every datagram from the TURN server.
@@ -284,10 +268,10 @@ final class RSTurnClient {
   /// One datagram to a permitted peer, through the relay.
   func send(_ d: Data, to peer: RSAddr) {
     guard !closed else { return }
-    if let ch = channels[peer] { sock.send(RSStun.channelData(ch, d), to: server); return }
+    if let ch = channels[peer] { sendPacket(RSStun.channelData(ch, d)); return }
     var m = RSStun.Msg(RSStun.send, .indication)
     m.add(RSStun.aPeer, RSStun.xorAddr(peer)); m.add(RSStun.aData, d)
-    sock.send(m.encode(fingerprint: false), to: server)
+    sendPacket(m.encode(fingerprint: false))
   }
 
   private func every(_ s: Double, _ f: @escaping () -> Void) {
@@ -304,7 +288,7 @@ final class RSTurnClient {
       var m = RSStun.Msg(RSStun.refresh, .request)
       m.add(RSStun.aLifetime, lt.data)
       if let realm, let nonce { m.add(RSStun.aUsername, Data(username.utf8)); m.add(RSStun.aRealm, Data(realm.utf8)); m.add(RSStun.aNonce, nonce) }
-      sock.send(m.encode(key: key), to: server)
+      sendPacket(m.encode(key: key))
     }
     closed = true
     timers.forEach { $0.cancel() }; timers = []
@@ -316,10 +300,10 @@ final class RSTurnClient {
 
 /// One relayed session's path, for RSLink: an RSStream (the reliable segments, kind 0x01 and 0x03) and an RSDatagramOut (the
 /// sealed UDP packets, kind 0x02), both on the same datagrams. `raw` sends one datagram towards the other Mac (through the TURN
-/// client on the main Mac, straight to the relay address on the second Mac).
+/// allocation on each Mac).
 final class RSRelayPipe: RSStream, RSDatagramOut {
   private let q: DispatchQueue
-  private let raw: (Data) -> Void
+  fileprivate let raw: (Data) -> Void
   let rel = RSReliable()
   private var timer: DispatchSourceTimer?
   private var inbox = Data()
@@ -391,7 +375,7 @@ final class RSRelayPipe: RSStream, RSDatagramOut {
   }
 }
 
-// MARK: finding each other: the Worker's room (text only, signed by the device keys)
+// MARK: finding each other over the private vault channel
 
 /// The two Macs' meeting point. `send` and `onMessage` carry {"to": "primary" | "secondary", "env": signed envelope}.
 protocol RSRelaySignal: AnyObject {
@@ -399,312 +383,419 @@ protocol RSRelaySignal: AnyObject {
   var onMessage: ([String: Any]) -> Void { get set }
 }
 
-/// The relay settings (Settings, Second Computer, Remote screen, From anywhere): the switch, the Worker's address and the
-/// relay key. The address and the switch in UserDefaults, the key with Second Computer's own keys (never in the page, never
-/// in a file, never printed, handed over at each update with them).
-struct RSRelayConfig {
-  var url: URL
-  var key: String
-  static let onKey = "screen.anywhere", urlKey = "screen.relayUrl"
-  static var on: Bool { UserDefaults.standard.bool(forKey: onKey) }
-  static func load(_ id: SecondIdentity?) -> RSRelayConfig? {
-    guard on, let s = UserDefaults.standard.string(forKey: urlKey), let u = RSRelayRules.workerURL(s),
-          let k = id?.relaySecret, RSRelayRules.keyOK(k) else { return nil }
-    return RSRelayConfig(url: u, key: k)
+/// WebView bridge to the private Second Computer channel. Native code still validates device signatures.
+final class RSVaultRelaySignal: RSRelaySignal {
+  private let emit: ([String: Any]) -> Void
+  var onMessage: ([String: Any]) -> Void = { _ in }
+
+  init(send: @escaping ([String: Any]) -> Void) { emit = send }
+  func send(_ message: [String: Any]) { emit(message) }
+}
+
+enum RSRelayCredentialsError: String, Error { case setup, network, signIn = "sign-in" }
+typealias RSRelayCredentials = (@escaping (Result<RSTurnCreds, RSRelayCredentialsError>) -> Void) -> Void
+
+/// RFC 8656 framing for STUN and ChannelData on a TCP/TLS stream.
+struct RSTurnFramer {
+  private var buffered = Data()
+
+  mutating func append(_ data: Data) -> [Data]? {
+    buffered.append(data)
+    var messages: [Data] = []
+    while buffered.count >= 4 {
+      let start = buffered.startIndex
+      let kind = buffered[start] & 0xC0
+      let payload = Int(buffered[start + 2]) * 256 + Int(buffered[start + 3])
+      let size: Int, consumed: Int
+      switch kind {
+      case 0:
+        guard payload % 4 == 0 else { return nil }
+        size = 20 + payload
+        consumed = size
+      case 0x40:
+        size = 4 + payload
+        consumed = (size + 3) & ~3
+      default: return nil
+      }
+      guard buffered.count >= consumed else { break }
+      messages.append(Data(buffered.prefix(size)))
+      buffered.removeFirst(consumed)
+    }
+    return messages
   }
 
-  /// A request to the Worker with the time and its signature (the key never travels).
-  func request(_ path: String, method: String, body: Data = Data(), websocket: Bool = false) -> URLRequest? {
-    var base = url.absoluteString
-    while base.hasSuffix("/") { base.removeLast() }
-    let prefix = URL(string: base)?.path ?? ""
-    guard var u = URL(string: base + path) else { return nil }
-    if websocket, var c = URLComponents(url: u, resolvingAgainstBaseURL: false) { c.scheme = "wss"; if let x = c.url { u = x } }
-    var r = URLRequest(url: u, timeoutInterval: 10)
-    r.httpMethod = method
-    let t = Int(Date().timeIntervalSince1970)
-    r.setValue(String(t), forHTTPHeaderField: "X-PS-Time")
-    r.setValue(RSRelayRules.requestSignature(key: key, time: t, method: method, path: prefix + path, body: body), forHTTPHeaderField: "X-PS-Sign")
-    if !body.isEmpty { r.httpBody = body; r.setValue("application/json", forHTTPHeaderField: "Content-Type") }
-    return r
-  }
-
-  /// Short lived TURN credentials (a few bytes of text; the TURN key itself stays in the Worker).
-  func creds(done: @escaping (RSTurnCreds?) -> Void) {
-    guard let r = request("/creds", method: "POST", body: Data("{}".utf8)) else { done(nil); return }
-    URLSession.shared.dataTask(with: r) { d, resp, _ in
-      guard (resp as? HTTPURLResponse)?.statusCode == 200, let d, d.count < 16 * 1024 else { done(nil); return }
-      done(RSTurnCreds.parse(d))
-    }.resume()
+  static func frame(_ data: Data) -> Data {
+    guard let first = data.first, first & 0xC0 == 0x40 else { return data }
+    let pad = (4 - data.count % 4) % 4
+    return data + Data(repeating: 0, count: pad)
   }
 }
 
-/// The room over a WebSocket to the Worker. The second Mac keeps it open while From anywhere is on (Cloudflare holds an idle
-/// socket without waking anything); the main Mac opens it to connect.
-final class RSRelayRoom: NSObject, RSRelaySignal, URLSessionWebSocketDelegate {
-  let config: RSRelayConfig, room: String, role: String
+private final class RSTurnTLS {
+  private let connection: NWConnection
   private let q: DispatchQueue
-  private var task: URLSessionWebSocketTask?
-  private var session: URLSession?
-  private var stopped = false
-  private var backoff = 2.0
-  private var ping: DispatchSourceTimer?
-  private var queued: [(Data, Double)] = []
-  private var open = false
-  var onMessage: ([String: Any]) -> Void = { _ in }
-  var log: (String) -> Void = { _ in }
+  private var framer = RSTurnFramer()
+  var packet: (Data) -> Void = { _ in }
+  var lost: () -> Void = {}
+  private var pendingBytes = 0
+  private var ended = false
 
-  init(config: RSRelayConfig, room: String, role: String, q: DispatchQueue) { self.config = config; self.room = room; self.role = role; self.q = q }
-
-  func start() {
-    q.async { [self] in
-      guard !stopped, task == nil, let r = config.request("/room/\(room)?role=\(role)", method: "GET", websocket: true) else { return }
-      let s = URLSession(configuration: .ephemeral, delegate: self, delegateQueue: nil)
-      let t = s.webSocketTask(with: r)
-      t.maximumMessageSize = 16 * 1024
-      session = s; task = t
-      t.resume()
-      receive(t)
-      let p = DispatchSource.makeTimerSource(queue: q)
-      p.schedule(deadline: .now() + 30, repeating: 30, leeway: .seconds(2))
-      p.setEventHandler { [weak self] in self?.task?.send(.string("ping")) { _ in } }
-      p.resume(); ping = p
-    }
+  init(host: String, port: NWEndpoint.Port, q: DispatchQueue) {
+    self.q = q
+    connection = NWConnection(host: NWEndpoint.Host(host), port: port, using: .tls)
   }
 
-  func urlSession(_ s: URLSession, webSocketTask t: URLSessionWebSocketTask, didOpenWithProtocol p: String?) {
-    q.async { [self] in
-      guard t === task else { return }
-      open = true; backoff = 2
-      let now = RSTime.nowMs
-      for (d, at) in queued where now - at < 15_000 { t.send(.data(d)) { _ in } }
-      queued = []
-    }
-  }
-
-  private func receive(_ t: URLSessionWebSocketTask) {
-    t.receive { [weak self] r in
+  func start(ready: @escaping () -> Void) {
+    connection.stateUpdateHandler = { [weak self] state in
       guard let self else { return }
+      switch state {
+      case .ready: self.receive(); ready()
+      case .failed, .cancelled: self.fail()
+      default: break
+      }
+    }
+    connection.start(queue: q)
+  }
+
+  private func receive() {
+    connection.receive(minimumIncompleteLength: 1, maximumLength: 65_536) { [weak self] data, _, end, error in
+      guard let self, !self.ended else { return }
+      if let data {
+        guard let packets = self.framer.append(data) else { self.fail(); return }
+        for packet in packets { self.packet(packet) }
+      }
+      if end || error != nil { self.fail() } else { self.receive() }
+    }
+  }
+
+  func send(_ data: Data) {
+    // A stalled TCP relay must not queue old video without bound. Reliable control retries independently.
+    guard !ended, pendingBytes < 256 * 1024 else { return }
+    let frame = RSTurnFramer.frame(data)
+    let count = frame.count
+    pendingBytes += count
+    connection.send(content: frame, completion: .contentProcessed { [weak self] error in
+      guard let self else { return }
+      self.pendingBytes -= count
+      if error != nil { self.fail() }
+    })
+  }
+
+  private func fail() {
+    guard !ended else { return }
+    close()
+    lost()
+  }
+
+  func close() {
+    ended = true
+    connection.stateUpdateHandler = nil
+    connection.cancel()
+  }
+}
+
+/// Owns the allocation and its socket. Both Macs try the HTTPS port first, then TURN over UDP.
+private final class RSTurnAllocation {
+  private let q: DispatchQueue
+  private var transportEnd: () -> Void = {}
+  private var generation = 0
+  private var ended = false
+  private(set) var client: RSTurnClient?
+  var log: (String) -> Void = { _ in }
+  var lost: () -> Void = {}
+
+  init(q: DispatchQueue) { self.q = q }
+
+  func start(_ creds: RSTurnCreds, loopback: Bool, done: @escaping (RSAddr?) -> Void) {
+    let tls = loopback ? nil : creds.tls443
+    if let tls {
+      tryTLS(host: tls, creds: creds) { [weak self] addr in
+        if let addr { done(addr) } else { self?.tryUDP(creds, servers: creds.udpServers, loopback: loopback, done: done) }
+      }
+    } else {
+      tryUDP(creds, servers: creds.udpServers, loopback: loopback, done: done)
+    }
+  }
+
+  private func tryTLS(host: String, creds: RSTurnCreds, done: @escaping (RSAddr?) -> Void) {
+    guard !ended else { return }
+    generation += 1
+    let attempt = generation
+    let stream = RSTurnTLS(host: host, port: 443, q: q)
+    let turn = RSTurnClient(username: creds.username, password: creds.credential, q: q, stream: true, send: stream.send)
+    client = turn
+    transportEnd = stream.close
+    stream.packet = { [weak turn] in turn?.input($0) }
+    turn.log = log
+    turn.onLost = { [weak self] _ in self?.lost() }
+    var allocated = false
+    let failed: () -> Void = { [weak self] in
+      guard let self, !self.ended, self.generation == attempt else { return }
+      if allocated { self.lost(); return }
+      self.reset()
+      done(nil)
+    }
+    stream.lost = failed
+    stream.start { [weak turn] in
+      turn?.allocate { result in
+        if case .success(let addr) = result { allocated = true; done(addr) } else { failed() }
+      }
+    }
+    q.asyncAfter(deadline: .now() + 6) { if !allocated { failed() } }
+  }
+
+  private func tryUDP(_ creds: RSTurnCreds, servers: [(String, UInt16)], loopback: Bool, done: @escaping (RSAddr?) -> Void) {
+    guard !ended else { return }
+    guard let (host, port) = servers.first else { done(nil); return }
+    generation += 1
+    let attempt = generation
+    let remaining = Array(servers.dropFirst())
+    let next: () -> Void = { [weak self] in self?.tryUDP(creds, servers: remaining, loopback: loopback, done: done) }
+    DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+      guard let self else { return }
+      let server = RSResolve.ipv4(host, port: port)
       self.q.async {
-        guard t === self.task else { return }
-        switch r {
-        case .failure: self.lost()
-        case .success(let m):
-          var d: Data?
-          switch m { case .string(let s): d = s == "pong" ? nil : Data(s.utf8); case .data(let x): d = x; @unknown default: d = nil }
-          if let d, d.count < 16 * 1024, let o = try? JSONSerialization.jsonObject(with: d) as? [String: Any] { self.onMessage(o) }
-          self.receive(t)
+        guard !self.ended, self.generation == attempt else { return }
+        guard let server, let socket = RSUdpSocket(q: self.q, loopback: loopback) else { next(); return }
+        let turn = RSTurnClient(server: server, username: creds.username, password: creds.credential, sock: socket, q: self.q)
+        socket.onReceive = { [weak turn] data, from in if from == server { turn?.input(data) } }
+        self.client = turn
+        self.transportEnd = socket.close
+        turn.log = self.log
+        turn.onLost = { [weak self] _ in self?.lost() }
+        turn.allocate { [weak self] result in
+          guard let self, !self.ended, self.generation == attempt else { return }
+          if case .success(let addr) = result { done(addr) } else { self.reset(); next() }
         }
       }
     }
   }
 
-  private func lost() {
-    task?.cancel(with: .goingAway, reason: nil); task = nil; session?.invalidateAndCancel(); session = nil
-    ping?.cancel(); ping = nil; open = false
-    guard !stopped else { return }
-    let wait = backoff; backoff = min(backoff * 2, 60)
-    q.asyncAfter(deadline: .now() + wait) { [weak self] in self?.start() }
+  private func reset() {
+    generation += 1
+    client?.close()
+    client = nil
+    transportEnd()
+    transportEnd = {}
   }
 
-  func send(_ o: [String: Any]) {
-    guard let d = try? JSONSerialization.data(withJSONObject: o), d.count < 12 * 1024 else { return }
-    q.async { [self] in
-      if open, let t = task { t.send(.string(String(decoding: d, as: UTF8.self))) { _ in } }
-      else { queued.append((d, RSTime.nowMs)); if queued.count > 4 { queued.removeFirst() } }
-    }
+  func close() {
+    guard !ended else { return }
+    ended = true
+    reset()
   }
-
-  func stop() { q.async { [self] in stopped = true; lost() } }
 }
 
 // MARK: the main Mac: connect through the relay
 
 final class RSRelayDial {
-  let identity: SecondIdentity
-  let secondary: SecondPeer
+  private let identity: SecondIdentity
+  private let secondary: SecondPeer
   private let q: DispatchQueue
-  let signal: RSRelaySignal
-  /// Short lived TURN credentials (from the Worker).
-  var getCreds: (@escaping (RSTurnCreds?) -> Void) -> Void
-  /// The test: sockets on 127.0.0.1 and local relay addresses allowed (the stand-in relay).
+  private let signal: RSRelaySignal
+  private let getCreds: RSRelayCredentials
   var loopback = false
-  var timeout = 15.0
+  var timeout = 35.0
   var log: (String) -> Void = { _ in }
   var app = ""
   var now: () -> Double = { RSTime.nowMs }
-  private var sock: RSUdpSocket?
-  private var turn: RSTurnClient?
+  private var allocation: RSTurnAllocation?
   private var pipe: RSRelayPipe?
   private var client: RSClient?
   private var offer: SecondEnv?
   private var finished = false
   private var done: (Result<RSLink, RSClient.Fail>) -> Void = { _ in }
 
-  init(identity: SecondIdentity, secondary: SecondPeer, q: DispatchQueue, signal: RSRelaySignal, getCreds: @escaping (@escaping (RSTurnCreds?) -> Void) -> Void) {
-    self.identity = identity; self.secondary = secondary; self.q = q; self.signal = signal; self.getCreds = getCreds
+  init(identity: SecondIdentity, secondary: SecondPeer, q: DispatchQueue, signal: RSRelaySignal, credentials: @escaping RSRelayCredentials) {
+    self.identity = identity; self.secondary = secondary; self.q = q; self.signal = signal; getCreds = credentials
   }
 
   func start(completion: @escaping (Result<RSLink, RSClient.Fail>) -> Void) {
-    done = completion
-    q.asyncAfter(deadline: .now() + timeout) { [weak self] in self?.fail(.notFound, "no answer through the relay in time") }
-    getCreds { [weak self] creds in
-      guard let self else { return }
-      guard let creds, let first = creds.udpServers.first else { self.q.async { self.fail(.network("no relay password"), "the relay Worker gave no password") }; return }
-      DispatchQueue.global(qos: .userInitiated).async {
-        let server = RSResolve.ipv4(first.0, port: first.1)
-        self.q.async { self.allocate(server, creds) }
+    q.async { [self] in
+      guard !finished else { return }
+      done = completion
+      q.asyncAfter(deadline: .now() + timeout) { [weak self] in self?.fail(.notFound, "no answer through the relay in time") }
+      getCreds { [weak self] result in
+        self?.q.async { [weak self] in
+          guard let self, !self.finished else { return }
+          switch result {
+          case .success(let creds): self.allocate(creds)
+          case .failure(let error): self.fail(.network(error.rawValue), "could not get relay credentials")
+          }
+        }
       }
     }
   }
 
-  private func allocate(_ server: RSAddr?, _ creds: RSTurnCreds) {
-    guard !finished else { return }
-    guard let server, let s = RSUdpSocket(q: q, loopback: loopback) else { fail(.network("relay address"), "the relay's address did not resolve"); return }
-    let t = RSTurnClient(server: server, username: creds.username, password: creds.credential, sock: s, q: q)
-    t.log = log
-    s.onReceive = { [weak t] d, from in if from == server { t?.input(d) } }
-    sock = s; turn = t
-    t.allocate { [weak self] r in
+  private func allocate(_ creds: RSTurnCreds) {
+    let allocation = RSTurnAllocation(q: q)
+    self.allocation = allocation
+    allocation.log = log
+    allocation.lost = { [weak self] in self?.fail(.network("network"), "relay allocation ended") }
+    allocation.start(creds, loopback: loopback) { [weak self] relay in
       guard let self, !self.finished else { return }
-      switch r {
-      case .failure(let w): self.fail(.network("relay"), "the relay said no (\(w))")
-      case .success(let rel):
-        guard let o = RSRelayRules.offer(identity: self.identity, to: self.secondary.device, relay: rel, nowMs: self.now()) else { self.fail(.refused("no key"), "could not sign the offer"); return }
-        self.offer = o
-        self.signal.onMessage = { [weak self] m in self?.q.async { self?.heard(m) } }
-        self.signal.send(["to": "secondary", "env": o.json])
-        self.log("PS screen: relay ready, asked the second Mac to come")
-        // The same signed offer again every 3 seconds until it answers (its room socket may have been reconnecting). The
-        // second Mac takes an offer once ("Seen before" after that), so a repeat never starts a second session.
-        func again() {
-          self.q.asyncAfter(deadline: .now() + 3) { [weak self] in
-            guard let self, !self.finished, self.pipe == nil else { return }
-            self.signal.send(["to": "secondary", "env": o.json]); again()
-          }
-        }
-        again()
+      guard let relay, self.loopback || relay.isPublic else { self.fail(.network("network"), "could not open a relay allocation"); return }
+      guard let offer = RSRelayRules.offer(identity: self.identity, to: self.secondary.device, relay: relay, nowMs: self.now()) else {
+        self.fail(.refused("no key"), "could not sign the offer"); return
       }
+      self.offer = offer
+      self.signal.onMessage = { [weak self] message in
+        guard let queue = self?.q else { return }
+        queue.async { [weak self] in self?.heard(message) }
+      }
+      self.sendOffer()
     }
+  }
+
+  private func sendOffer() {
+    guard !finished, pipe == nil, let offer else { return }
+    signal.send(["to": "secondary", "env": offer.json])
+    q.asyncAfter(deadline: .now() + 2) { [weak self] in self?.sendOffer() }
   }
 
   private func heard(_ m: [String: Any]) {
-    guard !finished, pipe == nil, let offer, let turn, let env = SecondEnv(m["env"]) else { return }
+    guard !finished, pipe == nil, let offer, let allocation, let turn = allocation.client, let env = SecondEnv(m["env"]) else { return }
     switch RSRelayRules.checkAnswer(env, identity: identity, expected: secondary.device, offer: offer, nowMs: now(), allowLocal: loopback) {
     case .failure(let w): log("PS screen: an answer through the relay did not check out (\(w.why))")
-    case .success(let pub):
-      var peer = pub
-      let p = RSRelayPipe(q: q) { [weak turn] d in turn?.send(d, to: peer) }
+    case .success(let peer):
+      let p = RSRelayPipe(q: q) { [weak turn] data in turn?.send(data, to: peer) }
       pipe = p
-      turn.onData = { [weak p, weak turn] from, d in
-        guard from.ip == pub.ip else { return }
-        if from != peer { peer = from; turn?.bind(from) }   // its NAT picked another port for the relay: that one
-        p?.input(d)
-      }
-      turn.onLost = { [weak p] w in p?.closeRelay(); _ = w }
-      let keep = (turn, sock)
-      p.onClosed = { keep.0.close(); keep.1?.close() }
-      turn.permit(pub) { [weak self] ok in
+      turn.onData = { [weak p] from, data in if from == peer { p?.input(data) } }
+      allocation.lost = { [weak p] in p?.closeRelay() }
+      p.onClosed = { allocation.close() }
+      turn.permit(peer) { [weak self] ok in
         guard let self, !self.finished else { return }
-        guard ok else { self.fail(.network("relay"), "the relay would not let the second Mac in"); return }
+        guard ok else { self.fail(.network("network"), "the relay refused the peer address"); return }
         turn.bind(peer)
       }
-      // The second Mac sends to the relay address until it hears back: its first packet starts the screen's own hello.
       p.onFirst = { [weak self, weak p] in
         guard let self, let p, !self.finished else { return }
-        let c = RSClient(identity: self.identity, secondary: self.secondary, q: self.q, loopback: self.loopback)
-        c.now = self.now; c.app = self.app; c.log = self.log
-        self.client = c
-        c.handshake(p, relay: p) { [weak self] r in
-          guard let self else { return }
-          switch r {
-          case .success(let l):
-            guard !self.finished else { l.close("not needed"); return }
+        let client = RSClient(identity: self.identity, secondary: self.secondary, q: self.q, loopback: self.loopback)
+        client.now = self.now; client.app = self.app; client.log = self.log
+        self.client = client
+        client.handshake(p, relay: p) { [weak self] result in
+          guard let self else { if case .success(let link) = result { link.close("cancelled") }; return }
+          switch result {
+          case .success(let link):
+            guard !self.finished else { link.close("cancelled"); return }
             self.finished = true
-            self.done(.success(l))
-          case .failure(let f): self.fail(f, "the handshake through the relay failed")
+            self.done(.success(link))
+          case .failure(let error): self.fail(error, "the handshake through the relay failed")
           }
         }
       }
     }
   }
 
-  func cancel() { q.async { [weak self] in self?.fail(.notFound, "cancelled") } }
+  func cancel() { q.async { [self] in fail(.notFound, "cancelled") } }
 
   private func fail(_ f: RSClient.Fail, _ why: String) {
     guard !finished else { return }
     finished = true
     log("PS screen: \(why)")
-    if let p = pipe { p.closeRelay() } else { turn?.close(); sock?.close() }
+    if let pipe { pipe.closeRelay() } else { allocation?.close() }
     done(.failure(f))
   }
 }
 
-// MARK: the second Mac: answer a signed offer
+// MARK: the second Mac
 
 final class RSRelayAnswer {
-  let identity: SecondIdentity
+  private let identity: SecondIdentity
   private let q: DispatchQueue
-  let server: RSServer
-  let signal: RSRelaySignal
-  /// Cloudflare's STUN (free, no password): this Mac's own internet address as the relay will see it.
-  var stun: () -> RSAddr? = { RSResolve.ipv4("stun.cloudflare.com", port: 3478) }
+  private let server: RSServer
+  private let signal: RSRelaySignal
+  var credentials: RSRelayCredentials?
   var loopback = false
   var log: (String) -> Void = { _ in }
   var now: () -> Double = { RSTime.nowMs }
   private var current: RSRelayPipe?
+  private var pending: RSTurnAllocation?
+  private var activeOffer: SecondEnv?
+  private var lastAnswer: (env: SecondEnv, deadline: Double)?
+  private var stopped = false
 
   init(identity: SecondIdentity, server: RSServer, signal: RSRelaySignal, q: DispatchQueue) {
     self.identity = identity; self.server = server; self.signal = signal; self.q = q
-    signal.onMessage = { [weak self] m in self?.q.async { self?.heard(m) } }
+    signal.onMessage = { [weak self] message in
+      guard let queue = self?.q else { return }
+      queue.async { [weak self] in self?.heard(message) }
+    }
   }
 
-  private func heard(_ m: [String: Any]) {
-    guard let env = SecondEnv(m["env"]) else { return }
+  private func heard(_ message: [String: Any]) {
+    guard !stopped, let env = SecondEnv(message["env"]) else { return }
+    if let activeOffer, env.by == activeOffer.by && env.body == activeOffer.body && env.sig == activeOffer.sig {
+      if let lastAnswer, now() < lastAnswer.deadline { send(lastAnswer.env) }
+      return
+    }
     switch RSRelayRules.checkOffer(env, identity: identity, nowMs: now(), allowLocal: loopback) {
-    case .failure(let w): log("PS screen: refused an offer through the relay (\(w.why))")   // never answered
+    case .failure(let error): log("PS screen: refused an offer through the relay (\(error.why))")
     case .success(let (_, relay)):
-      let stun = self.stun
-      DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-        let s = stun()
-        self?.q.async { self?.come(env, relay: relay, stun: s) }
+      activeOffer = env
+      lastAnswer = nil
+      pending?.close(); pending = nil
+      credentials? { [weak self] result in
+        self?.q.async { [weak self] in
+          guard let self, self.accepting(env) else { return }
+          guard case .success(let creds) = result else { self.log("PS screen: could not get host relay credentials"); return }
+          self.allocate(creds, offer: env, peer: relay)
+        }
       }
     }
   }
 
-  private func come(_ offer: SecondEnv, relay: RSAddr, stun: RSAddr?) {
-    guard let stun, let s = RSUdpSocket(q: q, loopback: loopback) else { log("PS screen: no STUN answer for the relay"); return }
-    let tx = RSStunTransport(server: stun, sock: s, q: q)
-    tx.maxTries = 5
-    var pipe: RSRelayPipe?
-    s.onReceive = { d, from in
-      if from == relay { pipe?.input(d); return }
-      if from == stun, let m = RSStun.decode(d) { _ = tx.response(m, raw: d) }
-    }
-    tx.request(RSStunProbe.request(), key: nil) { [weak self] m, _ in
-      guard let self else { s.close(); return }
-      guard let pub = RSStunProbe.mapped(m), let ans = RSRelayRules.answer(identity: self.identity, offer: offer, pub: pub, nowMs: self.now()) else {
-        self.log("PS screen: could not learn this Mac's address for the relay"); s.close(); return
+  private func accepting(_ offer: SecondEnv) -> Bool { !stopped && activeOffer?.body == offer.body }
+
+  private func allocate(_ creds: RSTurnCreds, offer: SecondEnv, peer: RSAddr) {
+    let allocation = RSTurnAllocation(q: q)
+    pending = allocation
+    allocation.log = log
+    allocation.start(creds, loopback: loopback) { [weak self, weak allocation] relayed in
+      guard let self, let allocation, self.accepting(offer), self.pending === allocation else { return }
+      guard let relayed, self.loopback || relayed.isPublic, let turn = allocation.client else { allocation.close(); self.pending = nil; return }
+      turn.permit(peer) { [weak self, weak allocation, weak turn] ok in
+        guard let self, let allocation, let turn, self.accepting(offer), self.pending === allocation else { return }
+        self.pending = nil
+        guard ok else { allocation.close(); return }
+        turn.bind(peer)
+        let p = RSRelayPipe(q: self.q) { [weak turn] in turn?.send($0, to: peer) }
+        turn.onData = { [weak p] from, data in if from == peer { p?.input(data) } }
+        allocation.lost = { [weak p] in p?.closeRelay() }
+        p.onClosed = { allocation.close() }
+        self.present(offer, address: relayed, pipe: p)
       }
-      let p = RSRelayPipe(q: self.q) { d in s.send(d, to: relay) }
-      p.onClosed = { s.onReceive = { _, _ in }; s.close() }
-      pipe = p
-      self.current?.closeRelay()
-      self.current = p
-      self.signal.send(["to": "primary", "env": ans.json])
-      // Through its NAT: "here I am" to the relay address until the main Mac's hello comes back (10 s at most).
-      var n = 0
-      func punch() {
-        guard !p.heard, n < 66 else { return }
-        n += 1
-        s.send(Data([RSRelayRules.kindPunch]), to: relay)
-        self.q.asyncAfter(deadline: .now() + 0.15, execute: punch)
-      }
-      punch()
-      self.server.accept(stream: p, relay: p)
-      self.log("PS screen: answered the main Mac through the relay")
     }
   }
 
-  func stop() { q.async { [weak self] in self?.current?.closeRelay(); self?.current = nil } }
+  private func send(_ env: SecondEnv) { signal.send(["to": "primary", "env": env.json]) }
+
+  private func present(_ offer: SecondEnv, address: RSAddr, pipe: RSRelayPipe) {
+    guard accepting(offer), let answer = RSRelayRules.answer(identity: identity, offer: offer, pub: address, nowMs: now()) else {
+      pipe.closeRelay(); return
+    }
+    current?.closeRelay()
+    current = pipe
+    lastAnswer = (answer, now() + 30_000)
+    send(answer)
+    punch(pipe, attempts: 100)
+    server.accept(stream: pipe, relay: pipe)
+  }
+
+  private func punch(_ pipe: RSRelayPipe, attempts: Int) {
+    guard !stopped, current === pipe, !pipe.heard, attempts > 0 else { return }
+    pipe.raw(Data([RSRelayRules.kindPunch]))
+    q.asyncAfter(deadline: .now() + 0.15) { [weak self, weak pipe] in
+      if let pipe { self?.punch(pipe, attempts: attempts - 1) }
+    }
+  }
+
+  func stop() {
+    q.async { [self] in
+      stopped = true
+      pending?.close(); pending = nil
+      current?.closeRelay(); current = nil
+      lastAnswer = nil
+    }
+  }
 }

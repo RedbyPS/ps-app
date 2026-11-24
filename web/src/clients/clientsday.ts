@@ -11,7 +11,7 @@ import { DAY_ENDS_DEFAULT } from "../core/daylog";
 import { buildMatcher } from "../core/mail";
 import { dayOn, dayPrefs, dayZone } from "../daycount";
 import { clientDueToday, dayEndAt, landDayAt, type DayRule } from "../core/clientwork";
-import { setLandDay } from "../core/actions";
+import { setLandDay, tabListsNow } from "../core/actions";
 import { scheduledOn, setSchedWall } from "../core/scheduled";
 import { overdueZone } from "../core/overdue";
 import { wall } from "../core/tz";
@@ -25,6 +25,9 @@ export function dayRuleOf(s: Snapshot): DayRule {
 /** Which day it is for the person now (the day client tasks land on). */
 export const landDayNow = (s: Snapshot, now = Date.now()) => landDayAt(now, dayRuleOf(s));
 setLandDay((s) => landDayNow(s));
+
+/** The priority numbers and groups the main list is showing. */
+export const clientRanked = (s: Snapshot) => tabListsNow(s).ranked;
 // Break-it 1.75 (core/scheduled.ts schedCut): the calendar date in the Tab list's zone (the zone Overdue and typed dates use),
 // so a scheduled task is never kept out on its own date. Worked out once a minute per vault state.
 let wallMemo: { s: Snapshot | null; min: number; day: string } = { s: null, min: -1, day: "" };

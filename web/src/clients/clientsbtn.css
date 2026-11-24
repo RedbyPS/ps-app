@@ -5,7 +5,14 @@
 .clw-dim { position: absolute; inset: 0; background: color-mix(in srgb, var(--k-base, #050307) 66%, transparent); pointer-events: auto; }
 .clw-win {
   position: absolute; inset: 0; pointer-events: auto; overflow: hidden; isolation: isolate; will-change: transform;
-  background: var(--k-base, #0B080D); color: var(--k-fg, #FFFFFF); font-size: calc(14px * var(--k-fs, 1));
+  background: var(--k-surface, #17121A); color: var(--k-fg, #FFFFFF); font-size: calc(14px * var(--k-fs, 1));
+}
+.clw-win[data-crm-look="match"] {
+  --clw-shell: var(--k-surface, #17121A);
+  background: linear-gradient(
+    color-mix(in srgb, var(--clw-shell) 72%, transparent),
+    color-mix(in srgb, var(--clw-shell) 84%, transparent)
+  ), var(--ps-crm-backdrop, var(--clw-shell));
 }
 .clw-morph { position: absolute; inset: 0; z-index: 5; pointer-events: none; opacity: 0; background: radial-gradient(circle at 50% 40%, var(--k-acc, #F0567F), var(--k-acc2, #7C6CFF)); }
 .clw-body { position: relative; z-index: 2; height: 100%; box-sizing: border-box; overflow: hidden; }

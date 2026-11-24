@@ -68,7 +68,7 @@ export const SLOTS: readonly SlotInfo[] = [
   // sounds, settings and every ring that uses them stay.
   // PS 1.73 (the developer, 21 Nov 2026): the Clients workspace takes the Soundboard's old place, on for everyone (clients/ClientsButton.tsx).
   // A record from before has no word about it, so it shows here; removed in Edit mode it stays removed (hidden).
-  { id: "clients", label: "Clients", inPlace: true },
+  { id: "clients", label: "CRM", inPlace: true },
   { id: "soundboard", label: "Soundboard", optIn: true, inPlace: true },
   { id: "glass", label: "Transparency slider, Keep overlay and Hover mode" },
   // The top right (PS 1.70): only Screen time, the menu and the gear stay on the page. Every other button there lives in

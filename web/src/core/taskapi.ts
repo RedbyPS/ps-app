@@ -11,6 +11,8 @@
 // behind the ApiStore interface, so the unit tests (tests/taskapi.test.ts) run every endpoint against a fake one.
 // Never log a task's text (the shell logs the method, the path and the status only).
 import type { Doc, Goal, Settings, Todo } from "./model";
+import { dueCfgOf, patchDue } from "./duealerts.ts";
+import { CRM_ENDPOINTS, handleCrmApi, type CrmStore } from "./crmapi.ts";
 import { GROUP_NAME_MAX, cleanGroups, groupKey, groupOf, tabLists, type TabLists } from "./groups.ts";
 import { DEFAULT_NAMES, LIST_NAME_MAX, MAIN, SEC_NAME_MAX, allPages, cleanNames, listMoveTarget, pageOfSec, pageOrder, renamePage, shownName, tidyName } from "./lists.ts";
 import { INBOX, INBOX_MAX, INBOX_NAME, inInbox, intoSection, listsCtx, sectionTakes } from "./aiinbox.ts";
@@ -22,7 +24,7 @@ import { cdPatch, cleanCd, okHm, type CdPrefs } from "./daycount.ts";
 import { isClientTask, landsOn } from "./clientwork.ts";
 import { scheduledOn } from "./scheduled.ts";
 const isISODay = (v: unknown): v is string => typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v);
-import { REM_TEXT_MAX, okTz, addTaskReminder, freshId, minutesOf, newTaskReminder, oneLine, patchReminder, reminderOfTask, remindOrDefault, removeReminder, type RemindRec } from "./remind.ts";
+import { REM_TEXT_MAX, okTz, addTaskReminder, freshId, minutesOf, newTaskReminder, oneLine, patchReminder, reminderOfTask, remindOrDefault, removeReminder, addReminder, plainOf, DUE_HOURS_MIN, DUE_HOURS_MAX, REM_LABEL_MAX, REM_SNOOZE_MIN, REM_SNOOZE_MAX, REM_SOUNDS, REM_VOL_MIN, type Reminder, type RemindRec } from "./remind.ts";
 
 export const API_PORT = 47836;
 export const API_VERSION = 1;
@@ -31,7 +33,7 @@ export const TITLE_MAX = 500, NOTES_MAX = 2000;
 export const LIST_LIMIT_DEF = 200, LIST_LIMIT_MAX = 500;
 
 // ---------- the switches ----------
-export type ScopeId = "inbox" | "lists" | "goals" | "rename" | "read" | "add" | "edit" | "done" | "delete" | "remind" | "focus" | "sentry" | "gym" | "settings" | "message";
+export type ScopeId = "inbox" | "lists" | "goals" | "crm" | "rename" | "read" | "add" | "edit" | "done" | "delete" | "remind" | "focus" | "sentry" | "gym" | "settings" | "message";
 export interface ScopeDef { id: ScopeId; group: "where" | "what"; label: string; line: string; def: boolean }
 /** One switch per thing an AI may do (Settings, AI task API). Off unless switched on, except add, read and the inbox. */
 export const SCOPES: ScopeDef[] = [
@@ -40,13 +42,14 @@ export const SCOPES: ScopeDef[] = [
   // PS 1.72 (Jan, 21 Nov 2026: "make sure that you can edit this with API as well, add and delete"). Off unless switched
   // on; Read, Add, Edit, Tick done and Delete below then say what it may do there, as they do for tasks.
   { id: "goals", group: "where", label: "Goals timeline", line: "Your goals on the Timeline. The What switches below say what it may do there.", def: false },
+  { id: "crm", group: "where", label: "CRM", line: "Your private client records, projects, activity, documents and CRM appearance. The What switches apply here too.", def: false },
   { id: "rename", group: "where", label: "Rename lists and sections", line: "Change the names of your lists and sections.", def: false },
   { id: "read", group: "what", label: "Read tasks", line: "See tasks, lists and sections it can reach.", def: true },
   { id: "add", group: "what", label: "Add tasks", line: "Add new tasks (into the AI Inbox unless All lists is on).", def: true },
   { id: "edit", group: "what", label: "Edit and move tasks", line: "Change a task's name, notes, date or priority, or move it.", def: false },
   { id: "done", group: "what", label: "Tick tasks done", line: "Tick a task done or open it again.", def: false },
   { id: "delete", group: "what", label: "Delete tasks", line: "Delete tasks for good.", def: false },
-  { id: "remind", group: "what", label: "Set reminders", line: "Put a reminder on a task, change it or take it off.", def: false },
+  { id: "remind", group: "what", label: "Set reminders", line: "Manage recurring reminders and reminders on tasks.", def: false },
   // PS 1.74 (Jan, 21 Nov 2026, for his AI coach: "read and set the working on task"). Its own switch, like Sentry mode and the gym:
   // it changes what the island shows and starts the task's clock, which is neither editing a task nor ticking it.
   { id: "focus", group: "what", label: "Working on", line: "See and set the task you are working on, the one the island shows.", def: false },
@@ -76,6 +79,7 @@ export interface ApiReq { method: string; path: string; query?: Record<string, s
 export interface ApiRes { status: number; body: unknown }
 /** What the endpoints need from the vault (src/taskapi.ts gives the real one). */
 export interface ApiStore {
+  crm?: CrmStore;
   /** ok: the vault is open. locked: PS is open but signed out or locked. */
   state(): "ok" | "locked";
   todos(): Doc<Todo>[];               // every task not cleared by a reset
@@ -239,6 +243,10 @@ const ENDPOINTS = [
   "GET /v1", "GET /v1/lists", "PATCH /v1/lists/{id}", "PATCH /v1/sections/{key}",
   "GET /v1/tasks", "POST /v1/tasks", "GET /v1/tasks/{id}", "PATCH /v1/tasks/{id}", "DELETE /v1/tasks/{id}",
   "POST /v1/tasks/{id}/complete", "POST /v1/tasks/{id}/reopen", "PUT /v1/tasks/{id}/reminder", "DELETE /v1/tasks/{id}/reminder",
+  "GET /v1/tasks/{id}/reminder", "PATCH /v1/tasks/{id}/reminder",
+  "GET /v1/reminders/due", "PATCH /v1/reminders/due",
+  "GET /v1/reminders", "POST /v1/reminders", "GET /v1/reminders/{id}", "PATCH /v1/reminders/{id}", "DELETE /v1/reminders/{id}",
+  ...CRM_ENDPOINTS,
   "GET /v1/focus", "PUT /v1/focus",
   "POST /v1/sentry/start",
   "GET /v1/gym", "PATCH /v1/gym",
@@ -281,6 +289,9 @@ async function route(req: ApiReq, sc: Scopes, store: ApiStore): Promise<ApiRes> 
     return ok({ app: "PS", api: API_VERSION, version: store.version(), vault: store.state() === "ok" ? "open" : "locked", scopes: sc, inbox: { id: INBOX, name: INBOX_NAME }, endpoints: ENDPOINTS });
   }
   if (store.state() !== "ok") return fail(423, "locked", "PS is open but signed out or locked, so it cannot read or change tasks. Ask the person to unlock PS, then try again.");
+
+  if (seg[1] === "crm") return handleCrmApi(method, seg.slice(2), req, sc, store);
+  if (seg[1] === "reminders") return regularReminderRoute(method, seg, body, sc, store);
 
   // /v1/lists
   if (seg[1] === "lists" && seg.length === 2) {
@@ -492,8 +503,14 @@ async function route(req: ApiReq, sc: Scopes, store: ApiStore): Promise<ApiRes> 
     return ok({ task: fresh(id, store, d, { done: act === "complete" }) });
   }
   if (act === "reminder") {
-    const no = allow("PUT", "DELETE"); if (no) return no;
+    const no = allow("GET", "PATCH", "PUT", "DELETE"); if (no) return no;
     if (!sc.remind) return scopeOff("remind");
+    const current = reminderOfTask(c.rem, d.id);
+    if (method === "GET") {
+      if (!sc.read) return scopeOff("read");
+      return current ? ok({ reminder: fullReminder(current) }) : fail(404, "not_found", "This task has no reminder.");
+    }
+    if (method === "PATCH") return patchCustomReminder(current, body, store, true);
     return reminder(d, method, body, store, c);
   }
   return fail(404, "not_found", "No such endpoint. GET /v1 lists them.");
@@ -778,6 +795,159 @@ async function reminder(d: Doc<Todo>, method: string, body: unknown, store: ApiS
   return ok({ task: fresh(d.id, store, d, {}) });
 }
 const hm = (m: number) => `${String(Math.floor(m / 60) % 24).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
+
+// ---------- reminders with their full editor settings ----------
+const CUSTOM_REMINDER_FIELDS = ["time", "until", "days", "timezone", "on", "label", "message", "snoozeMinutes",
+  "laterLabel", "confirmLabel", "confirmText", "confirmOnClick", "background", "accent", "sound", "volume"];
+const fullReminder = (r: Reminder) => ({
+  id: r.id, taskId: r.task ?? null, date: r.date ?? null, time: r.at, until: r.until, days: r.days, timezone: r.tz || null, on: r.on,
+  label: r.label, message: r.text, snoozeMinutes: r.snooze, laterLabel: r.later, confirmLabel: r.yes, confirmText: r.word,
+  confirmOnClick: r.click, background: r.bg, accent: r.accent, sound: r.sound, volume: r.vol,
+});
+
+function customReminderPatch(body: unknown, base: Pick<Reminder, "at" | "until">, today: string, onTask: boolean): Partial<Reminder> | ApiRes {
+  if (!isObj(body) || !Object.keys(body).length) return fail(400, "bad_request", "Send a JSON object with reminder fields.");
+  const u = unknownField(body, onTask ? [...CUSTOM_REMINDER_FIELDS, "date"] : CUSTOM_REMINDER_FIELDS); if (u) return u;
+  const p: Partial<Reminder> = {};
+  for (const [name, k, max] of [["label", "label", REM_LABEL_MAX], ["message", "text", REM_TEXT_MAX], ["laterLabel", "later", REM_LABEL_MAX],
+    ["confirmLabel", "yes", REM_LABEL_MAX], ["confirmText", "word", REM_LABEL_MAX]] as const) {
+    if (!(name in body)) continue;
+    if (typeof body[name] !== "string" || body[name].length > max) return badField(name, `${name} must be text up to ${max} characters.`);
+    p[k] = oneLine(body[name], max);
+  }
+  for (const [name, k] of [["time", "at"], ["until", "until"]] as const) {
+    if (!(name in body)) continue;
+    if (typeof body[name] !== "string" || !HM_RE.test(body[name])) return badField(name, `${name} must be a 24-hour time such as 09:30.`);
+    p[k] = body[name];
+  }
+  if ((p.at ?? base.at) === (p.until ?? base.until)) return badField("until", "The start and end times must be different.");
+  for (const [name, k] of [["background", "bg"], ["accent", "accent"]] as const) {
+    if (!(name in body)) continue;
+    if (typeof body[name] !== "string" || !COLOR_RE.test(body[name])) return badField(name, `${name} must be a #RRGGBB colour.`);
+    p[k] = body[name].toLowerCase();
+  }
+  for (const [name, k] of [["on", "on"], ["confirmOnClick", "click"]] as const) {
+    if (!(name in body)) continue;
+    if (typeof body[name] !== "boolean") return badField(name, `${name} must be true or false.`);
+    p[k] = body[name];
+  }
+  if ("timezone" in body) {
+    const tz = body.timezone === null ? "" : okTz(body.timezone);
+    if (tz === "" && body.timezone !== null) return badField("timezone", "Use an IANA time zone or null for this device's time.");
+    p.tz = tz;
+  }
+  if ("days" in body) {
+    if (!Array.isArray(body.days) || body.days.length > 7 || !body.days.every((d) => Number.isInteger(d) && d >= 0 && d <= 6)) return badField("days", "Send an array of weekday numbers from 0 (Sunday) to 6 (Saturday).");
+    p.days = body.days;
+    if (onTask) p.date = undefined;
+  }
+  if ("date" in body) {
+    if (body.date !== null && (typeof body.date !== "string" || !okDay(body.date) || body.date < today)) return badField("date", "Send today, a future date, or null for a repeating reminder.");
+    if (typeof body.date === "string" && "days" in body) return badField("days", "Choose a single date or repeating days.");
+    p.date = typeof body.date === "string" ? body.date : undefined;
+  }
+  if ("snoozeMinutes" in body) {
+    const n = body.snoozeMinutes;
+    if (typeof n !== "number" || !Number.isInteger(n) || n < REM_SNOOZE_MIN || n > REM_SNOOZE_MAX) return badField("snoozeMinutes", "Use 1 to 240 minutes.");
+    p.snooze = n;
+  }
+  if ("sound" in body) {
+    const sound = REM_SOUNDS.find((s) => s.id === body.sound);
+    if (!sound) return badField("sound", "Use none, soft, alarm, or own (the file already chosen on this device).");
+    p.sound = sound.id;
+  }
+  if ("volume" in body) {
+    if (typeof body.volume !== "number" || !Number.isFinite(body.volume) || body.volume < REM_VOL_MIN || body.volume > 1) return badField("volume", "Use 0.1 to 1.");
+    p.vol = body.volume;
+  }
+  return p;
+}
+
+async function patchCustomReminder(current: Reminder | null, body: unknown, store: ApiStore, onTask: boolean): Promise<ApiRes> {
+  if (!current) return fail(404, "not_found", "This reminder is missing. Create it before editing.");
+  const patch = customReminderPatch(body, current, store.today(), onTask);
+  if ("status" in patch) return patch;
+  const now = store.now();
+  let saved: Reminder | undefined;
+  await store.saveRemind((rec) => {
+    if (!rec?.list.some((r) => r.id === current.id)) return null;
+    const next = patchReminder(rec, current.id, patch, now);
+    saved = next.list.find((r) => r.id === current.id);
+    return next;
+  });
+  return saved ? ok({ reminder: fullReminder(saved) }) : fail(404, "not_found", "This reminder was removed.");
+}
+
+async function regularReminderRoute(method: string, seg: string[], body: unknown, scopes: Scopes, store: ApiStore): Promise<ApiRes> {
+  if (!scopes.remind) return scopeOff("remind");
+  const id = seg[2];
+  if (seg.length > 3) return fail(404, "not_found", "No reminder endpoint.");
+  const current = remindOrDefault(store.remind(), store.red());
+  if (id === "due") return dueReminders(method, body, scopes, store, current);
+  const list = plainOf(current);
+  if (method === "GET") {
+    if (!scopes.read) return scopeOff("read");
+    if (!id) return ok({ reminders: list.map(fullReminder) });
+    const r = list.find((r) => r.id === id);
+    return r ? ok({ reminder: fullReminder(r) }) : fail(404, "not_found", "This reminder is missing.");
+  }
+  if (method === "POST" && !id) {
+    if (!scopes.add) return scopeOff("add");
+    const patch = customReminderPatch(body, { at: "09:00", until: "21:00" }, store.today(), false);
+    if ("status" in patch) return patch;
+    let saved: Reminder | undefined;
+    const now = store.now();
+    await store.saveRemind((rec) => {
+      const base = remindOrDefault(rec, store.red());
+      const nextId = freshId(base);
+      const added = addReminder(base, nextId, now);
+      if (added === base) return null;
+      const next = patchReminder(added, nextId, patch, now);
+      saved = next.list.find((r) => r.id === nextId);
+      return next;
+    });
+    return saved ? ok({ reminder: fullReminder(saved) }, 201) : fail(409, "too_many", "There is no room for another reminder.");
+  }
+  if (method === "PATCH" && id) {
+    if (!scopes.edit) return scopeOff("edit");
+    return patchCustomReminder(list.find((r) => r.id === id) ?? null, body, store, false);
+  }
+  if (method === "DELETE" && id) {
+    if (!scopes.delete) return scopeOff("delete");
+    if (!list.some((r) => r.id === id)) return fail(404, "not_found", "This reminder is missing.");
+    await store.saveRemind((rec) => rec && plainOf(rec).some((r) => r.id === id) ? removeReminder(rec, id, store.now()) : null);
+    return ok({ deleted: id });
+  }
+  return fail(405, "method_not_allowed", id ? "Use GET, PATCH or DELETE here." : "Use GET or POST here.");
+}
+
+async function dueReminders(method: string, body: unknown, scopes: Scopes, store: ApiStore, current: RemindRec): Promise<ApiRes> {
+  const red = store.red();
+  const view = (rec: RemindRec) => {
+    const due = dueCfgOf(rec, red);
+    const { id, taskId, date, time, until, days, timezone, ...nag } = fullReminder(due.nag);
+    return { hoursBeforeDayEnd: due.hours, ...nag };
+  };
+  if (method === "GET") return scopes.read ? ok({ reminder: view(current) }) : scopeOff("read");
+  if (method !== "PATCH") return fail(405, "method_not_allowed", "Use GET or PATCH here.");
+  if (!scopes.edit) return scopeOff("edit");
+  if (!isObj(body) || !Object.keys(body).length) return fail(400, "bad_request", "Send a JSON object with reminder fields.");
+  const { hoursBeforeDayEnd, ...custom } = body;
+  if (hoursBeforeDayEnd !== undefined && (typeof hoursBeforeDayEnd !== "number" || !Number.isInteger(hoursBeforeDayEnd)
+      || hoursBeforeDayEnd < DUE_HOURS_MIN || hoursBeforeDayEnd > DUE_HOURS_MAX)) {
+    return badField("hoursBeforeDayEnd", "Use a whole number from 1 to 12.");
+  }
+  const allowed = CUSTOM_REMINDER_FIELDS.filter((k) => !["time", "until", "days", "timezone"].includes(k));
+  const u = unknownField(custom, allowed); if (u) return u;
+  const nag = Object.keys(custom).length ? customReminderPatch(custom, dueCfgOf(current, red).nag, store.today(), false) : {};
+  if ("status" in nag) return nag;
+  let saved = current;
+  await store.saveRemind((rec) => {
+    saved = patchDue(remindOrDefault(rec, red), red, { nag, hours: hoursBeforeDayEnd as number | undefined }, store.now());
+    return saved;
+  });
+  return ok({ reminder: view(saved) });
+}
 
 // ---------- the goals timeline (PS 1.72) ----------
 /** A goal as the API shows it (the words the Timeline's editor uses: name, level, colour, From, To, notes, done). */

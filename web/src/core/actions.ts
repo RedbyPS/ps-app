@@ -142,13 +142,18 @@ function rebase(remote: Settings) {
   setBase(n);
 }
 
-export function saveSettings(patch: Partial<Settings>): Promise<void> {
+export function saveSettings(change: Partial<Settings> | ((current: Settings | undefined) => Partial<Settings> | null)): Promise<void> {
   const run = async () => {
     // No settings yet and nothing downloaded yet: wait for the first download instead of starting a
     // second settings record (that is how the phone got its own and lost the developer's rules).
     if (!settings(vaultStore.get())) await firstDownload();
     const snap = vaultStore.get();
     const s = settings(snap);
+    const next = typeof change === "function" ? change(s?.data) : change;
+    if (!next) return;
+    const patch = next.crmAppearance
+      ? { ...next, crmAppearance: { ...s?.data.crmAppearance, ...next.crmAppearance } }
+      : next;
     // PS 1.68: still none (the download took longer than the wait): only the change goes in, never the defaults, so it
     // can never put the real record's choices back to their defaults when that arrives (core/cardsync.ts settingsWrite).
     // PS 1.71 (core/keepunknown.ts): pages, sections, groups and fields this build cannot read stay as they are stored.
@@ -304,17 +309,17 @@ export async function addClient(input: { name: string; contactName?: string; ema
 // Client edits run one at a time, so two quick saves (eg a field saved on blur, then the
 // modal's Save) never build on the same stale copy and drop each other's changes.
 let clientQueue: Promise<unknown> = Promise.resolve();
-export function updateClient(id: string, patch: Partial<ClientRec>): Promise<void> {
-  const run = clientQueue.then(() => updateClientNow(id, patch));
+export function updateClient(id: string, patch: Partial<ClientRec>, opts: { syncPortal?: boolean } = {}): Promise<void> {
+  const run = clientQueue.then(() => updateClientNow(id, patch, opts.syncPortal !== false));
   clientQueue = run.catch(() => undefined);
   return run;
 }
-async function updateClientNow(id: string, patch: Partial<ClientRec>) {
+async function updateClientNow(id: string, patch: Partial<ClientRec>, syncPortal: boolean) {
   const c = doc<ClientRec>(id);
   if (!c) return;
   const next = { ...c.data, ...patch };
   await put<ClientRec>("client", next, { id, ws: null });
-  if (patch.name !== undefined || patch.greetingName !== undefined) {
+  if (syncPortal && (patch.name !== undefined || patch.greetingName !== undefined)) {
     const meta = docs<WsMeta>("wsmeta", next.ws)[0];
     await put<WsMeta>("wsmeta", { clientName: next.name, greetingName: next.greetingName || null, ...wsOwnerName() }, { id: meta?.id, ws: next.ws });
   }
@@ -417,13 +422,20 @@ function assertShared(projectId: string) {
 }
 
 export function privOf(projectId: string): Doc<ProjectPrivate> | undefined {
-  return docs<ProjectPrivate>("pprivate").find((p) => p.data.projectId === projectId);
+  return docs<ProjectPrivate>("pprivate", null).find((p) => p.data.projectId === projectId);
 }
-export async function updatePrivate(projectId: string, patch: Partial<ProjectPrivate>, historyText?: string) {
-  const d = privOf(projectId);
-  const base: ProjectPrivate = d?.data ?? { projectId, history: [] };
-  const history = historyText ? [{ date: todayISO(), text: historyText }, ...(base.history || [])].slice(0, 200) : base.history;
-  await put<ProjectPrivate>("pprivate", { ...base, ...patch, projectId, history }, { id: d?.id, ws: null });
+let privateProjectQueue: Promise<unknown> = Promise.resolve();
+export function updatePrivate(projectId: string, patch: Partial<ProjectPrivate> | ((data: ProjectPrivate) => Partial<ProjectPrivate> | null), historyText?: string) {
+  const run = privateProjectQueue.then(async () => {
+    const d = privOf(projectId);
+    const base = d?.data ?? { projectId, history: [] };
+    const change = typeof patch === "function" ? patch(base) : patch;
+    if (!change) return;
+    const history = historyText ? [{ date: todayISO(), text: historyText }, ...(base.history || [])].slice(0, 200) : base.history;
+    await put<ProjectPrivate>("pprivate", { ...base, ...change, projectId, history }, { id: d?.id, ws: null });
+  });
+  privateProjectQueue = run.catch(() => undefined);
+  return run;
 }
 
 export async function setPipeline(projectId: string, pipeline: Pipeline) {
@@ -591,8 +603,7 @@ export async function ungroupTasks(id: string) {
   const st = settings(vaultStore.get())?.data;
   await saveSettings({ tmGroups: cleanGroups(st?.tmGroups).filter((g) => g.id !== id), tmSecOrder: cleanSecOrder(st?.tmSecOrder).filter((k) => k !== groupKey(id)) });
 }
-function tabListsNow() {
-  const s = vaultStore.get();
+export function tabListsNow(s = vaultStore.get()) {
   const st = settings(s)?.data;
   return tabLists(todos(s), cleanGroups(st?.tmGroups), todayISO(), { now: Date.now(), tz: overdueZone(st?.tmHomeTz) }, landDay?.(s));   // the list as shown (overdue tasks are on their own card)
 }

@@ -427,6 +427,13 @@ final class Second {
     NotificationCenter.default.post(name: Second.changed, object: nil)
   }
 
+  var vaultIsUnlocked: Bool { unlocked }
+
+  func sendScreenRelay(_ message: [String: Any]) {
+    guard isOn, unlocked else { return }
+    post(message)
+  }
+
   private func post(_ d: [String: Any]) {
     guard !off, let data = try? JSONSerialization.data(withJSONObject: d), let s = String(data: data, encoding: .utf8) else { return }
     toPage(s)

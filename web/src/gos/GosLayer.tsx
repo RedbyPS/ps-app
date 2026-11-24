@@ -377,7 +377,7 @@ export function GosLayer() {
           // The Soundboard (V1.47, src/soundboard/), next to Gym: audio and video, the player, the queue, timed plays.
           if (it === "soundboard") return <DockBtn key={it} flip={it} on={sbOpen} onClick={(el) => { haptic("press"); primeSfx(); leaveCw(); openSoundboard(el); }} label="Sounds" icon={<NoteIcon size={24} />} />;
           // PS 1.73 the Clients workspace (src/clients/), left of Vault: a tap opens it over the page, a tap again closes it.
-          if (it === "clients") return <DockBtn key={it} flip={it} on={cwOpen} onClick={(el) => { haptic("press"); primeSfx(); if (clientsIsOpen()) closeClients(); else openClients(el); }} label="Clients" icon={<ClientsIcon size={24} />} />;
+          if (it === "clients") return <DockBtn key={it} flip={it} on={cwOpen} onClick={(el) => { haptic("press"); primeSfx(); if (clientsIsOpen()) closeClients(); else openClients(el); }} label="CRM" icon={<ClientsIcon size={24} />} />;
           if (it === "vault") return <DockBtn key={it} flip={it} on={view === "vault" && !cwOpen} onClick={() => { leaveCw(); go("vault"); }} label="Vault" icon={<VaultIcon />} />;
           if (it === "rules") return <Fragment key={it}>{red && <DockBtn flip={it} on={!!book} onClick={() => { leaveCw(); rules(); }} label="Rules" icon={<span className="gos-dock-rb">PS</span>} />}</Fragment>;
           if (it === "settings") return <DockBtn key={it} flip={it} on={settingsOpen} onClick={() => { haptic("press"); primeSfx(); leaveCw(); if (settingsOpen) openSettings(null); else settings(); }} label={MWEB ? "Settings" : "PS"} icon={<GearIcon />} badge={g.update.state === "available" || g.update.state === "ready"} />;

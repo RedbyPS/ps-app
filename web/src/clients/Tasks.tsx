@@ -1,18 +1,26 @@
 // The Tasks column of the Clients screen (PS 1.73): the project's tasks, which are ordinary to-do tasks with the client on them,
 // so ticking one here ticks it in the list too. Each lands in the normal list by itself on its day at the day end (the developer's rules,
 // core/clientwork.ts): weekday chips for repeating ones, a date for one day ones, a deadline with its own do date, P1.
-import { useState } from "react";
+import { useMemo, useState, type CSSProperties } from "react";
 import type { CalEvent, Doc, Todo } from "../core/model";
-import { addClientTodo, editClientTodo, removeClientTodo, tickClientTodo } from "../core/clientsact";
+import { addClientTodo, editClientTodo, removeClientTodo, tickClientTodo, type TaskInput } from "../core/clientsact";
 import {
   CHIPS, SECTION_WORDS, clampDoOn, comesInWords, dayWords, daysOf, daysWords, deadlineWords, doOnFor, gapOf, landWords, repeatPatch,
   sectionOf, toggleDay, type Deadline,
 } from "../core/clientwork";
+import { clientRanked } from "./clientsday";
+import { levelPick, prioNumbers } from "../core/prio";
+import type { Reminder } from "../core/remind";
 import { plusDays } from "../core/repeat";
-import { I, Pop, Switch } from "./bits";
+import { useVault } from "../ui/kit";
+import { PriorityPicker } from "../views/PriorityPicker";
+import { AddTime } from "../views/TimeEstimate";
+import { DraftRemindPop, reminderWords, useTaskReminder, TaskReminderEditor } from "../views/TaskRemind";
+import { I, Pop } from "./bits";
 
 type Kind = "repeat" | "date" | "deadline";
 export interface Call { ev: CalEvent; who: string | null }
+const ALL_WEEKDAYS = [0, 1, 2, 3, 4, 5, 6];
 const kindOf = (t: Todo): Kind => (t.type === "daily" ? "repeat" : t.deadline ? "deadline" : "date");
 const callDeadline = (c: Call): Deadline => {
   const d = new Date(c.ev.start!);
@@ -21,58 +29,109 @@ const callDeadline = (c: Call): Deadline => {
 };
 
 /** One task's schedule as the box edits it. */
-interface Draft { title: string; kind: Kind; days: number[]; date: string; dl: Deadline; doOn: string; p1: boolean }
-const draftOf = (t: Todo, day: string): Draft => ({
-  title: t.title, kind: kindOf(t), days: daysOf(t).length ? daysOf(t) : [1, 2, 3, 4, 5], p1: t.p1 === true,
+interface Draft { title: string; kind: Kind; days: number[]; date: string; dl: Deadline; doOn: string; priority: number | null }
+const draftOf = (t: Todo, day: string, priority: number | null): Draft => ({
+  title: t.title, kind: kindOf(t), days: daysOf(t).length ? daysOf(t) : [1, 2, 3, 4, 5], priority,
   date: t.doOn || day, dl: t.deadline ?? { date: t.doOn || day }, doOn: t.doOn || t.deadline?.date || day,
 });
-function patchOf(d: Draft, day: string): Partial<Todo> {
+function patchOf(d: Draft, day: string): TaskInput {
   const title = d.title.trim().slice(0, 500);
-  if (d.kind === "repeat") return { title, p1: d.p1, ...repeatPatch(d.days, day), doOn: null, deadline: null };
-  if (d.kind === "date") return { title, p1: d.p1, type: "once", repeat: null, due: null, doOn: d.date, deadline: null };
-  return { title, p1: d.p1, type: "once", repeat: null, due: null, deadline: d.dl, doOn: clampDoOn(d.doOn, d.dl.date) };
+  const priority = d.kind === "repeat" && d.priority !== 1 ? null : d.priority;
+  if (d.kind === "repeat") return { title, priority, ...repeatPatch(d.days, day), doOn: null, deadline: null };
+  if (d.kind === "date") return { title, priority, type: "once", repeat: null, due: null, doOn: d.date, deadline: null };
+  return { title, priority, type: "once", repeat: null, due: null, deadline: d.dl, doOn: clampDoOn(d.doOn, d.dl.date) };
 }
-function addedWords(t: Partial<Todo>): string {
-  const sec = SECTION_WORDS[sectionOf(t as Todo)];
+function addedWords(t: TaskInput): string {
+  const sec = t.priority ? `Priority ${t.priority}` : SECTION_WORDS[sectionOf(t as Todo)];
   if (t.type === "daily") return `Added. It comes into ${sec} on ${daysWords(daysOf(t as Todo))}.`;
   if (t.deadline) return `Added. It comes into ${sec} on ${dayWords(t.doOn!)}, deadline ${dayWords(t.deadline.date)}.`;
   return `Added. It comes into ${sec} on ${dayWords(t.doOn!)}.`;
 }
 
-export function Tasks({ clientId, projectId, list, day, endHm, dayLine, call, say, prep, onPrepDone }: {
+export function Tasks({ clientId, projectId, list, day, endHm, dayLine, call, say, prep, onPrepDone, colour }: {
   clientId: string; projectId: string; list: Doc<Todo>[]; day: string; endHm: string; dayLine: string; call: Call | null; say: (t: string) => void;
-  prep: string | null; onPrepDone: () => void;
+  prep: string | null; onPrepDone: () => void; colour?: string;
 }) {
+  const s = useVault();
+  const ranked = useMemo(() => clientRanked(s).map((d) => ({ ...d.data, id: d.id, p1: d.data.p1 === true })), [s, day]);
+  const priorities = useMemo(() => prioNumbers(ranked), [ranked]);
+  const max = useMemo(() => levelPick(ranked).max, [ranked]);
   const [open, setOpen] = useState<string | null>(null);
   const [title, setTitle] = useState("");
-  const [add, setAdd] = useState<Draft>({ title: "", kind: "repeat", days: [1, 2, 3, 4, 5], date: day, dl: { date: plusDays(day, 3) }, doOn: plusDays(day, 3), p1: false });
+  const [add, setAdd] = useState<Draft>({ title: "", kind: "repeat", days: [1, 2, 3, 4, 5], date: day, dl: { date: plusDays(day, 3) }, doOn: plusDays(day, 3), priority: null });
+  const [advanced, setAdvanced] = useState(false);
+  const [notes, setNotes] = useState("");
+  const [rem, setRem] = useState<Reminder | null>(null);
+  const [remOpen, setRemOpen] = useState(false);
+  const [remTask, setRemTask] = useState<string | null>(null);
+  const [est, setEst] = useState<number | null>(null);
+  const [every, setEvery] = useState<number | null>(null);
+  const [busy, setBusy] = useState(false);
   const openId = prep ?? open;
+  const patch = patchOf({ ...add, title }, day);
   const doAdd = async () => {
-    const t = title.trim();
-    if (!t) return;
-    const patch = patchOf({ ...add, title: t }, day);
-    await addClientTodo(clientId, projectId, patch as Todo);
-    setTitle("");
-    say(addedWords(patch));
+    if (!patch.title || busy) return;
+    setBusy(true);
+    try {
+      await addClientTodo(clientId, projectId, {
+        ...patch, ...(notes.trim() ? { notes: notes.trim() } : {}), ...(est === null ? {} : { est }),
+        ...(every === null ? {} : { checkEvery: every }), ...(rem ? { reminder: rem } : {}),
+      });
+      setTitle(""); setNotes(""); setEst(null); setEvery(null); setRem(null); setAdvanced(false);
+      setAdd((d) => ({ ...d, priority: null }));
+      say(addedWords(patch));
+    } catch (e) {
+      say(e instanceof Error ? e.message : "Could not add the task.");
+    } finally {
+      setBusy(false);
+    }
   };
   return (
-    <div className="clw-col clw-tasks">
-      {/* PS 1.77: the words the developer approved (23 Nov 2026), so Tasks and Project steps are told apart at a glance. */}
+    <div className="clw-col clw-tasks" style={colour ? { "--clw-task-colour": colour } as CSSProperties : undefined}>
       <div className="clw-col-h"><b>TASKS FOR YOUR LIST</b><span>{list.filter((d) => !d.data.done).length || ""}</span></div>
       <div className="clw-col-hint">These go into your to-do list on their day.</div>
       <div className="clw-dayline">{dayLine}</div>
       <div className="clw-rows">
         {!list.length && <div className="clw-empty">No tasks for this project yet.</div>}
-        {list.map((d) => <Row key={d.id} d={d} day={day} endHm={endHm} call={call} open={openId === d.id} setOpen={(v) => { setOpen(v ? d.id : null); if (!v && prep) onPrepDone(); }} say={say} />)}
+        {list.map((d) => <Row key={d.id} d={d} priority={d.data.p1 ? 1 : priorities.get(d.id) ?? null} max={openId === d.id ? levelPick(ranked, d.id).max : max}
+          onReminder={() => setRemTask(d.id)} day={day} endHm={endHm} call={call} open={openId === d.id} setOpen={(v) => { setOpen(v ? d.id : null); if (!v && prep) onPrepDone(); }} say={say} />)}
       </div>
       <div className="clw-addrow">
         <div className="clw-addline">
-          <input className="clw-inp" placeholder="Add a task" value={title} onChange={(e) => setTitle(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") void doAdd(); }} />
-          <button type="button" className={`clw-p1t${add.p1 ? " on" : ""}`} title="Land it in Priority 1" onClick={() => setAdd({ ...add, p1: !add.p1 })}>P1</button>
-          <button type="button" className="clw-btn pri" disabled={!title.trim()} onClick={() => void doAdd()}>Add</button>
+          <input className="clw-inp" placeholder="Add a task" maxLength={500} value={title} onChange={(e) => setTitle(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter" && !e.nativeEvent.isComposing) void doAdd(); }} />
+          <button type="button" className={`clw-btn sm${advanced ? " on" : ""}`} aria-expanded={advanced} onClick={() => setAdvanced(!advanced)}>Advanced</button>
+          <button type="button" className="clw-btn pri" disabled={!title.trim() || busy} onClick={() => void doAdd()}>Add</button>
         </div>
         <Schedule d={add} set={setAdd} call={call} compact />
+        {advanced && (
+          <div className="clw-advanced">
+            <Priority d={add} set={setAdd} max={max} />
+            <label>Notes<textarea className="clw-inp" rows={2} value={notes} maxLength={20_000} onChange={(e) => setNotes(e.target.value)} /></label>
+            <AddTime title={title} est={est} setEst={setEst} every={every} setEvery={setEvery} label="clw-adv-label" rowCls="clw-adv-row" />
+            <button type="button" className={`clw-btn sm${rem ? " on" : ""}`} onClick={() => setRemOpen(true)}>{reminderWords(!!rem)}</button>
+          </div>
+        )}
+        {remTask && <TaskReminderEditor task={remTask} onClose={() => setRemTask(null)}
+          onMakeDaily={() => void editClientTodo(remTask, { ...repeatPatch(ALL_WEEKDAYS, day), priority: null, doOn: null, deadline: null })} />}
+        {remOpen && <DraftRemindPop title={title} once={add.kind !== "repeat"} startDate={patch.doOn} value={rem} onClose={() => setRemOpen(false)}
+          onSave={(r, daily) => { setRem(r); if (daily) setAdd((d) => ({ ...d, kind: "repeat", days: ALL_WEEKDAYS })); }} />}
       </div>
+    </div>
+  );
+}
+
+function Priority({ d, set, max }: { d: Draft; set: (d: Draft) => void; max: number }) {
+  const on = d.priority === 1;
+  const setPriority = (priority: number | null) => set({ ...d, priority });
+  return (
+    <div className="clw-adv-row">
+      <button type="button" className={`clw-chipb${on ? " on" : ""}`} aria-pressed={on} onClick={() => setPriority(on ? null : 1)}>Priority 1</button>
+      {d.kind === "repeat" && !on && <span className="clw-small">Choose a date or deadline for P2 and higher.</span>}
+      {d.kind !== "repeat" && !on && (d.priority === null
+        ? <button type="button" className="clw-chipb" onClick={() => setPriority(max)}>Give it a priority</button>
+        : <><PriorityPicker value={Math.min(d.priority, max)} max={max} onChange={setPriority} />
+          <button type="button" className="clw-chipb" onClick={() => setPriority(null)}>No priority</button></>)}
     </div>
   );
 }
@@ -86,7 +145,7 @@ function Schedule({ d, set, call, compact }: { d: Draft; set: (d: Draft) => void
     <div className="clw-sched">
       <div className="clw-seg">
         {(["repeat", "date", "deadline"] as Kind[]).map((k) => (
-          <button key={k} type="button" className={d.kind === k ? "on" : ""} onClick={() => set({ ...d, kind: k })}>{k === "repeat" ? "Repeats" : k === "date" ? "On a date" : "By a deadline"}</button>
+          <button key={k} type="button" className={d.kind === k ? "on" : ""} onClick={() => set({ ...d, kind: k, priority: k === "repeat" && d.priority !== 1 ? null : d.priority })}>{k === "repeat" ? "Repeats" : k === "date" ? "On a date" : "By a deadline"}</button>
         ))}
       </div>
       {d.kind === "repeat" && (
@@ -114,12 +173,8 @@ function Schedule({ d, set, call, compact }: { d: Draft; set: (d: Draft) => void
   );
 }
 
-function Row({ d, day, endHm, call, open, setOpen, say }: { d: Doc<Todo>; day: string; endHm: string; call: Call | null; open: boolean; setOpen: (v: boolean) => void; say: (t: string) => void }) {
+function Row({ d, priority, max, day, endHm, call, open, setOpen, say, onReminder }: { d: Doc<Todo>; priority: number | null; max: number; day: string; endHm: string; call: Call | null; open: boolean; setOpen: (v: boolean) => void; say: (t: string) => void; onReminder: () => void }) {
   const t = d.data;
-  const p1 = async () => {
-    await editClientTodo(d.id, { p1: !t.p1 });
-    say(!t.p1 ? `${t.title} lands in Priority 1.` : `${t.title} lands in ${SECTION_WORDS[sectionOf({ ...t, p1: false })]}.`);
-  };
   return (
     <div className={`clw-trow${t.done ? " done" : ""}`}>
       <button type="button" className={`clw-ck${t.done ? " on" : ""}`} aria-label={t.done ? "Not done" : "Done"} onClick={() => void tickClientTodo(d.id, !t.done)} />
@@ -137,31 +192,39 @@ function Row({ d, day, endHm, call, open, setOpen, say }: { d: Doc<Todo>; day: s
           <span className="sub">{landWords(t)}</span>
         </div>
       </div>
-      <button type="button" className={`clw-p1t${t.p1 ? " on" : ""}`} title={t.p1 ? "Lands in Priority 1. Click to land it normally." : "Click to land it in Priority 1"} onClick={() => void p1()}>P1</button>
-      {open && <TaskBox d={d} day={day} endHm={endHm} call={call} onClose={() => setOpen(false)} say={say} />}
+      {priority !== null && <button type="button" className="clw-p1t on" aria-label={`Priority ${priority}, edit task`} onClick={() => setOpen(!open)}>P{priority}</button>}
+      {open && <TaskBox d={d} priority={priority} max={max} day={day} endHm={endHm} call={call} onClose={() => setOpen(false)} say={say} onReminder={onReminder} />}
     </div>
   );
 }
 
-function TaskBox({ d, day, endHm, call, onClose, say }: { d: Doc<Todo>; day: string; endHm: string; call: Call | null; onClose: () => void; say: (t: string) => void }) {
-  const [dr, setDr] = useState<Draft>(() => draftOf(d.data, day));
-  const preview = { ...d.data, ...patchOf(dr, day) } as Todo;
+function TaskBox({ d, priority, max, day, endHm, call, onClose, say, onReminder }: { d: Doc<Todo>; priority: number | null; max: number; day: string; endHm: string; call: Call | null; onClose: () => void; say: (t: string) => void; onReminder: () => void }) {
+  const [dr, setDr] = useState<Draft>(() => draftOf(d.data, day, priority));
+  const [notes, setNotes] = useState(d.data.notes ?? "");
+  const [est, setEst] = useState<number | null>(d.data.est ?? null);
+  const [every, setEvery] = useState<number | null>(d.data.checkEvery ?? null);
+  const reminder = useTaskReminder(d.id);
+  const { priority: picked, ...task } = patchOf(dr, day);
+  const preview = { ...d.data, ...task, p1: picked === 1 } as Todo;
   const close = () => {
-    const patch = patchOf(dr, day);
+    const patch = {
+      ...task, ...(picked !== priority ? { priority: picked } : {}),
+      ...(notes !== (d.data.notes ?? "") ? { notes: notes.trim() || null } : {}),
+      ...(est !== (d.data.est ?? null) ? { est } : {}), ...(every !== (d.data.checkEvery ?? null) ? { checkEvery: every } : {}),
+    };
     if (patch.title && JSON.stringify({ ...d.data, ...patch }) !== JSON.stringify(d.data)) void editClientTodo(d.id, patch);
     onClose();
   };
-  const sec = SECTION_WORDS[sectionOf({ ...preview, p1: false })];
   return (
     <Pop className="clw-tpop" onClose={close}>
       <div className="h">Task</div>
       <label>Name<input className="clw-inp" autoFocus value={dr.title} onChange={(e) => setDr({ ...dr, title: e.target.value })} onKeyDown={(e) => { if (e.key === "Enter") close(); }}
         onFocus={(e) => d.data.title.startsWith("Prep for the ") && e.target.select()} /></label>
       <Schedule d={dr} set={setDr} call={call} />
-      <div className="clw-p1row">
-        <Switch on={dr.p1} onChange={(v) => setDr({ ...dr, p1: v })} label="Priority 1" />
-        <div><b>Priority 1</b><span>{dr.p1 ? "Lands at the top of your list" : `Lands in ${sec}`}</span></div>
-      </div>
+      <Priority d={dr} set={setDr} max={max} />
+      <label>Notes<textarea className="clw-inp" rows={2} value={notes} maxLength={20_000} onChange={(e) => setNotes(e.target.value)} /></label>
+      <AddTime title={dr.title} est={est} setEst={setEst} every={every} setEvery={setEvery} label="clw-adv-label" rowCls="clw-adv-row" />
+      <button type="button" className="clw-btn sm" onClick={() => { close(); onReminder(); }}>{reminderWords(!!reminder)}</button>
       <div className="clw-land">{comesInWords(preview, day, endHm)}</div>
       <div className="row">
         <button type="button" className="clw-btn sm danger" onClick={() => { void removeClientTodo(d.id).then(() => say(`${d.data.title} removed.`)); onClose(); }}>{I.trash}Remove</button>

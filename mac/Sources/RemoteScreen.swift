@@ -20,11 +20,7 @@ import Network
 // screen: feature "remote-screen" in core's features.json, off by default like Second Computer itself). Its settings (Picture,
 // Delay numbers) come from the page (screenPrefs, src/screenprefs.ts). Nothing here changes any network, firewall or VPN setting.
 //
-// PS 1.77, From anywhere (Settings, Second Computer, Remote screen; off until it is switched on and the relay's address and key
-// are set on both Macs): the direct link is tried first, as before. When it is not up after a short head start, the main Mac
-// also tries the relay (RemoteScreenRelay.swift), and the first link to come up is used. Through the relay the picture is at
-// most 1920 wide and 8 Mbps; a direct link keeps the Picture setting and the home network's bitrate. The window says which
-// way it is connected.
+// The relay is attempted automatically if the direct link fails.
 
 final class RemoteScreen {
   static let shared = RemoteScreen()
@@ -34,7 +30,7 @@ final class RemoteScreen {
     case idle                    // ready (main Mac: not connected; second Mac: listening)
     case searching               // looking for the second Mac on this network
     case connecting              // found it, proving who we are
-    case notOnNetwork            // not found directly (and, with From anywhere on, not through the relay either)
+    case notOnNetwork(String)     // both paths failed; show the reason the user can act on
     case refused(String)         // it answered nothing (not paired with this Mac any more) or did not check out
     case needsPermission(screen: Bool, access: Bool)   // what the second Mac still needs allowed (true = allowed)
     case live(link: String)      // picture and control; link: "cable", "Wi-Fi", "Ethernet", "this Mac", "relay"
@@ -47,8 +43,8 @@ final class RemoteScreen {
     case .off: return "off"
     case .idle: return Second.shared.role == "secondary" ? "ready, waiting for the main Mac" : "not connected"
     case .searching: return "looking for the second Mac"
-    case .connecting: return "connecting"
-    case .notOnNetwork: return RSRelayConfig.on ? "the second Mac could not be reached" : "the second Mac is not on this network"
+    case .connecting: return "connecting through the relay"
+    case .notOnNetwork(let reason): return reason
     case .refused(let w): return "refused (\(w))"
     case .needsPermission(let s, let a): return "needs \(s ? "" : "Screen Recording")\(!s && !a ? " and " : "")\(a ? "" : "Accessibility") allowed on the second Mac"
     case .live(let k): return "live over \(k)"
@@ -58,18 +54,13 @@ final class RemoteScreen {
 
   private(set) var state: State = .off { didSet { if state != oldValue { for o in observers { o(state) }; sendState() } } }
 
-  /// The pages (main.swift): window.__psScreen({on, live, open, state}) for the Tab list's Remote screen switch.
+  /// The pages (main.swift): window.__psRemoteScreen({on, live, open, state}) for the Tab list's Remote screen switch.
   var deliver: ((String) -> Void)?
   func sendState() {
     var live = false; if case .live = state { live = true }
-    var o: [String: Any] = ["on": allowed && Second.shared.role == "primary", "live": live, "open": window.isVisible, "state": stateName]
-    // PS 1.77: From anywhere. "relayReady": the switch is on and the relay's address and key are set on this Mac (the key
-    // itself never goes to the page). "via": how the live link goes.
-    o["anywhere"] = RSRelayConfig.on
-    o["relayReady"] = RSRelayConfig.load(Second.shared.identity) != nil
-    if case .live(let k) = state { o["via"] = k == "relay" ? "relay" : "direct" }
+    let o: [String: Any] = ["on": allowed && Second.shared.role == "primary", "live": live, "open": window.isVisible, "state": stateName]
     guard let d = try? JSONSerialization.data(withJSONObject: o), let j = String(data: d, encoding: .utf8) else { return }
-    deliver?("window.__psScreen && window.__psScreen(\(j))")
+    deliver?("window.__psRemoteScreen && window.__psRemoteScreen(\(j))")
   }
 
   /// The Tab list's switch: open (and connect) when it is not showing, close it when it is.
@@ -113,40 +104,45 @@ final class RemoteScreen {
     if let n = msg["numbers"] as? Bool { d.set(n, forKey: "screen.numbers"); window.showsNumbers = n }
     if let h = msg["hold"] as? String, h == "off" || RSHoldKeys.all.contains(where: { $0.id == h }) { d.set(h, forKey: "screen.hold") }
     armHold()
-    // PS 1.77, From anywhere: the switch and the Worker's address come with every screenPrefs; the key only when it was typed
-    // (screenRelayKey, once), and goes straight to this Mac's own key store.
-    var relayChanged = false
-    if let a = msg["anywhere"] as? Bool, a != d.bool(forKey: RSRelayConfig.onKey) { d.set(a, forKey: RSRelayConfig.onKey); relayChanged = true }
-    if let u = msg["relayUrl"] as? String {
-      let v = RSRelayRules.workerURL(u)?.absoluteString ?? ""
-      if v != (d.string(forKey: RSRelayConfig.urlKey) ?? "") { d.set(v, forKey: RSRelayConfig.urlKey); relayChanged = true }
+  }
+
+  private var relayCredentialRequests: [String: (Result<RSTurnCreds, RSRelayCredentialsError>) -> Void] = [:]
+
+  private func newSignal() -> RSVaultRelaySignal {
+    RSVaultRelaySignal { message in
+      DispatchQueue.main.async { Second.shared.sendScreenRelay(["type": "screenRelay:send", "signal": message]) }
     }
-    if relayChanged { refresh() }
   }
 
-  /// Tells the page (src/second/screenrelay.ts) whether From anywhere is ready here and whether a relay key is set, and how the
-  /// last save went: window.__psScreenRelay({ready, key, saved?, removed?}). Never the key.
-  func relayState(saved: Bool? = nil, removed: Bool = false) {
-    let id = Second.shared.identity
-    var o: [String: Any] = ["ready": RSRelayConfig.load(id) != nil, "key": id?.relaySecret.map(RSRelayRules.keyOK) ?? false]
-    if let saved { o["saved"] = saved }
-    if removed { o["removed"] = true }
-    guard let d = try? JSONSerialization.data(withJSONObject: o), let j = String(data: d, encoding: .utf8) else { return }
-    deliver?("window.__psScreenRelay && window.__psScreenRelay(\(j))")
-    sendState()
+  private func credentials(done: @escaping (Result<RSTurnCreds, RSRelayCredentialsError>) -> Void) {
+    DispatchQueue.main.async { [weak self] in
+      guard let self, self.allowed, Second.shared.vaultIsUnlocked else { done(.failure(.signIn)); return }
+      let req = UUID().uuidString
+      self.relayCredentialRequests[req] = done
+      Second.shared.sendScreenRelay(["type": "screenRelay:creds", "req": req, "role": Second.shared.role])
+      DispatchQueue.main.asyncAfter(deadline: .now() + 8) { [weak self] in
+        self?.relayCredentialRequests.removeValue(forKey: req)?(.failure(.network))
+      }
+    }
   }
 
-  /// The relay key, typed once on this Mac ({type: "screenRelayKey", key}). Kept with Second Computer's keys; "" removes it.
-  /// Returns false when it is not a usable key (the page says so).
-  @discardableResult
-  func setRelayKey(_ k: String) -> Bool {
-    guard let id = Second.shared.identity else { return false }
-    let t = k.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard t.isEmpty || RSRelayRules.keyOK(t) else { return false }
-    let ok = id.setRelaySecret(t)
-    psLog(ok ? (t.isEmpty ? "PS screen: the relay key was removed" : "PS screen: the relay key was saved") : "PS screen: the relay key could not be saved")
-    refresh()
-    return ok
+  func receiveRelay(_ message: [String: Any]) {
+    guard allowed, Second.shared.vaultIsUnlocked else { return }
+    switch message["type"] as? String {
+    case "screenRelay:signal":
+      guard let signal = message["signal"] as? [String: Any], SecondEnv(signal["env"]) != nil,
+            signal["to"] as? String == Second.shared.role else { return }
+      let receiver = Second.shared.role == "primary" ? relaySignal : answerSignal
+      q.async { receiver?.onMessage(signal) }
+    case "screenRelay:creds":
+      guard let req = message["req"] as? String, let done = relayCredentialRequests.removeValue(forKey: req) else { return }
+      if let creds = message["creds"], let data = try? JSONSerialization.data(withJSONObject: creds), let parsed = RSTurnCreds.parse(data) {
+        done(.success(parsed))
+      } else {
+        done(.failure(RSRelayCredentialsError(rawValue: message["error"] as? String ?? "") ?? .network))
+      }
+    default: break
+    }
   }
 
   // MARK: the hold key (part 2)
@@ -243,10 +239,10 @@ final class RemoteScreen {
   private var peerName = "your second Mac"
   // primary, through the relay (PS 1.77)
   private var relayDial: RSRelayDial?
-  private var relayRoom: RSRelayRoom?
-  private var relayStart: DispatchWorkItem?
+  private var relaySignal: RSVaultRelaySignal?
+  private var attempt = 0
   // secondary
-  private var answerRoom: RSRelayRoom?
+  private var answerSignal: RSVaultRelaySignal?
   private var answer: RSRelayAnswer?
   private var answerKey = ""
   private var server: RSServer?
@@ -293,22 +289,21 @@ final class RemoteScreen {
 
   // MARK: the second Mac
 
-  /// The second Mac waits in the relay Worker's room while From anywhere is set up here (the socket is idle until the main
-  /// Mac sends a signed offer). Off, or the settings changed: it leaves.
+  /// Answer signed offers from the paired primary via the existing vault bridge.
   private func refreshAnswer(_ id: SecondIdentity, primary: SecondPeer) {
-    let cfg = RSRelayConfig.load(id)
-    let key = cfg.map { "\($0.url.absoluteString) \(primary.device) \(ObjectIdentifier(id).hashValue) \(RSHandshake.digest($0.key))" } ?? ""
-    guard key != answerKey else { return }
+    let key = "\(primary.device) \(ObjectIdentifier(id).hashValue)"
+    guard key != answerKey, let server else { return }
     answerKey = key
-    answerRoom?.stop(); answerRoom = nil; answer?.stop(); answer = nil
-    guard let cfg, let server else { return }
-    let room = RSRelayRoom(config: cfg, room: RSRelayRules.room(primary: primary.device, secondary: id.device), role: "secondary", q: q)
-    room.log = { psLog($0) }
-    let a = RSRelayAnswer(identity: id, server: server, signal: room, q: q)
-    a.log = { psLog($0) }
-    answerRoom = room; answer = a
-    room.start()
-    psLog("PS screen: waiting in the relay room for the main Mac")
+    answer?.stop()
+    let signal = newSignal()
+    let responder = RSRelayAnswer(identity: id, server: server, signal: signal, q: q)
+    responder.credentials = { [weak self] done in
+      guard let self else { done(.failure(.signIn)); return }
+      self.credentials(done: done)
+    }
+    responder.log = { psLog($0) }
+    answerSignal = signal
+    answer = responder
   }
 
   private func startServer(_ id: SecondIdentity) {
@@ -341,7 +336,7 @@ final class RemoteScreen {
   }
 
   private func stopServer() {
-    answerRoom?.stop(); answerRoom = nil; answer?.stop(); answer = nil; answerKey = ""
+    answerSignal = nil; answer?.stop(); answer = nil; answerKey = ""
     guard server != nil || host != nil else { return }
     host?.stop(); host = nil
     let s = server; server = nil; serverIdentity = nil
@@ -358,6 +353,7 @@ final class RemoteScreen {
 
   /// Finds the second Mac and starts the picture. Main thread. The window opens with "Looking for..." at once.
   func connect() {
+    guard !Protected.front else { return }
     guard allowed, let id = Second.shared.identity else {
       state = .off
       window.say(Second.shared.isOn ? "Turn Remote screen on in Settings, Second Computer." : "Turn Second Computer on in Settings first.")
@@ -366,85 +362,89 @@ final class RemoteScreen {
     guard Second.shared.role == "primary", let peer = id.peers.first(where: { $0.role == "secondary" }) else {
       state = .off; window.say("Pair your second Mac first (Second Computer)."); window.show(); return
     }
+    if link != nil || client != nil || relayDial != nil {
+      if !window.isVisible { window.show() }
+      return
+    }
     wanted = true
+    attempt += 1
+    let current = attempt
     peerName = peer.name
-    window.window?.title = peer.name
-    window.showsNumbers = showNumbers
-    window.show()
-    if case .live = state, link != nil { return }
     state = .searching
     window.say("Looking for \(peer.name)...", linking: true)
+    window.window?.title = peer.name
+    window.showsNumbers = showNumbers
+    if !window.isVisible { window.show() }
     var hints: [NWEndpoint] = []
     if let h = Second.shared.peerScreen, let port = (h["port"] as? NSNumber)?.uint16Value, let p = NWEndpoint.Port(rawValue: port) {
       for ip in (h["ips"] as? [String] ?? []).prefix(6) { let e = NWEndpoint.hostPort(host: NWEndpoint.Host(ip), port: p); if RSNet.isLocal(e) { hints.append(e) } }
     }
-    let c = RSClient(identity: id, secondary: peer, q: q)
-    c.log = { psLog($0) }
-    c.app = Second.appVersion
-    client = c
-    directDone = nil; relayDone = nil
+    let direct = RSClient(identity: id, secondary: peer, q: q)
+    direct.log = { psLog($0) }
+    direct.app = Second.appVersion
+    client = direct
     q.async { [weak self] in
-      c.connect(hints: hints) { r in DispatchQueue.main.async { self?.arrived(r, relay: false) } }
+      direct.connect(hints: hints, timeout: 2) { result in
+        DispatchQueue.main.async {
+          guard let self, self.attempt == current, self.wanted else {
+            if case .success(let link) = result { link.close("not needed") }
+            return
+          }
+          self.client = nil
+          switch result {
+          case .success: self.connected(result)
+          case .failure: self.startRelay(id, peer, attempt: current)
+          }
+        }
+      }
     }
-    // PS 1.77: From anywhere. The relay starts after a short head start for the direct link (at home that is up first), or at
-    // once when the direct try is over.
-    if let cfg = RSRelayConfig.load(id) {
-      let room = RSRelayRoom(config: cfg, room: RSRelayRules.room(primary: id.device, secondary: peer.device), role: "primary", q: q)
-      room.log = { psLog($0) }
-      room.start()
-      relayRoom = room
-      let go = DispatchWorkItem { [weak self] in self?.startRelay(id, peer, cfg, room) }
-      relayStart = go
-      DispatchQueue.main.asyncAfter(deadline: .now() + RemoteScreen.relayHeadStart, execute: go)
-    } else { relayDone = .failure(.notFound) }
   }
 
-  /// Seconds the direct link has before the relay is tried as well.
-  static let relayHeadStart = 2.0
-  private var directDone: Result<RSLink, RSClient.Fail>?, relayDone: Result<RSLink, RSClient.Fail>?
-
-  private func startRelay(_ id: SecondIdentity, _ peer: SecondPeer, _ cfg: RSRelayConfig, _ room: RSRelayRoom) {
-    relayStart?.cancel(); relayStart = nil
-    guard wanted, link == nil, relayDial == nil, relayDone == nil else { return }
-    if case .searching = state { window.say("Connecting to \(peerName) through the relay...", linking: true) }
-    let r = RSRelayDial(identity: id, secondary: peer, q: q, signal: room) { done in cfg.creds(done: done) }
-    r.log = { psLog($0) }
-    r.app = Second.appVersion
-    relayDial = r
-    psLog("PS screen: trying the relay")
-    r.start { [weak self] res in DispatchQueue.main.async { self?.arrived(res, relay: true) } }
+  private func startRelay(_ id: SecondIdentity, _ peer: SecondPeer, attempt current: Int) {
+    guard current == attempt, wanted, link == nil, relayDial == nil else { return }
+    state = .connecting
+    window.say("Connecting to \(peerName) through the relay...", linking: true)
+    let signal = newSignal()
+    relaySignal = signal
+    let dial = RSRelayDial(identity: id, secondary: peer, q: q, signal: signal, credentials: { [weak self] done in
+      guard let self else { done(.failure(.signIn)); return }
+      self.credentials(done: done)
+    })
+    dial.log = { psLog($0) }
+    dial.app = Second.appVersion
+    relayDial = dial
+    dial.start { [weak self] result in
+      DispatchQueue.main.async {
+        guard let self, self.attempt == current, self.wanted else {
+          if case .success(let link) = result { link.close("not needed") }
+          return
+        }
+        self.relayDial = nil
+        self.relaySignal = nil
+        self.connected(result)
+      }
+    }
   }
 
-  /// One way finished (main thread). The first link up is used and the other way stops; a failure waits for the other way.
-  private func arrived(_ r: Result<RSLink, RSClient.Fail>, relay: Bool) {
-    if relay { relayDial = nil; relayDone = r; relayRoom?.stop(); relayRoom = nil } else { client = nil; directDone = r }
-    if case .success(let l) = r {
-      if link != nil || !wanted { l.close("not needed"); return }
-      // The other way is not needed any more.
-      if relay { client?.cancel(); client = nil } else { relayStart?.cancel(); relayStart = nil; relayDial?.cancel(); relayDial = nil; relayRoom?.stop(); relayRoom = nil }
-      connected(r)
-      return
-    }
-    if !relay, relayDone == nil, relayStart != nil {   // the direct try is over: the relay at once
-      relayStart?.perform(); return
-    }
-    guard let d = directDone, let rl = relayDone else { return }   // the other way is still trying
-    // Both failed: a refusal says more than "not found".
-    if case .failure(.refused) = d { connected(d) } else if case .failure(.refused) = rl { connected(rl) } else { connected(d) }
+  private func stopDialling() {
+    attempt += 1
+    if let direct = client { q.async { direct.cancel() } }
+    client = nil
+    relayDial?.cancel(); relayDial = nil
+    relaySignal = nil
   }
 
   private func connected(_ r: Result<RSLink, RSClient.Fail>) {
     client = nil
     guard wanted else { if case .success(let l) = r { l.close("not wanted") }; return }
     switch r {
-    case .failure(.notFound), .failure(.network):
-      state = .notOnNetwork
-      if RSRelayConfig.load(Second.shared.identity) != nil {
-        psLog("PS screen: the second Mac was not found directly or through the relay")
-        window.say("Could not reach \(peerName). Check that it is on, online and has PS open.", button: "Try again") { [weak self] in self?.connect() }
-      } else {
-        psLog("PS screen: the second Mac was not found on this network")
-        window.say("\(peerName) is not on this network. To connect from anywhere, turn on From anywhere in Settings, Second Computer.", button: "Try again") { [weak self] in self?.connect() }
+    case .failure(.notFound):
+      cannotConnect("Could not reach \(peerName). Check that it is awake and signed in to PS.")
+    case .failure(.network(let reason)):
+      switch RSRelayCredentialsError(rawValue: reason) {
+      case .setup: cannotConnect("The remote screen relay still needs to be set up.")
+      case .signIn: cannotConnect("Unlock your PS vault on this Mac and try again.")
+      default: cannotConnect("The remote screen relay is unavailable. Try again in a moment.")
       }
     case .failure(.refused(let why)):
       state = .refused(why)
@@ -458,9 +458,12 @@ final class RemoteScreen {
       rc.onNumbers = { [weak self] s in DispatchQueue.main.async { self?.numbers = s; self?.window.setNumbers(s) } }
       let view = window.view
       var first = true
-      rc.onImage = { [weak rc, weak self] pb, f in
+      rc.onImage = { [weak rc, weak self, weak l] pb, f in
         view.show(pb); rc?.shown(f)
-        if first { first = false; DispatchQueue.main.async { self?.window.linked() } }   // the connect moment: the link lights up, the picture shows
+        if first { first = false; DispatchQueue.main.async { if let self, let l, self.link === l {
+            self.window.linked()
+            if self.window.window?.subtitle.isEmpty == true { self.window.via = l.relayed ? .relay : .direct }
+          } } }   // the connect moment: the link lights up, the picture shows
       }
       receiver = rc
       l.onUdp = { [weak rc] b in rc?.udp(b) }
@@ -472,10 +475,14 @@ final class RemoteScreen {
       l.onClose = { [weak self] why in DispatchQueue.main.async { self?.lost(l, why) } }
       state = .live(link: l.kindName)
       psLog("PS screen: connected over \(l.kindName)")
-      window.via = l.relayed ? .relay : .direct
       window.say(l.relayed ? "Connecting to \(peerName) through the relay..." : "Connecting to \(peerName)...", linking: true)
       q.async { l.start(); rc.start() }
     }
+  }
+
+  private func cannotConnect(_ reason: String) {
+    state = .notOnNetwork(reason)
+    window.say(reason, button: "Try again") { [weak self] in self?.connect() }
   }
 
   /// Control messages from the second Mac (the link's queue).
@@ -504,7 +511,9 @@ final class RemoteScreen {
   }
 
   private func secondState(_ s: RSState, link l: RSLink) {
+    guard link === l else { return }
     if !s.screen {
+      window.via = nil
       state = .needsPermission(screen: false, access: s.access)
       window.say("Allow PS on \(peerName) in System Settings, under Screen & System Audio Recording. It asks once, on \(peerName).", button: "Open it on \(peerName)") {
         l.send(.openSettings, Data("{\"pane\":\"screen\"}".utf8))
@@ -512,11 +521,14 @@ final class RemoteScreen {
       return
     }
     if case .needsPermission = state { state = .live(link: l.kindName); window.say(nil) }
-    var title = peerName
-    if !s.access { title += ": control is off until PS is allowed under Accessibility there"; state = .needsPermission(screen: true, access: false) }
-    else if case .needsPermission = state { state = .live(link: l.kindName) }
-    if s.guarded { title += ": typing paused (a protected app is in front there)" }
-    window.window?.title = title
+    if !s.access {
+      state = .needsPermission(screen: true, access: false)
+      window.window?.subtitle = "Viewing only. Allow PS under Accessibility on \(peerName) to control it."
+    } else if s.guarded {
+      window.window?.subtitle = "Remote input paused while a protected app is in front."
+    } else if window.view.info != nil, window.link.isHidden {
+      window.via = l.relayed ? .relay : .direct
+    }
   }
 
   private func lost(_ l: RSLink, _ why: String) {
@@ -541,8 +553,7 @@ final class RemoteScreen {
   /// Ends the session (the window closed, or part 2's switch). Main thread.
   func disconnect() {
     wanted = false
-    client?.cancel(); client = nil
-    relayStart?.cancel(); relayStart = nil; relayDial?.cancel(); relayDial = nil; relayRoom?.stop(); relayRoom = nil
+    stopDialling()
     window.via = nil
     let l = link; link = nil
     receiver?.stop(); receiver = nil

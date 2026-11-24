@@ -1,6 +1,6 @@
 // The Task API (the developer's friend: "api so that my claude code can add tasks into the ps app"), the rules on the Mac's
 // side. Pure: no sockets, no Keychain, no windows, so tests/taskapi-test.sh runs every check on its own.
-// - parse: one small HTTP/1.1 request (head up to 16 KB, a JSON body up to 64 KB by Content-Length, never chunked).
+// - parse: one HTTP/1.1 request with a 16 KB head and a 64 KB JSON body (larger only for private CRM PDF uploads).
 // - gate: what keeps everyone but an app on this Mac with the key out:
 //     any Origin or Sec-Fetch-* header means a browser sent it (no web page can reach it, so no CSRF);
 //     the Host must be 127.0.0.1 or localhost (no DNS rebinding);
@@ -16,6 +16,7 @@ enum TaskApiCore {
   static let port: UInt16 = 47836
   static let maxHead = 16 * 1024
   static let maxBody = 64 * 1024
+  static let maxCrmBody = 7 * 1024 * 1024
   static let maxPath = 400
   static let methods: Set<String> = ["GET", "POST", "PATCH", "PUT", "DELETE"]
 
@@ -25,8 +26,8 @@ enum TaskApiCore {
   // "message" (V1.58): POST /v1/island/message, a message from the AI on the island (AiMessageCard.swift). Off unless switched on.
   // "goals" (PS 1.72): the goals Timeline (GET, POST, PATCH and DELETE /v1/goals; the rules are in the page). Off unless switched on.
   // "focus" (PS 1.74): GET and PUT /v1/focus, the task being worked on (the one the island shows). Off unless switched on.
-  static let scopeIds = ["inbox", "lists", "goals", "rename", "read", "add", "edit", "done", "delete", "remind", "focus", "sentry", "gym", "settings", "message"]
-  static let scopeDefaults: [String: Bool] = ["inbox": true, "lists": false, "goals": false, "rename": false, "read": true, "add": true, "edit": false, "done": false, "delete": false, "remind": false, "focus": false, "sentry": false, "gym": false, "settings": false, "message": false]
+  static let scopeIds = ["inbox", "lists", "goals", "crm", "rename", "read", "add", "edit", "done", "delete", "remind", "focus", "sentry", "gym", "settings", "message"]
+  static let scopeDefaults: [String: Bool] = ["inbox": true, "lists": false, "goals": false, "crm": false, "rename": false, "read": true, "add": true, "edit": false, "done": false, "delete": false, "remind": false, "focus": false, "sentry": false, "gym": false, "settings": false, "message": false]
   /// Known switches only; a missing one takes its default.
   static func cleanScopes(_ v: Any?) -> [String: Bool] {
     var out = scopeDefaults
@@ -106,12 +107,15 @@ enum TaskApiCore {
       guard !cl.isEmpty, cl.utf8.count <= 9, cl.allSatisfy({ $0.isASCII && $0.isNumber }), let n = Int(cl) else { return .bad(400, "bad_request", "Content-Length is not a number.") }
       length = n
     }
-    if length > maxBody { return .bad(413, "too_large", "The body is over 64 KB.") }
+    let parts = target.split(separator: "?", maxSplits: 1, omittingEmptySubsequences: false)
+    let path = String(parts[0])
+    let limit = isCrmFileUpload(method, path) ? maxCrmBody : maxBody
+    if length > limit {
+      return .bad(413, "too_large", limit == maxCrmBody ? "Upload a PDF up to 5 MB." : "The body is over 64 KB.")
+    }
     let bodyStart = end.upperBound
     if buf.distance(from: bodyStart, to: buf.endIndex) < length { return .incomplete }
     let body = Data(buf[bodyStart..<buf.index(bodyStart, offsetBy: length)])
-    let parts = target.split(separator: "?", maxSplits: 1, omittingEmptySubsequences: false)
-    let path = String(parts[0])
     var query: [String: String] = [:]
     if parts.count > 1 {
       for pair in parts[1].split(separator: "&") where !pair.isEmpty {
@@ -122,6 +126,12 @@ enum TaskApiCore {
       }
     }
     return .ok(Request(method: method, path: path, query: query, headers: headers, body: body))
+  }
+
+  static func isCrmFileUpload(_ method: String, _ path: String) -> Bool {
+    let parts = path.split(separator: "/")
+    return method == "POST" && parts.count == 5 && parts[0] == "v1" && parts[1] == "crm" && parts[2] == "projects"
+      && UUID(uuidString: String(parts[3])) != nil && parts[4] == "documents"
   }
 
   // MARK: the checks before anything reaches PS
@@ -205,7 +215,11 @@ enum TaskApiCore {
   /// How long PS may take to answer, seconds. Starting Sentry mode runs the AI button's own checks first (the restart
   /// helper, up to 10 s, and the lid keep awake, up to 12 s, at once) and then waits for the Mac to engage (8 s).
   /// There is no route that stops Sentry mode: the API can only start it (web core/taskapi.ts).
-  static func answerWait(_ r: Request) -> Double { r.method == "POST" && r.path.hasPrefix("/v1/sentry/start") ? 40 : 15 }
+  static func answerWait(_ r: Request) -> Double {
+    if r.method == "POST" && r.path.hasPrefix("/v1/sentry/start") { return 40 }
+    if isCrmFileUpload(r.method, r.path) || (r.method == "GET" && r.path.hasPrefix("/v1/crm/projects/") && r.query["file"] == "true") { return 60 }
+    return 15
+  }
   /// What goes to the main page for one checked request.
   static func forward(id: String, _ r: Request, body: Any?, scopes: [String: Bool]) -> [String: Any] {
     ["type": "api:req", "id": id, "method": r.method, "path": r.path, "query": r.query, "body": body ?? NSNull(), "scopes": scopes]

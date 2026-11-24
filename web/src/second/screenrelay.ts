@@ -1,28 +1,48 @@
-// Remote screen, From anywhere (PS 1.77): the relay key's state on this Mac, as the Mac tells it
-// (ps-mac RemoteScreen.relayState: window.__psScreenRelay({ready, saved?})). The key typed in Settings goes straight to the
-// Mac ({type: "screenRelayKey", key}), which keeps it with Second Computer's keys; the page never keeps it or shows it again.
-import { PS, psPost } from "../ps";
+// Main Mac WebView only. The vault carries encrypted setup messages and requests short-lived TURN credentials.
+import { onScreenSignal, sb, sendScreenSignal, vaultStore } from "../core/vault";
+import { screenOn } from "../core/screenswitch";
+import { secondOnSnap } from "../core/secondsnap";
+import { settingsData } from "../core/select";
+import { accountOf } from "../featuresync";
 
-export type RelayState = { ready: boolean; key: boolean; last: "saved" | "bad" | "removed" | null };
-let st: RelayState = { ready: false, key: false, last: null };
-const subs = new Set<() => void>();
+type Post = (message: object) => void;
+type RelayMessage = { type?: string; signal?: unknown; req?: unknown; role?: unknown };
 
-export const relayStore = {
-  get: (): RelayState => st,
-  subscribe(f: () => void): () => void { subs.add(f); return () => { subs.delete(f); }; },
-};
-
-/** The Mac's message, checked: booleans only. */
-export function setRelayState(o: unknown): void {
-  if (!o || typeof o !== "object") return;
-  const x = o as Record<string, unknown>;
-  const last = x.saved === true ? "saved" : x.saved === false ? "bad" : x.removed === true ? "removed" : st.last;
-  st = { ready: x.ready === true, key: x.key === true, last };
-  subs.forEach((f) => f());
+function enabled() {
+  const vault = vaultStore.get();
+  return screenOn(vault, secondOnSnap(vault), settingsData(vault).squadFeatures, accountOf(vault));
 }
-export function askRelay(): void { if (PS) psPost({ type: "screenRelay:get" }); }
-/** Hands the key to the Mac at once ("" removes it). */
-export function sendRelayKey(key: string): void { if (PS) psPost({ type: "screenRelayKey", key }); }
 
-declare global { interface Window { __psScreenRelay?: (o: unknown) => void } }
-if (typeof window !== "undefined") window.__psScreenRelay = setRelayState;
+export function startScreenRelay(post: Post) {
+  onScreenSignal((signal) => {
+    if (enabled()) post({ type: "screenRelay:signal", signal });
+  });
+}
+
+export function screenRelayMessage(message: RelayMessage, post: Post): boolean {
+  if (message.type === "screenRelay:send") {
+    if (enabled()) void sendScreenSignal(message.signal).catch(() => {});
+    return true;
+  }
+  if (message.type !== "screenRelay:creds") return false;
+  const req = message.req;
+  if (typeof req !== "string" || !/^[0-9A-Fa-f-]{36}$/.test(req)) return true;
+  const role = message.role;
+  if (role === "primary" || role === "secondary") void credentials(req, role, post);
+  return true;
+}
+
+async function credentials(req: string, role: "primary" | "secondary", post: Post) {
+  const reply = (error: string, creds?: unknown) => post({ type: "screenRelay:creds", req, error, creds });
+  if (!enabled()) { reply("sign-in"); return; }
+  if (vaultStore.get().local) { reply("setup"); return; }
+  try {
+    const { data, error } = await sb.functions.invoke("screen-relay", { method: "POST", body: { role } });
+    if (!enabled()) { reply("sign-in"); return; }
+    if (!error && data) { reply("", data); return; }
+    const status = (error as { context?: Response } | null)?.context?.status;
+    reply(status === 404 || status === 503 ? "setup" : status === 401 || status === 403 ? "sign-in" : "network");
+  } catch {
+    reply("network");
+  }
+}

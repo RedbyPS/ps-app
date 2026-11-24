@@ -11,8 +11,7 @@ import ScreenCaptureKit
 // (SRProtect in ScreenRecCore.swift):
 //  - Their windows are left out of the picture by ScreenCaptureKit itself (excludingApplications): their pixels never reach PS.
 //    Nothing else about them is read: no window, title, bounds or name. The filter is renewed when an app launches.
-//  - While either is in front, the primary's KEYS are not replayed (the same rule as PS's own keyboard tap); the primary is
-//    told only "a protected app is in front", never which. Mouse clicks still go, so another window can be clicked.
+//  - While a protected app is in front, remote input is paused. The primary sees only that input is paused.
 //  - Never named in the log.
 // Nothing is recorded or saved: frames go from the capture to the encoder to the network and are gone.
 // While a session is live, a small sign at the top of the M1's screen says it is being viewed (RSViewingSign).
@@ -224,9 +223,9 @@ final class RSHost: NSObject, SCStreamOutput, SCStreamDelegate {
 
   /// One input event, on its own queue. Never while PS lacks Accessibility (macOS would drop it anyway).
   private func replay(_ i: RSInput) {
-    guard !stopped, RSHost.accessAllowed else { return }
+    guard !stopped, RSHost.accessAllowed, !Protected.front else { return }
     let b = bounds
-    func post(_ e: CGEvent?) { e?.post(tap: .cghidEventTap) }
+    func post(_ e: CGEvent?) { if !Protected.front { e?.post(tap: .cghidEventTap) } }
     switch i {
     case let .move(x, y, buttons):
       let p = RSFit.toDisplay(x, y, bounds: b)
@@ -267,15 +266,12 @@ final class RSHost: NSObject, SCStreamOutput, SCStreamDelegate {
       e.flags = CGEventFlags(rawValue: RSFlags.clean(flags))
       post(e)
     case let .key(code, down, flags, repeating):
-      // Golden rule: no keys into 1Password or Signal (PS's keyboard tap is off while they are in front, and so is this).
-      if Protected.front { if !down { held.remove(code) }; return }
       if down { held.insert(code) } else { held.remove(code) }
       let e = CGEvent(keyboardEventSource: source, virtualKey: code, keyDown: down)
       e?.flags = CGEventFlags(rawValue: RSFlags.clean(flags))
       if repeating { e?.setIntegerValueField(.keyboardEventAutorepeat, value: 1) }
       post(e)
     case let .flags(code, flags):
-      if Protected.front { return }
       let e = CGEvent(keyboardEventSource: source, virtualKey: code, keyDown: true)
       e?.type = .flagsChanged
       e?.flags = CGEventFlags(rawValue: RSFlags.clean(flags))
@@ -286,6 +282,7 @@ final class RSHost: NSObject, SCStreamOutput, SCStreamDelegate {
 
   /// Every key and button the primary pressed goes up (never a stuck key or a drag that never ends).
   private func releaseAll() {
+    guard !Protected.front else { held = []; heldButtons = 0; return }
     for k in held { CGEvent(keyboardEventSource: source, virtualKey: k, keyDown: false)?.post(tap: .cghidEventTap) }
     held = []
     if heldButtons != 0 {

@@ -21,27 +21,23 @@ ok("the developer's layer has it on, like Second Computer", () => {
   const p = JSON.parse(readFileSync(new URL("../ps-layer/profile.json", import.meta.url), "utf8"));
   assert.equal(p.features["remote-screen"], true); assert.equal(p.features["second-computer"], true);
 });
-ok("screenPrefsMsg: defaults (Sharp, no numbers, §, not from anywhere) and only known values pass", () => {
-  assert.deepEqual(S.screenPrefsMsg({}), { picture: "sharp", numbers: false, hold: "section", anywhere: false, relayUrl: "" });
-  assert.deepEqual(S.screenPrefsMsg({ screenPicture: "faster", screenNumbers: true, screenHoldKey: "f13" }), { picture: "faster", numbers: true, hold: "f13", anywhere: false, relayUrl: "" });
-  assert.deepEqual(S.screenPrefsMsg({ screenPicture: "ultra", screenNumbers: "yes", screenHoldKey: "tab", screenAnywhere: "yes" }), { picture: "sharp", numbers: false, hold: "section", anywhere: false, relayUrl: "" });
-  assert.equal(S.screenPrefsMsg({ screenHoldKey: "off" }).hold, "off");
+ok("screenPrefsMsg only sends picture, delay numbers and hold key", () => {
+  assert.deepEqual(S.screenPrefsMsg({}), { picture: "sharp", numbers: false, hold: "section" });
+  assert.deepEqual(S.screenPrefsMsg({ screenPicture: "faster", screenNumbers: true, screenHoldKey: "f13" }), { picture: "faster", numbers: true, hold: "f13" });
+  assert.deepEqual(S.screenPrefsMsg({ screenPicture: "ultra", screenNumbers: "yes", screenHoldKey: "tab" }), { picture: "sharp", numbers: false, hold: "section" });
+  const oldSettings = { screenAnywhere: false, screenRelayUrl: "https://old-relay.example", screenHoldKey: "off" };
+  assert.deepEqual(S.screenPrefsMsg(oldSettings), { picture: "sharp", numbers: false, hold: "off" });
 });
 ok("every choice has its words", () => {
   for (const p of S.SCREEN_PICTURES) assert.ok(S.SCREEN_WORDS.pictures[p]);
   for (const h of S.SCREEN_HOLDS) assert.ok(S.SCREEN_WORDS.holds[h]);
   assert.equal(S.SCREEN_WORDS.holds.section, "§");
 });
-ok("PS 1.77 From anywhere: the switch and the relay's address go to the Mac; the key never does", () => {
-  const m = S.screenPrefsMsg({ screenAnywhere: true, screenRelayUrl: " https://ps-relay.example.workers.dev/ " });
-  assert.equal(m.anywhere, true); assert.equal(m.relayUrl, "https://ps-relay.example.workers.dev");
-  for (const bad of ["http://ps-relay.example.workers.dev", "https://u:p@example.com", "https://example.com/?k=1", "https://example.com/#x", "ftp://x", "", 7, "https://" + "a".repeat(200)]) assert.equal(S.relayUrlClean(bad), "", String(bad));
-  assert.equal(S.relayUrlClean("https://relay.example.com/ps"), "https://relay.example.com/ps");
-  assert.ok(!("relayKey" in m) && !Object.keys(m).some((k) => /key/i.test(k)), "no key in the prefs message");
-  assert.ok(S.relayKeyOK("k".repeat(32)) && !S.relayKeyOK("k".repeat(31)) && !S.relayKeyOK("k".repeat(40) + " x") && !S.relayKeyOK("k".repeat(257)));
+ok("automatic relay settings have no address or key inputs", () => {
+  const ui = readFileSync(new URL("../src/views/SecondSwitch.tsx", import.meta.url), "utf8");
+  assert.match(ui, /screen:connect/);
+  assert.equal(S.SCREEN_WORDS.test, "Test connection");
+  assert.doesNotMatch(ui, /relayKey|relayUrl|screenAnywhere/);
 });
-ok("PS 1.77 words: no em or en dashes, every From anywhere word there", () => {
-  for (const [k, w] of Object.entries(S.SCREEN_WORDS)) if (typeof w === "string") assert.ok(!/[\u2013\u2014]/.test(w), k);
-  for (const k of ["anywhere", "anywhereLine", "relayUrl", "relayUrlLine", "relayKey", "relayKeyLine", "relayKeySaved", "relayKeyMissing", "relayKeyBad"]) assert.ok((S.SCREEN_WORDS as Record<string, unknown>)[k], k);
-});
-console.log(`\n${n} passed`);
+console.log(`
+${n} passed`);

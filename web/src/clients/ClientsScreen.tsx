@@ -4,10 +4,12 @@
 // (ClientsButton.tsx) opens and closes it. Esc closes whatever is open on top first (bits.tsx cwEscape), then Clients.
 // Everything is sealed in the vault like the rest (core/clientsact.ts). Nothing here reads or sends anything about 1Password
 // or Signal, and nothing is ever sent to a client: 'Share with client' is only a placeholder for the next piece.
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { ClientRec, Doc, Project, Todo } from "../core/model";
-import { allTodos, archivedClients, clientTabs, type ClientView, type ProjectView } from "../core/select";
+import { allTodos, archivedClients, clientTabs, settingsData, type ClientView, type ProjectView } from "../core/select";
 import { useVault, todayISO } from "../ui/kit";
+import { cleanCrmAppearance } from "../core/crmdata";
+import { remindPopOpen } from "../views/TaskRemind";
 import {
   CLIENT_COLOURS, colourOf, dayEndAt, undoWindow, dayWords, followCall, percentDone, projectTasks, reorder, stageLine, yourDayWords,
 } from "../core/clientwork";
@@ -16,6 +18,7 @@ import {
   renameClient, renameProject, saveNotes, saveTemplate, setClientSettings, setProjectStatus, templates, unarchiveClient, addClientTodo,
 } from "../core/clientsact";
 import { calEvents, dayRuleOf, endHmOf, landDayNow, nextCallOf, useLandTick } from "./clientsday";
+import { ProjectFiles } from "./ProjectFiles";
 import { StageLine } from "./StageLine";
 import { Tasks, type Call } from "./Tasks";
 import { I, Pop, cwEscape, initials } from "./bits";
@@ -54,16 +57,18 @@ export function ClientsScreen({ onClose, where }: { onClose: () => void; where: 
 
   // Esc: the top popover first, never Clients and a popover in one press.
   useEffect(() => {
-    const f = (e: KeyboardEvent) => { if (e.key === "Escape" && cwEscape()) { e.preventDefault(); e.stopImmediatePropagation(); } };
+    const f = (e: KeyboardEvent) => { if (e.key === "Escape" && !remindPopOpen() && cwEscape()) { e.preventDefault(); e.stopImmediatePropagation(); } };
     window.addEventListener("keydown", f, true);
     return () => window.removeEventListener("keydown", f, true);
   }, []);
 
+  const appearance = cleanCrmAppearance(settingsData(s).crmAppearance);
   const clients = useMemo(() => clientTabs(s).filter((c) => !gone.has(c.client!.id)), [s, gone]);
   const archived = useMemo(() => archivedClients(s), [s]);
   const [sel, setSel] = useState<string | null>(() => store.get("ps-cw-client"));
   const cur = clients.find((c) => c.client!.id === sel) ?? clients[0] ?? null;
   const pick = (id: string) => { setSel(id); store.set("ps-cw-client", id); };
+  const colour = cur ? colourOf(cur.client!.data, clients.indexOf(cur)) : undefined;
   const day = useMemo(() => landDayNow(s), [s, tick]);   // eslint-disable-line react-hooks/exhaustive-deps
   const todos = useMemo(() => allTodos(s).filter((d) => d.ws === null) as Doc<Todo>[], [s]);
 
@@ -82,10 +87,10 @@ export function ClientsScreen({ onClose, where }: { onClose: () => void; where: 
   }, [s]);   // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
-    <div className={`clw-screen${phone ? " clw-phone" : ""}`}>
-      <Tabs clients={clients} archived={archived} cur={cur} pick={pick} onClose={onClose} phone={phone} say={say} deleteLater={deleteLater} />
+    <div className={`clw-screen${phone ? " clw-phone" : ""}${appearance.density === "compact" ? " clw-compact" : ""}`}>
+      <Tabs clients={clients} archived={archived} cur={cur} pick={pick} onClose={onClose} phone={phone} say={say} deleteLater={deleteLater} showColours={appearance.showClientColours} />
       <div className="clw-main clw-scrl">
-        {cur ? <ClientPage key={cur.client!.id} c={cur} day={day} todos={todos} phone={phone} say={say} where={where} />
+        {cur ? <ClientPage key={cur.client!.id} c={cur} day={day} todos={todos} phone={phone} say={say} where={where} colour={appearance.showTaskColours ? colour : undefined} />
           : <div className="clw-inner"><div className="clw-none"><b>No clients yet</b><span>Add your first client with + at the top.</span></div></div>}
       </div>
       {msg && <div key={msg.n} className={`clw-toast${msg.undo ? " act" : ""}`} role="status">{msg.t}
@@ -101,9 +106,9 @@ export function ClientsScreen({ onClose, where }: { onClose: () => void; where: 
 // opens Rename, Delete, Archive, Settings. Archived clients come back from Archived at the end of the strip.
 type TabPopKind = "menu" | "ask" | "settings" | "archived";
 type Say = (t: string, undo?: () => void) => void;
-function Tabs({ clients, archived, cur, pick, onClose, phone, say, deleteLater }: {
+function Tabs({ clients, archived, cur, pick, onClose, phone, say, deleteLater, showColours }: {
   clients: ClientView[]; archived: Doc<ClientRec>[]; cur: ClientView | null; pick: (id: string) => void; onClose: () => void; phone: boolean; say: Say;
-  deleteLater: (id: string, name: string) => void;
+  deleteLater: (id: string, name: string) => void; showColours: boolean;
 }) {
   const [ren, setRen] = useState<string | null>(null);
   const [name, setName] = useState("");
@@ -137,7 +142,7 @@ function Tabs({ clients, archived, cur, pick, onClose, phone, say, deleteLater }
           const d = c.client!;
           const on = cur?.client!.id === d.id;
           return (
-            <div key={d.id} data-client={d.id} className={`clw-tab${on ? " on" : ""}${over === i ? " over" : ""}${pop?.id === d.id ? " menu" : ""}`} style={{ ["--c" as string]: colourOf(d.data, i) }}
+            <div key={d.id} data-client={d.id} className={`clw-tab${on ? " on" : ""}${over === i ? " over" : ""}${pop?.id === d.id ? " menu" : ""}`} style={{ ["--c" as string]: showColours ? colourOf(d.data, i) : "var(--clw-dim)" }}
               draggable={ren !== d.id} onDragStart={(e) => { setDrag(i); e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", d.data.name); }}
               onDragOver={(e) => { if (drag !== null) { e.preventDefault(); setOver(i); } }} onDragLeave={() => setOver((o) => (o === i ? null : o))}
               onDragEnd={() => { setDrag(null); setOver(null); }}
@@ -171,7 +176,7 @@ function Tabs({ clients, archived, cur, pick, onClose, phone, say, deleteLater }
       </div>
       <div className="clw-right">
         {!phone && <span className="clw-esc">Esc</span>}
-        <button type="button" className="clw-x" aria-label="Close Clients" onClick={onClose}>{I.x}</button>
+        <button type="button" className="clw-x" aria-label="Close CRM" onClick={onClose}>{I.x}</button>
       </div>
       {pop?.kind === "menu" && target && (
         <Pop className="clw-menu clw-tabmenu" style={{ left: pop.left }} onClose={() => setPop(null)}>
@@ -184,7 +189,7 @@ function Tabs({ clients, archived, cur, pick, onClose, phone, say, deleteLater }
       )}
       {pop?.kind === "ask" && target && (
         <Pop className="clw-menu clw-tabmenu clw-confirm" style={{ left: pop.left }} onClose={() => setPop(null)}>
-          <div className="clw-small">Delete {target.data.name}? Its projects, project steps and notes go too. Tasks stay in your list.</div>
+          <div className="clw-small">Delete {target.data.name}? Its projects, project steps, notes and files go too. Tasks stay in your list.</div>
           <div className="row">
             <button type="button" className="clw-btn sm" autoFocus onClick={() => setPop(null)}>Cancel</button>
             <button type="button" className="clw-btn sm danger" onClick={() => { setPop(null); deleteLater(target.id, target.data.name); }}>Delete</button>
@@ -216,7 +221,7 @@ function ClientSettingsPop({ d, index, left, onClose, say }: { d: Doc<ClientRec>
   const [colour, setColour] = useState<string | null>(d.data.colour ?? null);
   const [contact, setContact] = useState(d.data.contactName ?? "");
   const [email, setEmail] = useState(d.data.email ?? "");
-  const shown = colour ?? colourOf(d.data, Math.max(0, index));
+  const shown = colour ?? colourOf({}, Math.max(0, index));
   const save = () => {
     void setClientSettings(d.id, { name: name.trim() || d.data.name, colour, contactName: contact, email });
     onClose();
@@ -230,6 +235,8 @@ function ClientSettingsPop({ d, index, left, onClose, say }: { d: Doc<ClientRec>
       <div className="clw-sw-row" role="radiogroup" aria-label="Colour">
         {CLIENT_COLOURS.map((c) => <button key={c} type="button" role="radio" aria-checked={shown.toLowerCase() === c.toLowerCase()} aria-label={c}
           className={`clw-swatch${shown.toLowerCase() === c.toLowerCase() ? " on" : ""}`} style={{ background: c }} onClick={() => setColour(c)} />)}
+        <input type="color" className="clw-custom-colour" value={shown} aria-label="Custom colour" title="Custom colour" onChange={(e) => setColour(e.target.value)} />
+        <button type="button" className="clw-btn sm" onClick={() => setColour(null)}>Default</button>
       </div>
       <label>Contact<input className="clw-inp" value={contact} onChange={(e) => setContact(e.target.value)} /></label>
       <label>Email<input className="clw-inp" type="email" value={email} onChange={(e) => setEmail(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") save(); }} /></label>
@@ -244,7 +251,7 @@ function ClientSettingsPop({ d, index, left, onClose, say }: { d: Doc<ClientRec>
 // ---------- one client ----------
 const STATUS: Record<string, { w: string; c: string }> = { on_track: { w: "On track", c: "good" }, action_needed: { w: "Waiting on client", c: "warn" }, at_risk: { w: "Waiting on client", c: "warn" } };
 
-function ClientPage({ c, day, todos, phone, say, where }: { c: ClientView; day: string; todos: Doc<Todo>[]; phone: boolean; say: (t: string) => void; where: Where }) {
+function ClientPage({ c, day, todos, phone, say, where, colour }: { c: ClientView; day: string; todos: Doc<Todo>[]; phone: boolean; say: Say; where: Where; colour?: string }) {
   const s = useVault();
   const client = c.client!;
   const projects = c.projects.filter((p) => !p.p.archived);
@@ -282,9 +289,11 @@ function ClientPage({ c, day, todos, phone, say, where }: { c: ClientView; day: 
       <StageLine id={pv.doc.id} p={pv.p} today={today} upright={phone} say={say} popOpen={() => {}} />
       {call && <NextCall call={call} onPrep={() => void addPrep()} where={where} />}
       <div className="clw-cols">
-        <Tasks clientId={client.id} projectId={pv.doc.id} list={list} day={day} endHm={endHm} dayLine={dayLine} call={call} say={say} prep={prep} onPrepDone={() => setPrep(null)} />
+        <Tasks key={pv.doc.id} colour={colour} clientId={client.id} projectId={pv.doc.id} list={list} day={day} endHm={endHm} dayLine={dayLine} call={call} say={say} prep={prep} onPrepDone={() => setPrep(null)} />
         <Checklist id={pv.doc.id} pv={pv} />
-        <Notes key={pv.doc.id} id={pv.doc.id} text={pv.priv?.data.notes ?? ""} />
+        <Notes key={pv.doc.id} id={pv.doc.id} text={pv.priv?.data.notes ?? ""}>
+          <ProjectFiles projectId={pv.doc.id} activity={pv.priv?.data.activity ?? []} proposal={pv.p.proposal} say={say} />
+        </Notes>
       </div>
     </div>
   );
@@ -429,7 +438,7 @@ function Checklist({ id, pv }: { id: string; pv: ProjectView }) {
   );
 }
 
-function Notes({ id, text }: { id: string; text: string }) {
+function Notes({ id, text, children }: { id: string; text: string; children: ReactNode }) {
   const [v, setV] = useState(text);
   const last = useRef(text);
   const timer = useRef<number | null>(null);
@@ -441,6 +450,7 @@ function Notes({ id, text }: { id: string; text: string }) {
       <div className="clw-col-h"><b>Notes</b></div>
       <textarea className="clw-notes" value={v} placeholder="Type here" onChange={(e) => { const val = e.target.value; setV(val); if (timer.current) window.clearTimeout(timer.current); timer.current = window.setTimeout(() => flush(val), 900); }} onBlur={() => flush()} />
       <div className="clw-enc">{I.lock}End to end encrypted</div>
+      {children}
     </div>
   );
 }

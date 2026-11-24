@@ -22,10 +22,10 @@ const base = (o: Partial<P.ProgressInput> = {}): P.ProgressInput => ({
 const isl = (o: Partial<P.ProgressInput> = {}) => P.progressIsland(base(o))!;
 
 // ---------- the setting ----------
-ok("off until the person says yes: never answered is null (the one question is due)", () => {
+ok("on by default: never answered is null so the first card has a choice", () => {
   const p = P.progressPrefs(undefined);
   assert.deepEqual(p, { on: null, every: 30, look: "ring" });
-  assert.equal(P.progressOn(p), false); assert.equal(P.offerDue(p), true);
+  assert.equal(P.progressOn(p), true); assert.equal(P.offerDue(p), true);
   assert.deepEqual(islandPrefs(undefined).progress, p, "kept with the island's other settings");
 });
 ok("answered: on or off, and the question is never due again", () => {
@@ -104,10 +104,10 @@ ok("no check-ins on a task with an expected time: still its timer", () => {
   const p = isl({ todo: { checkEvery: 0, est: 45 } });
   assert.equal(p.every, 0); assert.equal(p.est, 45);
 });
-ok("never answered: sent with the question due and switched off (no timer yet)", () => {
+ok("never answered: sent enabled with the first card choice due", () => {
   const p = isl({ prefs: P.progressPrefs(undefined), todo: { est: 20 } });
-  assert.equal(p.on, false); assert.equal(p.ask, true);
-  assert.equal(P.timerShows(p, T0 + MIN), false);
+  assert.equal(p.on, true); assert.equal(p.ask, true);
+  assert.equal(P.timerShows(p, T0 + MIN), true);
 });
 ok("Do Not Disturb is sent as quiet", () => assert.equal(isl({ quiet: true }).quiet, true));
 
@@ -144,11 +144,13 @@ ok("a new round of the task (ticked and started again) starts from the first che
   const a = isl({ round: T0 }), b = isl({ round: T0 + 3 * 3_600_000, now: T0 + 3 * 3_600_000 });
   assert.notEqual(P.buzzKey(a, "1"), P.buzzKey(b, "1"));
 });
-ok("never answered: the first would-be buzz is the question, the check-in time or the time up", () => {
+ok("the first card has the actual check-in or Time's up, with the choice", () => {
   const p = isl({ prefs: P.progressPrefs(undefined) });
-  assert.equal(P.buzzDue(p, T0 + 30 * MIN)?.kind, "offer");
+  assert.equal(P.buzzDue(p, T0 + 30 * MIN)?.kind, "check");
   const q = isl({ prefs: P.progressPrefs(undefined), todo: { est: 10 } });
-  assert.equal(P.buzzDue(q, T0 + 10 * MIN)?.kind, "offer");
+  const b = P.buzzDue(q, T0 + 10 * MIN)!;
+  assert.equal(b.kind, "up");
+  assert.deepEqual(P.buzzWords(q, b), { main: "You've been working on this for 10 minutes", sub: "Time's up", ask: "Progress check-ins are on." });
 });
 ok("off and not due (a copy that still had it): never buzzes", () => {
   assert.equal(P.buzzDue({ ...isl(), on: false, ask: false }, T0 + 30 * MIN), null);
@@ -224,18 +226,25 @@ ok("the card: the task as the headline, then how long, then the time left or Tim
 ok("the question's words", () => {
   const p = isl({ prefs: P.progressPrefs(undefined) });
   const w = P.buzzWords(p, P.buzzDue(p, T0 + 30 * MIN)!);
-  assert.equal(w.ask, "Want a check-in like this every 30 minutes?");
-  assert.equal(P.PROGRESS_WORDS.turnOn, "Turn on"); assert.equal(P.PROGRESS_WORDS.notNow, "Not now");
+  assert.equal(w.ask, "Progress check-ins are on.");
+  assert.equal(P.PROGRESS_WORDS.turnOn, "Keep on"); assert.equal(P.PROGRESS_WORDS.notNow, "Turn off");
 });
 ok("no em or en dashes in any of its words", () => {
   assert.ok(!/[–—]/.test(JSON.stringify([P.PROGRESS_WORDS, P.LOOKS])));
 });
 
 // ---------- the answer ----------
-ok("the answer from the island: Turn on or Not now, kept once, only while the question is due", () => {
+ok("the first card is shown once and Turn off still works after it is marked shown", () => {
   assert.deepEqual(P.progressAskPatch("on", {}), { progress: { on: true, every: 30, look: "ring" } });
   assert.deepEqual(P.progressAskPatch("off", { progress: { every: 45 } }), { progress: { on: false, every: 45, look: "ring" } });
   assert.equal(P.progressAskPatch("on", { progress: { on: false } }), null, "already answered (Settings): left alone");
+  const shown = P.progressAskPatch("on", {})!;
+  const next = isl({ prefs: P.progressPrefs(shown.progress) });
+  assert.equal(P.buzzWords(next, P.buzzDue(next, T0 + 60 * MIN)!).ask, null);
+  const off = P.progressAskPatch("disable", shown);
+  assert.deepEqual(off, { progress: { on: false, every: 30, look: "ring" } });
+  assert.equal(P.progressAskPatch("disable", off), null);
+  assert.equal(P.progressAskPatch("on", off), null);
   assert.equal(P.progressAskPatch("maybe", {}), null);
 });
 
@@ -244,7 +253,7 @@ ok("the page sends it with the island state, and saves the answer", () => {
   const s = read("../src/island.ts");
   assert.match(s, /progress: progressPart\(s, st, shown, now\)/);
   assert.match(s, /m\.action === "progressAsk"/);
-  assert.match(s, /progressAskPatch\(m\.id, st\.island\)/);
+  assert.match(s, /progressAskPatch\(m\.id, st\?\.island\)/);
   assert.match(s, /feature\("island-progress"\)/);
 });
 ok("features.json: in core (the public build has it), on by default, web and Mac", () => {
@@ -267,12 +276,7 @@ ok("the expected time and the per task interval in Add task's Advanced and in Ed
   assert.match(te, /<CheckEveryPicker/);
 });
 const F = await import("../src/core/featureintro.ts");
-ok("an island intro, once, only on a Mac with the feature on, and not for someone who already switched it on", () => {
-  const d = F.INTROS.find((x: { id: string }) => x.id === "island-progress-177");
-  assert.ok(d); assert.equal(d!.show, "Ok"); assert.equal(d!.choice, true);
-  const fi = read("../src/views/FeatureIntro.tsx");
-  assert.match(fi, /"island-progress-177": async \(_can, s\) => \(!PS \|\| !feature\(PROGRESS_FEATURE\)/);
-  assert.match(fi, /progress\.on === true \? "done" : "open"/);
-  assert.ok(!/[\u2013\u2014]/.test(JSON.stringify(d)));
+ok("the first real check-in carries the choice without a separate intro", () => {
+  assert.ok(!F.INTROS.some((x: { id: string }) => x.id === "island-progress-177"));
 });
 console.log(`\n${n} passed`);

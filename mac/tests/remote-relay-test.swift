@@ -59,6 +59,12 @@ do {
   check("stun-refuses-bad", RSStun.decode(short) == nil && RSStun.decode(Data(repeating: 0, count: 19)) == nil && RSStun.decode(Data([0x40, 0, 0, 1, 9])) == nil)
   let cd = RSStun.channelData(0x4001, Data([9, 8, 7]))
   check("channeldata", RSStun.parseChannelData(cd).map { $0.0 == 0x4001 && $0.1 == Data([9, 8, 7]) } == true && RSStun.parseChannelData(RSStun.channelData(0x3000, Data())) == nil)
+  var framer = RSTurnFramer()
+  let framed = RSTurnFramer.frame(cd)
+  check("tls-channel-data-padded", framed.count % 4 == 0 && framed.count == cd.count + 1)
+  check("tls-framer-accepts-fragmented-header", framer.append(Data(framed.prefix(3))) == [])
+  check("tls-framer-accepts-coalesced-frames", framer.append(Data(framed.dropFirst(3)) + raw) == [cd, raw])
+  check("tls-framer-rejects-invalid-prefix", framer.append(Data([0x80, 0, 0, 0])) == nil)
   check("addresses", RSAddr("1.2.3.4:5")?.description == "1.2.3.4:5" && RSAddr("1.2.3:5") == nil && RSAddr("1.2.3.4:0") == nil && RSAddr("256.1.1.1:1") == nil
         && RSAddr("8.8.8.8:1")!.isPublic && !RSAddr("10.0.0.1:1")!.isPublic && !RSAddr("192.168.1.2:1")!.isPublic && !RSAddr("127.0.0.1:1")!.isPublic
         && !RSAddr("100.64.0.1:1")!.isPublic && !RSAddr("172.20.0.1:1")!.isPublic && !RSAddr("169.254.1.1:1")!.isPublic)
@@ -244,14 +250,16 @@ final class StandInTurn {
   func stop() { lock.lock(); for a in allocs.values { a.relay.close() }; allocs = [:]; lock.unlock(); sock.close() }
 }
 
-/// The room, in memory: what one side sends, the other hears (as the Worker's room passes text on).
+/// The room, in memory: what one side sends, the other hears (like the private vault channel).
 final class FakeRoom: RSRelaySignal {
   weak var other: FakeRoom?
   var onMessage: ([String: Any]) -> Void = { _ in }
   var sent = 0
   var mute = false
+  var dropNext = false
   func send(_ o: [String: Any]) {
     sent += 1
+    if dropNext { dropNext = false; return }
     guard !mute, let d = try? JSONSerialization.data(withJSONObject: o), let back = try? JSONSerialization.jsonObject(with: d) as? [String: Any] else { return }
     let o2 = other
     DispatchQueue.global().asyncAfter(deadline: .now() + 0.02) { o2?.onMessage(back) }   // a little like the network
@@ -286,14 +294,15 @@ server.onSession = { l in
 let (roomPrimary, roomSecondary) = FakeRoom.pair()
 let answer = RSRelayAnswer(identity: m1, server: server, signal: roomSecondary, q: q)
 answer.loopback = true
-answer.stun = { turn.addr }   // the stand-in answers STUN too (Cloudflare's STUN in real use)
+answer.credentials = { $0(.success(creds)) }
+roomSecondary.dropNext = true
 
 // A stranger's offer through the room gets nothing back.
 do {
   let (rs, rm) = FakeRoom.pair()
   let lonely = RSRelayAnswer(identity: m1, server: server, signal: rm, q: q)
-  lonely.loopback = true; lonely.stun = { turn.addr }
-  let d = RSRelayDial(identity: stranger, secondary: strangerSees, q: q, signal: rs) { $0(creds) }
+  lonely.loopback = true; lonely.credentials = { $0(.success(creds)) }
+  let d = RSRelayDial(identity: stranger, secondary: strangerSees, q: q, signal: rs, credentials: { $0(.success(creds)) })
   d.loopback = true; d.timeout = 3
   let r = Box<Result<RSLink, RSClient.Fail>?>(nil)
   d.start { r.v = $0 }
@@ -308,14 +317,15 @@ do {
 let clientLink = Box<RSLink?>(nil), receiver = Box<RSReceiver?>(nil)
 let t0 = RSTime.nowNs
 do {
-  let d = RSRelayDial(identity: m4, secondary: m1AsPeer, q: q, signal: roomPrimary) { $0(creds) }
+  let d = RSRelayDial(identity: m4, secondary: m1AsPeer, q: q, signal: roomPrimary, credentials: { $0(.success(creds)) })
   d.loopback = true
   let r = Box<Result<RSLink, RSClient.Fail>?>(nil)
   d.start { r.v = $0 }
   _ = waitFor(10) { r.v != nil }
   guard case .success(let l)? = r.v else { check("relay-handshake", false); print("FAILED \(fails + 1)"); exit(1) }
   check("relay-handshake", waitFor(3) { serverLink.v != nil })
-  print("relay: connected in \(String(format: "%.0f", Double(RSTime.nowNs - t0) / 1e6)) ms (Allocate, signed offer and answer, STUN, permission, signed hello and answer)")
+  check("retries-offer-when-first-answer-is-lost", roomPrimary.sent >= 2 && roomSecondary.sent >= 2)
+  print("relay: connected in \(String(format: "%.0f", Double(RSTime.nowNs - t0) / 1e6)) ms (two TURN allocations, signed offers and handshake)")
   clientLink.v = l
   let rc = RSReceiver(link: l, q: q); receiver.v = rc
   rc.onImage = { _, f in rc.shown(f) }
@@ -325,7 +335,7 @@ do {
   _ = d
 }
 check("relay-link-kind", clientLink.v?.kindName == "relay" && serverLink.v?.kindName == "relay" && clientLink.v?.relayed == true && serverLink.v?.relayed == true && clientLink.v?.tcp == nil)
-check("relay-one-allocation-one-permission", turn.allocations == 2 && turn.live == 1 && turn.permissions.allSatisfy { $0 == [127, 0, 0, 1] })   // 2: the stranger's try, given back
+check("relay-paired-dual-allocations", turn.allocations == 3 && turn.live == 2 && turn.permissions.allSatisfy { $0 == [127, 0, 0, 1] })   // 2: the stranger's try, given back
 check("relay-sender-capped", sender.v?.rate.maxKbps == 8_000 && (sender.v?.rate.kbps ?? 99_999) <= 8_000)
 
 func makePool(_ w: Int, _ h: Int) -> CVPixelBufferPool {
@@ -375,7 +385,7 @@ do {
   // Billed once: what the relay sends to the main Mac is the video plus the relay's own small header, never twice.
   check("relay-billed-once", video > 100_000 && Double(billed) < Double(video) * 1.10 && Double(billed) > Double(video) * 0.95)
   check("relay-uses-a-channel", turn.channelsBound >= 1)
-  print("relay-video: \(rc.framesShown) of \(n) frames; capture to decoded \(st.v.line) ms; \(video / 1000) kB sealed video, \(billed / 1000) kB a real relay would bill, \(turn.toPeers / 1000) kB to the second Mac (not billed); bitrate \(s.rate.kbps / 1000) Mbps")
+  print("relay-video: \(rc.framesShown) of \(n) frames; capture to decoded \(st.v.line) ms; \(video / 1000) kB sealed video, \(billed / 1000) kB a real relay would bill, \(turn.toPeers / 1000) kB between relay allocations; bitrate \(s.rate.kbps / 1000) Mbps")
 }
 
 // Input through the relay, in order.

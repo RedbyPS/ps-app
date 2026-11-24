@@ -42,7 +42,11 @@ function fake(init: { todos?: Doc[]; settings?: Data; locked?: boolean } = {}) {
     async update(id, patch) { const d = docs.get(id); if (d) d.data = { ...d.data, ...patch }; log.push(`update ${id} ${JSON.stringify(patch)}`); },
     async setDone(id, done) { const d = docs.get(id); if (d && !!d.data.done !== done) d.data = { ...d.data, done, doneAt: done ? "2026-11-12T10:00:00.000Z" : null }; log.push(`done ${id} ${done}`); },
     async remove(id) { docs.delete(id); log.push(`remove ${id}`); },
-    async saveSettings(p) { settings = { ...settings, ...p }; log.push(`settings ${Object.keys(p).join(",")}`); },
+    async saveSettings(p) {
+      const crmAppearance = p.crmAppearance ? { ...(settings.crmAppearance as object), ...p.crmAppearance } : settings.crmAppearance;
+      settings = { ...settings, ...p, ...(crmAppearance ? { crmAppearance } : {}) };
+      log.push(`settings ${Object.keys(p).join(",")}`);
+    },
     async saveRemind(change) { const next = change(rem); if (next) rem = cleanRemind(next); log.push("remind"); },
     newGroupId: () => `grp${++gseq}x`,
     async startSentry() { log.push("sentry start"); return sentry; },
@@ -67,7 +71,7 @@ const world = () => fake({
 
 // ---------- switches ----------
 ok("defaults: add, read and the AI Inbox on, everything else off", () => {
-  assert.deepEqual(DEFAULT_SCOPES, { inbox: true, lists: false, goals: false, rename: false, read: true, add: true, edit: false, done: false, delete: false, remind: false, focus: false, sentry: false, gym: false, settings: false, message: false });
+  assert.deepEqual(DEFAULT_SCOPES, { inbox: true, lists: false, goals: false, crm: false, rename: false, read: true, add: true, edit: false, done: false, delete: false, remind: false, focus: false, sentry: false, gym: false, settings: false, message: false });
   assert.deepEqual(cleanScopes({ lists: true, delete: "yes", bogus: true }), { ...DEFAULT_SCOPES, lists: true });
   assert.deepEqual(cleanScopes(null), DEFAULT_SCOPES);
 });
@@ -432,6 +436,95 @@ ok("nowhere in the page code is there a message or store call that stops Sentry 
   for (const x of sent) assert.ok(allowed.has(x), `unexpected Sentry message ${x}`);
   const api = readFileSync(new URL("../src/core/taskapi.ts", import.meta.url), "utf8") + readFileSync(new URL("../src/taskapi.ts", import.meta.url), "utf8");
   assert.ok(!/(stop|end|pause|leave|disengage|cancel)Sentry/i.test(api), "no stop in the API or its store");
+});
+
+ok("full reminder editing preserves the original PUT contract and configures recurrence and appearance", async () => {
+  const s = world();
+  const path = "/v1/tasks/ai1/reminder";
+  assert.equal((await call(s, "PUT", path, { time: "09:30" }, ALL)).status, 200);
+  const patch = { days: [1, 3, 5], timezone: "Asia/Dubai", snoozeMinutes: 20, confirmOnClick: false,
+    confirmText: "Finished", background: "#322252", accent: "#CEA5FA", sound: "none", volume: 0.4 };
+  const saved = await call(s, "PATCH", path, patch, ALL);
+  assert.equal(saved.status, 200);
+  assert.equal(saved.body.reminder.date, null);
+  assert.equal(saved.body.reminder.accent, "#cea5fa");
+  assert.deepEqual((await call(s, "GET", path, undefined, ALL)).body.reminder, saved.body.reminder);
+  assert.equal((await call(s, "PATCH", path, { date: T, days: [1] }, ALL)).status, 400);
+  assert.equal((await call(s, "PATCH", path, { done: true }, ALL)).body.error.code, "unknown_field");
+});
+
+ok("recurring and due-today reminders have their own controls, without changing alarm or confirmation state", async () => {
+  const s = world();
+  const path = "/v1/reminders";
+  assert.equal((await call(s, "GET", path, undefined, DEFAULT_SCOPES)).body.error.scope, "remind");
+  const created = await call(s, "POST", path, { label: "Review queue", on: false, time: "10:00", until: "15:00" }, ALL);
+  assert.equal(created.status, 201);
+  const id = created.body.reminder.id;
+  assert.equal((await call(s, "PATCH", `${path}/${id}`, { on: true }, ALL)).body.reminder.on, true);
+  assert.equal((await call(s, "DELETE", `${path}/${id}`, undefined, ALL)).status, 200);
+  const due = await call(s, "PATCH", `${path}/due`, { hoursBeforeDayEnd: 5, message: "{left}: {task}", snoozeMinutes: 25 }, ALL);
+  assert.equal(due.body.reminder.hoursBeforeDayEnd, 5);
+  assert.equal(due.body.reminder.snoozeMinutes, 25);
+  assert.equal((await call(s, "PATCH", `${path}/due`, { time: "10:00" }, ALL)).status, 400);
+});
+
+ok("CRM scope stays off by default, rejects locked access, filters secrets, and protects shared records", async () => {
+  const s = world();
+  const updates: { id: string; patch: Data }[] = [];
+  const cid = "e147b3d7-51a0-4338-bf92-7524c21c0377";
+  const pid = "17861d57-b546-4cc4-8528-9d98e53ca4bf";
+  const shared = "af14ac3a-478b-45fc-8e5e-67961f952c68";
+  const cp = `/v1/crm/clients/${cid}`;
+  const projectPath = `/v1/crm/projects/${pid}`;
+  const priv = { notes: "Owner proposal notes", history: [] };
+  const attachments: { id: string; ws: null; data: Data }[] = [];
+  const pdf = btoa("%PDF-1.7\n%%EOF");
+  const project = { title: "Redesign", proposal: { scope: ["Homepage"], price: 1500 }, stages: [], current: 0 };
+  s.crm = {
+    clients: () => [{ id: cid, ws: null, kind: "client", data: { name: "Studio", ws: "workspace-a", portal: { words: "secret" } } }],
+    projects: () => [
+      { id: pid, ws: null, kind: "project", data: { ...project, clientWs: "workspace-a" } },
+      { id: shared, ws: "workspace-a", kind: "project", data: { ...project } },
+    ],
+    details: () => priv,
+    editClient: async (id: string, patch: Data) => { updates.push({ id, patch }); },
+    editProject: async (id: string, patch: Data) => { updates.push({ id, patch }); },
+    saveDetails: async (_id: string, patch: Data) => { Object.assign(priv, patch); },
+    documents: (projectId: string) => attachments.filter((d) => d.data.projectId === projectId),
+    attach: async (projectId: string, file: { bytes: Uint8Array; name: string }, label: string, docKind: string) => {
+      attachments.push({ id: "file1", ws: null, data: { projectId, blobId: "blob-private", name: file.name, label, docKind } });
+      assert.equal(Buffer.from(file.bytes).toString("base64"), pdf);
+      return "file1";
+    },
+    readFile: async () => ({ name: "proposal.pdf", bytes: Buffer.from(pdf, "base64") }),
+  } as unknown as ApiStore["crm"];
+  const appearancePath = "/v1/crm/appearance";
+  const defaultAppearance = { look: "match", density: "comfortable", showClientColours: true, showTaskColours: true };
+  assert.deepEqual((await call(s, "GET", appearancePath, undefined, ALL)).body.appearance, defaultAppearance);
+  const custom = await call(s, "PATCH", appearancePath, { look: "light", density: "compact", showTaskColours: false }, ALL);
+  assert.deepEqual(custom.body.appearance, { ...defaultAppearance, look: "light", density: "compact", showTaskColours: false });
+  assert.equal((await call(s, "PATCH", appearancePath, { look: "unknown" }, ALL)).status, 400);
+  const back = await call(s, "PATCH", appearancePath, { look: "match" }, ALL);
+  assert.deepEqual(back.body.appearance, { ...defaultAppearance, density: "compact", showTaskColours: false });
+  assert.equal((await call(s, "GET", cp)).body.error.scope, "crm");
+  assert.equal((await call(fake({ locked: true }), "GET", cp, undefined, ALL)).status, 423);
+  assert.ok(!JSON.stringify((await call(s, "GET", cp, undefined, ALL)).body).includes("secret"));
+  assert.equal((await call(s, "PATCH", cp, { portal: {} }, ALL)).status, 400);
+  assert.equal((await call(s, "PATCH", cp, { colour: "#9922bb" }, ALL)).body.client.colour, "#9922bb");
+  assert.equal((await call(s, "PATCH", projectPath, { proposal: { status: "accepted" } }, ALL)).body.project.proposal.price, 1500);
+  assert.equal((await call(s, "PATCH", projectPath, { proposal: { url: "javascript:alert(1)" } }, ALL)).status, 400);
+  assert.equal((await call(s, "PATCH", `/v1/crm/projects/${shared}`, { title: "New" }, ALL)).body.error.code, "shared_project");
+  assert.equal((await call(s, "PATCH", `/v1/crm/projects/${shared}/details`, { notes: "Private" }, ALL)).status, 200);
+  assert.equal(updates.length, 2);
+  assert.equal((await call(s, "POST", `${projectPath}/documents`, { name: "bad.pdf", file: "Zm9v" }, ALL)).status, 400);
+  const uploaded = await call(s, "POST", `${projectPath}/documents`, { name: "proposal.pdf", kind: "proposal", file: pdf }, ALL);
+  assert.equal(uploaded.status, 201);
+  assert.equal(uploaded.body.document.id, "file1");
+  assert.equal(uploaded.body.document.blobId, undefined);
+  const downloaded = await call(s, "GET", `${projectPath}/documents/file1`, undefined, ALL, { file: "true" });
+  assert.equal(downloaded.body.file, pdf);
+  assert.equal((await call(s, "GET", `/v1/crm/projects/${shared}/documents/file1`, undefined, ALL, { file: "true" })).status, 404);
+  assert.equal((await call(s, "GET", `${projectPath}/tasks`, undefined, ALL_BUT("lists"))).body.error.scope, "lists");
 });
 
 // ---------- the gym reminder (V1.57) ----------
@@ -998,7 +1091,7 @@ ok("Copy for AI 1.74: focus, a message's task and the new settings are explained
   assert.ok(!/[–—]/.test(g), "no en or em dashes");
 });
 
-// Break-it 1.74 round 1: Red's 1.74 Clients tasks (core/clientwork.ts) as the API shows them.
+// Break-it 1.74 round 1: the developer's 1.74 Clients tasks (core/clientwork.ts) as the API shows them.
 ok("Clients 1.74: a client task waiting for its do date says so, is not counted in the list, and cannot be the working task", async () => {
   const s = fake({ todos: [d("cw1", 0, { clientId: "cl1", doOn: "2026-11-14" }), d("cl2", 1, { clientId: "cl1", doOn: "2026-11-12" }), d("pl3", 2)], settings: SETTINGS });
   (s as ApiStore).land = () => T;

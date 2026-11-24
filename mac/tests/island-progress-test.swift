@@ -20,7 +20,7 @@ ok("read from the page: seconds, its interval, look and switch", p0.since == T0 
 ok("nothing, no id or no start: nil", C.from(nil) == nil && C.from(page(["id": ""])) == nil && C.from(page(["since": "soon"])) == nil)
 ok("nothing to count (no check-ins and no expected time): nil", C.from(page(["every": 0, "est": 0])) == nil)
 ok("an odd look is the ring; numbers kept in range", P(["look": "spiral"]).look == "ring" && P(["every": 999]).every == 240 && P(["est": -5]).est == 0)
-ok("the page's words, or the same defaults", P(["words": ["up": "Done for now"]]).words.up == "Done for now" && P().words.up == "Time's up" && P().words.turnOn == "Turn on")
+ok("the page's words, or the same defaults", P(["words": ["up": "Done for now"]]).words.up == "Done for now" && P().words.up == "Time's up" && P().words.turnOn == "Keep on" && P().words.notNow == "Turn off")
 ok("a newline in the title never breaks the card", !P(["title": "a\nb"]).title.contains("\n"))
 
 // 2. when it buzzes
@@ -36,8 +36,12 @@ let p20 = P(["est": 20])
 ok("after the time up the check-ins go on", C.due(p20, now: T0 + 20 * M)?.kind == .up && C.due(p20, now: T0 + 30 * M, done: [C.key(p20, "up")])?.kind == .check)
 ok("a new round keys its buzzes again", C.key(p0, "1") != C.key(P(["round": (T0 + 3 * 3600) * 1000]), "1"))
 ok("the keys are the page's: id, round in base 36, what", C.key(p0, "up") == "t1.\(String(Int64(T0 * 1000), radix: 36)).up")
-let pa = P(["on": false, "ask": true])
-ok("never answered: the first would-be buzz is the question", C.due(pa, now: T0 + 30 * M)?.kind == .offer && C.due(P(["on": false, "ask": true, "est": 10]), now: T0 + 10 * M)?.kind == .offer)
+let pa = P(["on": true, "ask": true])
+ok("default on: the first card is the actual check-in, with a choice", C.due(pa, now: T0 + 30 * M)?.kind == .check)
+let firstUp = P(["on": true, "ask": true, "est": 10])
+let upBuzz = C.due(firstUp, now: T0 + 10 * M)!
+ok("the first card can be time up and keep both lines", upBuzz.kind == .up && C.lines(firstUp, upBuzz).sub == "Time's up" && C.lines(firstUp, upBuzz).ask != nil)
+ok("an older page still gets its opt-in card", C.due(P(["on": false, "ask": true]), now: T0 + 30 * M)?.kind == .offer)
 ok("off and not due: never", C.due(P(["on": false, "ask": false]), now: T0 + 30 * M) == nil)
 ok("before it began: nothing", C.due(p0, now: T0 - M) == nil && C.due(p0, now: T0) == nil)
 
@@ -69,7 +73,7 @@ ok("the card: how long, then the time left", C.lines(p45, C.due(p45, now: T0 + 3
 ok("the card: Time's up", C.lines(p45, C.due(p45, now: T0 + 45 * M)!).sub == "Time's up")
 ok("the card: over", C.lines(p20, C.due(p20, now: T0 + 30 * M, done: [C.key(p20, "up")])!).sub == "10 minutes over")
 ok("no time set: only how long", C.lines(p0, C.due(p0, now: T0 + 60 * M)!) == C.Lines(main: "You've been working on this for 1 hour", sub: nil, ask: nil))
-ok("the question", C.lines(pa, C.due(pa, now: T0 + 30 * M)!).ask == "Want a check-in like this every 30 minutes?")
+ok("the question", C.lines(pa, C.due(pa, now: T0 + 30 * M)!).ask == "Progress check-ins are on.")
 let w = ProgressWords()
 ok("no em or en dashes in the words", ![w.working, w.left, w.up, w.over, w.ask, w.turnOn, w.notNow, w.askNote].joined().contains { $0 == "\u{2013}" || $0 == "\u{2014}" })
 
@@ -79,12 +83,12 @@ ok("full motion: it shakes, flies, opens and flies home", full.shake > 0 && full
 ok("Reduce motion: no shake and no flight", calm.shake == 0 && calm.fly == 0 && calm.home == 0 && calm.open == 0)
 ok("the shake swings both ways and dies away", C.shakeX(0) == 0 && abs(C.shakeX(1)) < 0.001 && (0...40).map { C.shakeX(Double($0) / 40) }.contains { $0 > 2 } && (0...40).map { C.shakeX(Double($0) / 40) }.contains { $0 < -2 })
 let scr = CGRect(x: 0, y: 0, width: 1512, height: 982)
-let mid = C.middle(of: scr, size: C.cardSize(kind: .check))
+let mid = C.middle(of: scr, size: C.cardSize(showsChoice: false))
 ok("it opens in the middle of the screen, a little above the centre", abs(mid.midX - scr.midX) < 1 && mid.midY > scr.midY && mid.maxY < scr.maxY)
-ok("the question's card is bigger", C.cardSize(kind: .offer).height > C.cardSize(kind: .check).height)
+ok("the question's card is bigger", C.cardSize(showsChoice: true).height > C.cardSize(showsChoice: false).height)
 let isl = CGRect(x: 640, y: 940, width: 232, height: 38)
-let u = C.under(isl, screen: scr, size: C.cardSize(kind: .check))
-ok("Reduce motion: just under the island, on its screen", u.maxY < isl.minY && abs(u.midX - isl.midX) < 1 && C.under(CGRect(x: 1400, y: 940, width: 100, height: 38), screen: scr, size: C.cardSize(kind: .check)).maxX <= scr.maxX)
+let u = C.under(isl, screen: scr, size: C.cardSize(showsChoice: false))
+ok("Reduce motion: just under the island, on its screen", u.maxY < isl.minY && abs(u.midX - isl.midX) < 1 && C.under(CGRect(x: 1400, y: 940, width: 100, height: 38), screen: scr, size: C.cardSize(showsChoice: false)).maxX <= scr.maxX)
 
 // 7. the island draws it (read as text: the views need a window to run)
 let root = CommandLine.arguments.count > 1 ? CommandLine.arguments[1] : "."

@@ -9,12 +9,17 @@
 // Esc nobody used that reaches window closes Clients, and is marked used so the Tab list stays. The phone's back (no key)
 // asks the screen first (cwEscape: its top pop-up), and closes Clients when nothing was open on top.
 import { restBehind } from "../ui/screenrest";
-import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type RefObject } from "react";
 import { createPortal } from "react-dom";
 import { PS, psPost } from "../ps";
 import { GOS, MWEB } from "../gos/bridge";
 import { sfx } from "../ui/sfx";
+import { useVault } from "../ui/kit";
+import { cleanCrmAppearance } from "../core/crmdata";
+import { buildTokens, isLight, lookById } from "../core/looks";
+import { settingsData } from "../core/select";
 import { morph } from "../views/DimensionX";
+import { closeRemindPop } from "../views/TaskRemind";
 import { taskMapActions } from "../views/TaskMap";
 import { ClientsScreen, cwEscape } from "./ClientsScreen";
 import "./clientsbtn.css";
@@ -53,6 +58,20 @@ export const ClientsIcon = ({ size = 18 }: { size?: number }) => (
     <rect x="3.5" y="7" width="17" height="12.5" rx="2.5" /><path d="M9 7V5.6A1.6 1.6 0 0 1 10.6 4h2.8A1.6 1.6 0 0 1 15 5.6V7M3.5 12.5h17M10.5 12.5v1.6h3v-1.6" />
   </svg>
 );
+
+function ClientWindow({ frame, close }: { frame: RefObject<HTMLDivElement | null>; close: () => void }) {
+  const { look } = cleanCrmAppearance(settingsData(useVault()).crmAppearance);
+  const palette = useMemo<CSSProperties | undefined>(() => look === "match" ? undefined : {
+    ...buildTokens({ look, accent: null, density: "comfortable", text: 100, font: null }),
+    colorScheme: isLight(lookById(look).base) ? "light" : "dark",
+  }, [look]);
+  return (
+    <div ref={frame} className="clw-win" data-crm-look={look} style={palette} role="dialog" aria-modal="true" aria-label="CRM">
+      <div className="clw-morph" aria-hidden="true" />
+      <div className="clw-body"><ClientsScreen onClose={close} where={WHERE} /></div>
+    </div>
+  );
+}
 
 type Phase = "closed" | "open" | "closing";
 /** The full screen window, its open and close and its Esc. One per page is used (see pick). */
@@ -95,7 +114,7 @@ export function ClientsHost({ anchor, docked }: { anchor: () => HTMLElement | nu
     const back = (e: Event) => {
       e.preventDefault(); e.stopImmediatePropagation();
       let used = false;
-      try { used = cwEscape(); } catch { /* a broken pop-up never keeps Clients open */ }
+      try { used = closeRemindPop() || cwEscape(); } catch { /* a broken pop-up never keeps Clients open */ }
       if (!used) close();
     };
     window.addEventListener("keydown", key);
@@ -128,10 +147,7 @@ export function ClientsHost({ anchor, docked }: { anchor: () => HTMLElement | nu
   return createPortal(
     <div className={`clw-layer${docked ? " docked" : ""}${PHONE ? " gos" : ""}`} onMouseDown={(e) => e.stopPropagation()}>
       <div ref={dim} className="clw-dim" aria-hidden="true" />
-      <div ref={win} className="clw-win" role="dialog" aria-modal="true" aria-label="Clients">
-        <div className="clw-morph" aria-hidden="true" />
-        <div className="clw-body"><ClientsScreen onClose={close} where={WHERE} /></div>
-      </div>
+      <ClientWindow frame={win} close={close} />
     </div>,
     host,
   );
@@ -145,8 +161,8 @@ export function ClientsButton({ docked }: { docked?: boolean }) {
   return (
     <>
       <button ref={btn} type="button" className={`clw-tab-btn${on ? " on" : ""}`} onClick={() => openClients(btn.current)} onMouseDown={(e) => e.stopPropagation()}
-        aria-label="Open Clients" title="Clients">
-        <ClientsIcon /><span>Clients</span>
+        aria-label="Open CRM" title="CRM">
+        <ClientsIcon /><span>CRM</span>
       </button>
       <ClientsHost anchor={() => btn.current} docked={docked} />
     </>

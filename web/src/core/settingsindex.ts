@@ -163,6 +163,7 @@ export const SETTINGS: SetEntry[] = [
 
   // ---------- Appearance ----------
   { id: "look", group: "looks", name: "Look", line: NOTEBOOK_ON ? "The whole look of PS app: Dark, Light, Notebook and more." : "The whole look of PS app: Dark, Light and more.", words: ["theme", "dark", "light", "mode", ...(NOTEBOOK_ON ? ["notebook"] : []), "skin", "style", "night", "colour", "color", "design"] },
+  { id: "crm-appearance", group: "looks", name: "CRM appearance", line: "Match PS or choose a look for the CRM.", words: ["crm", "clients", "theme", "colour", "color", "dark", "light", "design"] },
   { id: "phone-layout", group: "looks", name: "Layout", line: "Compact, Cards, Focus or Simple: how the tasks sit on this phone.", on: PHONE, words: ["layout", "compact", "cards", "focus", "simple", "density", "rows", "list style"] },
   { id: "accent", group: "looks", name: "Accent colour", line: "The colour of buttons, ticks and highlights.", words: ["accent", "colour", "color", "tint", "highlight", "pink"] },
   { id: "layout-text", group: "looks", name: "Layout and text", line: "Density, text size and font for every look.", words: ["font", "density", "spacing", "compact", "text size", "typeface", "bigger text", "readable"] },
@@ -293,7 +294,7 @@ export const SETTINGS: SetEntry[] = [
   { id: "island-task-only", group: "island", name: "Only the task when closed", line: "The closed island shows just your task. Point at it to see the timers, counts and the rest.", on: MAC, words: ["island", "closed", "task", "only", "simple", "clean", "timers", "counts", "badges", "circle", "tick", "+1", "clutter", "busy", "full", "hover", "minimal"] },
   // PS 1.67 Hatch: the start animation (ps-mac Hatch.swift, views/PsSettings.tsx StartAnimationSection). This Mac, on unless switched off.
   // PS Cake (the developer, 21 Nov 2026): the switch now governs the boot animation (ps-mac Cake.swift), one of three scenes at random.
-  // PS 1.77 progress check-ins and task timers (core/islandprogress.ts, views/IslandProgressSettings.tsx): off until the person says yes.
+  // PS 1.77 progress check-ins and task timers (core/islandprogress.ts, views/IslandProgressSettings.tsx): on by default.
   { id: "island-progress", group: "island", name: "Progress check-ins", line: "The island checks in while you work on a task, and counts down a task with an expected time. No sound.", on: MAC, words: ["progress", "check in", "check-in", "checkin", "buzz", "nudge", "remind", "every 30 minutes", "interval", "how long", "working on", "timer", "countdown", "count down", "expected time", "estimate", "ring", "sand timer", "hourglass", "time left", "line", "shake", "middle", "off", "turn off", "disable"] },
   { id: "start-animation", group: "island", name: "Start animation", line: "Each time the app opens, one of three Cake scenes plays and builds the island. Esc skips it.", on: MAC, words: ["start", "startup", "launch", "opens", "animation", "intro", "hatch", "icon", "logo", "splash", "off", "turn off", "disable", "boot", "cake", "night drive", "harbor", "city"] },
   // PS 1.60 (pull request 12a, views/ScreenRec.tsx): one block with every choice; the rows below are only found by the search.

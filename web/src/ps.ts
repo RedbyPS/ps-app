@@ -44,6 +44,7 @@ import { rainAmount, rainKind } from "./core/rain";
 import { nbDesign } from "./core/notebook";
 import { CAMPAIGNS_ON } from "./core/features";
 import { privatePatch } from "./core/privateends";
+import { isCrmLook } from "./core/crmdata";
 import { cleanSwitches } from "./core/features";   // V1.58 "From the squad" switches (cleanLooks)
 import { startFeatureSync } from "./featuresync";
 import { liveForMirror, liveStore, refreshCampaignsLive, setLiveAsker, setLiveMirror } from "./core/campaignsLive";
@@ -81,6 +82,8 @@ export function cleanLooks(p: Record<string, unknown>): Partial<Settings> {
   if (p.theme === "light" || p.theme === "dark" || p.theme === "system") o.theme = p.theme;
   if (p.tmTheme === "light" || p.tmTheme === "dark") o.tmTheme = p.tmTheme;
   if (typeof p.tmNotebook === "string") o.tmNotebook = nbDesign(p.tmNotebook);           // the Notebook looks (core/notebook.ts)
+  const crmLook = (p.crmAppearance as { look?: unknown } | null)?.look;
+  if (isCrmLook(crmLook)) o.crmAppearance = { look: crmLook };
   Object.assign(o, cleanAppearance(p));                                                  // the PS look, accent, density, text, font (core/looks.ts)
   if (typeof p.tmDailyFirst === "boolean") o.tmDailyFirst = p.tmDailyFirst;
   if (Array.isArray(p.tmSecOrder)) o.tmSecOrder = cleanSecOrder(p.tmSecOrder);
@@ -199,6 +202,7 @@ import { cleanOverdueLook } from "./core/overduelook";
 import { cleanNoteLook } from "./core/notelook";
 import { startNoteLook } from "./notelook";
 import { startScreenPrefs } from "./screenprefs";
+import { screenRelayMessage, startScreenRelay } from "./second/screenrelay";
 import { startSentryPrefs } from "./sentryprefs";
 import { cleanSeen } from "./core/whatsnew";
 import { cleanWelcomeDone } from "./core/welcome";
@@ -210,6 +214,7 @@ import { presenceOn } from "./core/offswitches";   // "Tell the website PS app i
 import { startExamples } from "./examples";
 import { deleteExamples, undoExamples, renameDevice } from "./core/actions";
 import { runClientsOp, setClientsRelay } from "./core/clientsact";
+import { applyCrmFileReply, cancelCrmFileRequests, clearCrmFileTransfers, runCrmFileRequest, setCrmFileRelay } from "./core/crmfilebridge";
 import { cleanClientsOp } from "./core/clientsop";
 import { recentPrivate } from "./core/privatenotes";
 import { cleanTzOp } from "./core/tzpeople";
@@ -523,6 +528,7 @@ export function startPsOverlay() {
   startLineShare();
   // PS 1.74: Clients saves go to the main page as ops (core/clientsop.ts), run there on the newest copy.
   setClientsRelay((op) => psPost({ type: "looks", patch: { clientsOp: op } }));
+  setCrmFileRelay(psPost);
   // Fitness writes go to the main page (runFitOp checks them again there).
   setMirrorWriter((w) => {
     // People on the Time zones screen (core/tzpeople.ts): their own op, run by runTzOp on the main page.
@@ -560,6 +566,7 @@ export function startPsOverlay() {
     // leaves it out, which counts as showing). Only a show wakes the sounds and plays the pop-in,
     // so new data arriving while the list is up never makes it blink.
     load(st: { unlocked: boolean; docs: Doc[]; lastSync: string | null; red?: boolean; primary?: boolean; second?: unknown; clive?: unknown; cal?: unknown; squad?: unknown; sqchat?: unknown; gym?: unknown; sbsq?: unknown; local?: { since: string } | null; lf?: unknown; leads?: unknown; pair?: unknown }, opening?: boolean) {
+      if (!st.unlocked) cancelCrmFileRequests();
       __mirrorLoad(st.unlocked, st.docs || [], st.lastSync, st.red === true, st.local ?? null, st.primary === true);
       setLocalMirror(st.unlocked ? st.lf : null);   // local first: the last export or import, the copy kept after a move
       setSquadMirror(st.unlocked ? st.squad : null);   // G Squad: the plain view the main page made (src/squad/engine.ts)
@@ -586,6 +593,7 @@ export function startPsOverlay() {
   (window as W).__ps = {
     apply(m) {
       if (protonShellMessage(m as { type?: string })) return;   // PS 1.65 Proton Mail through Bridge: the unread rows, a reply's answer (core/protonmail.ts)
+      if (applyCrmFileReply(m as { type?: string })) return;
       if (apiOverlayMessage(m as { type?: string })) return;   // Settings, AI task API: the key, shown when asked (src/taskapi.ts)
       if (m.type === "tab") { tabState = { enabled: m.enabled, trusted: m.trusted }; settingsListeners.forEach((l) => l()); }
       else if (m.type === "mailOpen") requestMailOpen((m as { via?: unknown }).via);   // PS 1.61: the island's envelope or reply arrow: the email panel opens its newest email (core/mailopen.ts)
@@ -667,6 +675,7 @@ const bgShell = new Set<(m: Record<string, unknown>) => void>();
 export function startPsBridge() {
   if (!PS || bridged) return;
   bridged = true;
+  vaultStore.subscribe(() => { if (vaultStore.get().status !== "unlocked") clearCrmFileTransfers(); });
   psPost({ type: "proton:get" });   // PS 1.65: the main window needs the status too (Settings)
   (window as W).__ps = {
     apply(m) {
@@ -679,6 +688,7 @@ export function startPsBridge() {
       if (replyMessage(m as { type?: string })) return;   // Reply from PS: the card's Reply, a send done (src/replyengine.ts)
       if (mailCardMessage(m as { type?: string })) return;   // client email cards (src/mailcards.ts)
       if (aiDoneMessage(m as { type?: string })) return;   // an AI chat on this Mac finished: its card (src/aidone.ts, V1.53)
+      if (runCrmFileRequest(m as unknown as Record<string, unknown>, psPost)) return;
       if (apiMessage(m as { type?: string })) return;   // the Task API: a checked request from PS on the Mac (src/taskapi.ts)
       if (notesCardMessage(m as { type?: string })) return;  // meeting notes card (src/notescard.ts)
       if (rebootWarnMessage(m as { type?: string })) return;   // the other Mac's auto reboot is close (src/rebootwarn.ts)
@@ -689,6 +699,7 @@ export function startPsBridge() {
       if (dirCardMessage(m as { type?: string })) return;  // G Squad: "X asked to join" card, Approve and Decline (src/squad/direngine.ts)
       if (chatCardMessage(m as { type?: string; id?: string; action?: string; text?: string })) return;  // G Squad chat: the history vote card's Yes and No (src/squad/chatengine.ts)
       if (islandMessage(m as { type?: string })) return;   // a tick on the Dynamic Island (src/island.ts)
+      if (screenRelayMessage(m as { type?: string }, psPost)) return;
       if (secondOn && secondMessage(m as unknown as { type?: string })) return;   // Second Computer (src/second/store.ts), only while switched on, see sayOwner
       if (m.type === "sync") rewindActive();   // Tab held: active on this Mac now (Rewind, src/rewind.ts)
       if (m.type === "mic") setMic(m);
@@ -994,7 +1005,7 @@ export function startPsBridge() {
       || d.kind === "phonelayout" || d.kind === "phonedev" || d.kind === "bgdev"   // V1.56 the phone layout editor: each phone's layout, and which phones you have
       || d.kind === "remind"    // Settings > Annoying 15 min reminder: the reminders and their answers (a few KB)
       || d.kind === "ttime"     // Time spent (PS 1.65, core/timeest.ts): the clocks and each month's finished times, for Edit's past times and the overload line (a few KB)
-      || d.kind === "project" || d.kind === "pprivate" || d.kind === "ptpl"   // PS 1.74 Clients in the Tab list: projects, their checklist and notes, templates (core/clientsop.ts)
+      || d.kind === "project" || d.kind === "pprivate" || d.kind === "ptpl" || (d.kind === "doc" && s.role === "owner")   // PS 1.74 Clients in the Tab list: projects, their checklist and notes, templates (core/clientsop.ts)
       || d.kind === "journal"   // PS 1.74: the Map pill's month titles and notes (views/SeriesMap.tsx). Left out before, so a title typed there was saved but looked deleted the next time the map opened
       || (d.kind === "stline" && Number((d.data as { hour?: number }).hour) > Date.now() - 25 * 3600_000)) : [];
     if (cal) docs.push(cal);
@@ -1086,6 +1097,7 @@ export function startPsBridge() {
   // Second Computer (src/second/store.ts): started and stopped by sayOwner above, by its switch.
   startRebootWarn(psPost);   // a card 10 min before the other Mac's auto reboot, with Postpone (src/rebootwarn.ts)
   startNoteLook(psPost);   // notification card colours and the Other alerts sound to the Mac (src/notelook.ts, core/notelook.ts)
+  startScreenRelay(psPost);
   startScreenPrefs(psPost);   // the remote screen's Picture and Delay numbers to the Mac (src/screenprefs.ts, core/screenswitch.ts)
   startSentryPrefs(psPost);   // Sentry mode's restart if not unlocked to the Mac, for the restart helper pop up (src/sentryprefs.ts, V1.49)
   startDnd(psPost, "mac");   // Do Not Disturb: what the native side mutes (src/dnd.ts, core/dnd.ts)

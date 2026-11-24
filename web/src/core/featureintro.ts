@@ -303,18 +303,6 @@ export const INTROS: IntroDef[] = [
     choice: true,
   },
   {
-    // PS 1.77 (the developer, 23 Nov 2026): progress check-ins and task timers on the island (core/islandprogress.ts). They are off
-    // until the person says yes (the island asks the first time a check-in is due), so this card only says what is new and where
-    // it lives. One Ok ends it for good. Only on a Mac, while the feature is on for an owner who has not switched it on already
-    // (views/FeatureIntro.tsx DONE_PROBES). Words wait for the developer's approval.
-    id: "island-progress-177",
-    headline: "Your island can now check in while you work.",
-    ask: "Every 30 minutes it shows how long you've been on your task, and a task with an expected time gets a timer. It asks you first. Settings, Dynamic Island, Progress check-ins.",
-    show: "Ok",
-    mark: "spark",
-    choice: true,
-  },
-  {
     // PS 1.76 (Jan, 22 Nov 2026: "by default they should be hidden, the setting should be on by default"): scheduled tasks
     // (core/scheduled.ts) are on by default, so this card says once that later tasks now wait and where the switch is. A new id,
     // so a person who answered the 1.75 offer (scheduled-tasks-175, off by default then) is told too. One Ok ends it for good.

@@ -1,6 +1,6 @@
 // PS 1.77 progress check-ins and task timers (core/islandprogress.ts): Settings, Dynamic Island, Progress check-ins, and the
 // per task interval in Add task's Advanced and in a task's Edit (CheckEveryPicker, drawn by views/TimeEstimate.tsx).
-//  - ProgressSwitch: On or Off. Never answered shows Off (it is off until the person says yes) with a note that the island asks.
+//  - ProgressSwitch: On or Off, with a note about the first card while the default is in use.
 //  - ProgressBody: how often (the quick picks or a typed time), the timer look (four small live previews), Show me (one sample
 //    buzz on this Mac, never saved), and a note when Time spent is off (the check-ins count from its clock).
 // Esc closes the typed box (and the screen around it, as everywhere). Nothing here takes the focus by itself.
@@ -23,7 +23,7 @@ const reduced = () => typeof matchMedia === "function" && matchMedia("(prefers-r
 
 /** Every word on these screens (waiting for the developer's approval; no em or en dashes). */
 export const PROGRESS_UI = {
-  offUntilYes: "Off until you say yes. The first time a check-in is due, the island asks.",
+  firstCard: "On by default. You can turn check-ins off from the first card.",
   every: "How often",
   everyOther: "Other",
   everyHint: "Type it, like 20 or 1h",
@@ -127,7 +127,7 @@ export function ProgressBody() {
   if (!feature(P.PROGRESS_FEATURE)) return null;
   return (
     <div className="ip-body">
-      {p.on === null && <p className="gs-set-note">{PROGRESS_UI.offUntilYes}</p>}
+      {p.on === null && <p className="gs-set-note">{PROGRESS_UI.firstCard}</p>}
       {ready && st && !track && <p className="gs-set-note ip-warn">{PROGRESS_UI.needsTrack}</p>}
       <div className="ip-part">
         <span className="te-label">{PROGRESS_UI.every}</span>

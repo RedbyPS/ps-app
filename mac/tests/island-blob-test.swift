@@ -96,7 +96,7 @@ ok("the figure's highest point is at least 8 points under the words", StandFaceL
 ok("the old layout ran into the words (2 points of space, 5 of overshoot): the check would have caught it", (2 + 0 - StandFaceLayout.overshoot(70)) < StandFaceLayout.minClear)
 ok("taller than before: 124 for the pill, 112 below the notch", StandFaceLayout.height(pill: true) > 124 && StandFaceLayout.height(pill: false) > 112)
 ok("the pill is a little taller than the notch body, as before", StandFaceLayout.height(pill: true) - StandFaceLayout.height(pill: false) == StandFaceLayout.topPad(pill: true) - StandFaceLayout.topPad(pill: false))
-ok("the whole stack adds up to the height: top, words, spaces, box, bottom", StandFaceLayout.height(pill: true) == 12 + 14 + 2 + StandFaceLayout.lift + 2 + 78 + 14)
+ok("the whole stack includes the Ignore button", StandFaceLayout.height(pill: true) == 12 + 14 + 2 + StandFaceLayout.lift + 2 + 78 + 2 + StandFaceLayout.ignoreH + 14)
 ok("the overshoot follows the man's size", StandFaceLayout.overshoot(70) == 6 && StandFaceLayout.overshoot(30) == 3 && StandFaceLayout.overshoot(100) == 8)
 ok("his feet stay inside the island with room", StandFaceLayout.feetClear(pill: true) >= 10 && StandFaceLayout.feetClear(pill: false) >= 10)
 ok("it is still narrower than the open island, rounder", StandFaceLayout.faceW == 236 && StandFaceLayout.radius == 36)

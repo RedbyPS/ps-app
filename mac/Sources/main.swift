@@ -1472,6 +1472,10 @@ final class App: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMess
     if (fromMain || fromOverlay) && type.hasPrefix("sb:") && Soundboard.shared.handle(type, msg, from: message.webView) { return }   // V1.47 Soundboard (Soundboard.swift)
     if fromMain && Features.handle(type, msg) { return }   // V1.61: the page's feature answers (Features.swift), so Features.on follows the page
     switch type {
+    case "crm:request" where fromOverlay && vaultUnlocked && !selfTest:
+      if text.utf8.count <= 64 * 1024 { sendToMain(text) }
+    case "crm:reply" where fromMain && vaultUnlocked && !selfTest:
+      if text.utf8.count <= 64 * 1024 { sendToOverlay(text) }
     case "state" where fromMain && !(selfTest && testHoldState):
       lastState = msg["payload"] as? String
       let now = msg["unlocked"] as? Bool ?? false
@@ -1811,12 +1815,12 @@ final class App: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMess
       if let h = (msg["restartH"] as? NSNumber)?.intValue { HelperAlert.shared.setSentryRestart(h) }
     case "screenPrefs" where fromMain:          // the remote screen's Picture, Delay numbers and Hold key (src/screenprefs.ts, PS 1.69)
       RemoteScreen.shared.setPrefs(msg)
-    case "screenRelayKey" where fromMain:       // PS 1.77 From anywhere: the relay key, typed once; kept with Second Computer's keys, never echoed
-      let key = msg["key"] as? String ?? ""
-      let ok = RemoteScreen.shared.setRelayKey(key)
-      RemoteScreen.shared.relayState(saved: key.isEmpty ? nil : ok, removed: key.isEmpty && ok)
-    case "screenRelay:get" where fromMain:      // PS 1.77: is the relay key set on this Mac (yes or no, never the key)
-      RemoteScreen.shared.relayState()
+    case "screenRelay:signal" where fromMain, "screenRelay:creds" where fromMain:
+      RemoteScreen.shared.receiveRelay(msg)
+    case "screen:connect" where fromMain || fromOverlay:
+      guard !Protected.front else { break }
+      hideOverlay(force: true, giveBack: false)
+      RemoteScreen.shared.connect()
     case "screen:toggle" where fromMain || fromOverlay:   // the Tab list's Remote screen switch (views/ScreenSwitch.tsx, PS 1.69)
       hideOverlay(force: true, giveBack: false)
       RemoteScreen.shared.toggle()

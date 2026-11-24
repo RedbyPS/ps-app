@@ -62,7 +62,7 @@ export const NAV_ITEMS: readonly NavInfo[] = [
   { id: "soundboard", label: "Sounds", add: "Soundboard", optIn: true },
   // PS 1.73 (the developer, 21 Nov 2026): the Clients workspace (clients/ClientsButton.tsx) takes the Sounds place, left of Vault, in
   // every navbar: the default one, and a saved one once (ONE_TIME_NAV).
-  { id: "clients", label: "Clients" },
+  { id: "clients", label: "CRM" },
   { id: "vault", label: "Vault" },
   { id: "settings", label: "Settings", keep: true },
 ];

@@ -407,7 +407,7 @@ enum RSRelayRules {
     guard case .success = identity.open(env, expect: [offerType], remember: true) else { return no("Seen before") }
     return .success((peer, a))
   }
-  /// The second Mac's answer: its own internet address (as Cloudflare's STUN saw it), bound to the exact offer.
+  /// The second Mac's answer: its own TURN allocation address, bound to the exact offer.
   static func answer(identity: SecondIdentity, offer: SecondEnv, pub: RSAddr, nowMs: Double) -> SecondEnv? {
     identity.sign(["v": 1, "t": answerType, "id": UUID().uuidString.lowercased(), "from": identity.device, "to": offer.by, "at": nowMs.rounded(),
                    "re": RSHandshake.digest(offer.body), "pub": pub.description])
@@ -443,7 +443,7 @@ enum RSRelayRules {
   }
 }
 
-/// Short lived TURN credentials from the Worker: {username, credential, urls, ttl}.
+/// Short-lived TURN credentials from the vault: {username, credential, urls, ttl}.
 struct RSTurnCreds: Equatable {
   var username: String, credential: String, urls: [String], ttl: Int
   static func parse(_ d: Data) -> RSTurnCreds? {
@@ -451,7 +451,12 @@ struct RSTurnCreds: Equatable {
           !u.isEmpty, !c.isEmpty, u.count < 512, c.count < 512, let urls = o["urls"] as? [String], !urls.isEmpty else { return nil }
     return RSTurnCreds(username: u, credential: c, urls: urls.filter { $0.count < 256 }, ttl: (o["ttl"] as? NSNumber)?.intValue ?? 0)
   }
-  /// The TURN servers to try, UDP first: (host, port). Only turn: (not turns:) on UDP for now.
+  /// TURN client to Cloudflare over TLS/443. Allocated relay addresses still carry UDP datagrams.
+  var tls443: String? {
+    urls.contains("turns:turn.cloudflare.com:443?transport=tcp") ? "turn.cloudflare.com" : nil
+  }
+
+  /// TURN UDP endpoints, used if the TLS allocation fails.
   var udpServers: [(String, UInt16)] {
     var out: [(String, UInt16)] = []
     for s in urls {

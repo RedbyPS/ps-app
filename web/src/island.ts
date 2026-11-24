@@ -178,11 +178,14 @@ export function islandMessage(m: { type?: string; action?: string; id?: string }
     if (patch && (st.standAsk !== true || patch.standup)) void saveSettings(patch).then(() => sync(true));
     return true;
   }
-  // PS 1.77 the progress check-ins' one question (ps-mac IslandProgress.swift): Turn on or Not now. Saved once, only while it is due.
+  // Record the first card or turn off check-ins from that card using the latest saved choice.
   if (m.action === "progressAsk") {
-    const st = settingsData(s);
-    const patch = progressAskPatch(m.id, st.island);
-    if (patch) void saveSettings({ island: { ...islandPrefs(st.island), ...patch } }).then(() => sync(true));
+    void saveSettings((st) => {
+      const current = vaultStore.get();
+      if (current.status !== "unlocked" || current.userId !== s.userId) return null;
+      const patch = progressAskPatch(m.id, st?.island);
+      return patch ? { island: { ...islandPrefs(st?.island), ...patch } } : null;
+    }).then(() => sync(true));
     return true;
   }
   // PS 1.66 the AFK timer's question (ps-mac Afk.swift): Turn off or Keep it on. Saved once; the Mac switches its timer off itself.

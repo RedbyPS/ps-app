@@ -36,7 +36,7 @@ export type TickSide = "left" | "right";
  *  its switch is in Settings, Dynamic Island, and in From the squad. Off: the full closed island as before. */
 export const TASK_ONLY_FEATURE = "island-task-only";
 export interface IslandPrefs { mode: IslandMode; idle: "next" | "none"; pill: PillLook; notch: NotchLook; hide: number; cards: boolean; top: CardKind[]; fsMove: boolean; tickSide: TickSide; sounds: boolean;
-  /** PS 1.77 progress check-ins and task timers (core/islandprogress.ts): off until the person says yes. */
+  /** PS 1.77 progress check-ins and task timers (core/islandprogress.ts): on by default. */
   progress: ProgressPrefs }
 /** The kinds of card, as ps-mac NoteDropCore.swift (NoteDrop.kinds, NoteDrop.kind) sorts them. red: only the developer's account
  *  ever gets them (his Gmail and Instantly feeds), so nobody else is shown the choice. */
