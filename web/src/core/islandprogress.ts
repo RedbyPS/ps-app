@@ -4,15 +4,8 @@
 //  - Check-ins: while a task is being worked on, every 30 minutes (Settings, and per task) the island "buzzes": it shakes,
 //    comes to the middle of the screen, opens into a card ("You've been working on this for 30 minutes") and goes back to its
 //    spot. No sound, ever. Reduce motion: a calm card under the island, no flying and no shaking. Esc closes it at once.
-//  - Timers: only on a task with an expected time that the person picked or typed (the task's `est`, PS 1.65 time estimates;
-//    a time PS learned and filled in by itself, estBy "past", is no timer). It counts down from when work on the task began
-//    (the time spent clock, core/timeest.ts, AFK breaks taken off), in one of four looks next to or under the task. When the
-//    time is up the island buzzes too.
-//  - Opt in (the developer: "opt in at first with the option to turn it off the first time it comes up"): OFF until the person says
-//    yes. The first time it would buzz, the island buzzes once with the question "Want a check-in like this every 30 minutes?"
-//    and Turn on or Not now. Either answer is kept (settings.island.progress.on) and the question never comes again; Esc or
-//    no answer is no answer, and the Mac asks again at the next would-be buzz a day later (OFFER_AGAIN_MS). The switch is also in
-//    Settings, Dynamic Island, with the interval and the look.
+//  - Timers: a task with a set or learned expected time gets a countdown from the time spent clock.
+//  - Check-ins are on by default. The first card offers Keep on or Turn off. A saved choice wins.
 //
 // Pure: no clock, no vault, no DOM. src/island.ts sends the Mac what it needs to count by itself (wall clock times, never a
 // ticking number); ps-mac IslandProgressCore.swift has the SAME rules (its own unit test, tests/island-progress-test.sh) and
@@ -24,7 +17,7 @@ export const PROGRESS_FEATURE = "island-progress";
 
 // ---------- the setting (settings.island.progress, synced) ----------
 export type ProgressLook = "ring" | "sand" | "text" | "line";
-/** on: true (switched on), false (Not now, or switched off), null (never answered: off, and the one question is still due). */
+/** null uses the on default and offers the choice on the first card. A boolean is a saved choice. */
 export interface ProgressPrefs { on: boolean | null; every: number; look: ProgressLook }
 export const EVERY_DEFAULT = 30, EVERY_MIN = 5, EVERY_MAX = 240;
 /** The quick picks for the interval (Settings and per task); any other time from 5 minutes to 4 hours can be typed. */
@@ -51,8 +44,8 @@ export function progressPrefs(v: unknown): ProgressPrefs {
     look: isLook(o.look) ? o.look : PROGRESS_DEFAULT.look,
   };
 }
-export const progressOn = (p: ProgressPrefs) => p.on === true;
-/** The one question is still due: never answered. */
+export const progressOn = (p: ProgressPrefs) => p.on !== false;
+/** The first card can still offer the choice. */
 export const offerDue = (p: ProgressPrefs) => p.on === null;
 
 // ---------- per task (Todo.checkEvery) ----------
@@ -85,9 +78,9 @@ export const PROGRESS_WORDS = {
   left: "{t} left",
   up: "Time's up",
   over: "{t} over",
-  ask: "Want a check-in like this every {t}?",
-  turnOn: "Turn on",
-  notNow: "Not now",
+  ask: "Progress check-ins are on.",
+  turnOn: "Keep on",
+  notNow: "Turn off",
   askNote: "You can change this any time in Settings, Dynamic Island.",
 } as const;
 export const fill = (w: string, t: string) => w.replace("{t}", t);
@@ -117,7 +110,7 @@ export interface ProgressIsland {
   /** The expected time in minutes (a timer); 0: none. */
   est: number;
   look: ProgressLook;
-  /** Switched on. false with `ask`: only the one question, at the first would-be buzz, and no timer yet. */
+  /** Effective setting. With ask, the first card also shows the choice. */
   on: boolean;
   ask: boolean;
   /** Do Not Disturb mutes the island: the timer still shows, nothing buzzes. */
@@ -141,7 +134,7 @@ export interface ProgressInput {
 /** null: nothing to count (switched off and answered, no task being worked on, its clock stopped, or nothing set to buzz). */
 export function progressIsland(i: ProgressInput): ProgressIsland | null {
   const p = i.prefs;
-  if (!i.featureOn || !i.trackOn || (!progressOn(p) && !offerDue(p))) return null;
+  if (!i.featureOn || !i.trackOn || !progressOn(p)) return null;
   if (!i.task || i.task.dim || !i.todo || i.todo.done || i.spent === null || !Number.isFinite(i.spent)) return null;
   const every = everyFor(p, i.todo), est = timerMin(i.todo);
   if (!every && !est) return null;
@@ -162,7 +155,7 @@ export interface Buzz { kind: BuzzKind; keys: string[]; minutes: number; leftMs:
 export const buzzKey = (p: Pick<ProgressIsland, "id" | "round">, what: string) => `${p.id}.${Math.round(p.round).toString(36)}.${what}`;
 
 /** The buzz due now, or null. `done`: the keys already buzzed (or skipped). A check-in and the time up at the same moment are
- *  one buzz (the time up). Switched off with the question due: the first would-be buzz is the question instead. */
+ *  one buzz (the time up). */
 export function buzzDue(p: ProgressIsland, now: number, done: ReadonlySet<string> = new Set()): Buzz | null {
   const el = now - p.since;
   if (!(el > 0)) return null;
@@ -221,15 +214,15 @@ export function buzzWords(p: ProgressIsland, b: Buzz): { main: string; sub: stri
   let sub: string | null = null;
   if (b.kind === "up") sub = w.up;
   else if (p.est > 0 && b.leftMs !== null) sub = b.leftMs > 0 ? fill(w.left, durWords(Math.ceil(b.leftMs / 60_000))) : fill(w.over, durWords(Math.max(1, Math.floor(-b.leftMs / 60_000))));
-  const ask = b.kind === "offer" ? fill(w.ask, durWords(p.every || EVERY_DEFAULT)) : null;
+  const ask = p.ask ? fill(w.ask, durWords(p.every || EVERY_DEFAULT)) : null;
   return { main, sub, ask };
 }
 
 // ---------- the answer to the one question ----------
-/** What an answer from the island saves ({type:"islandAction", action:"progressAsk", id:"on"|"off"}): only while it is due. */
+/** The first card records its default when it appears. Turn off can still be clicked while that card is open. */
 export function progressAskPatch(answer: unknown, island: unknown): { progress: ProgressPrefs } | null {
-  if (answer !== "on" && answer !== "off") return null;
   const p = progressPrefs((island as { progress?: unknown } | null | undefined)?.progress);
-  if (!offerDue(p)) return null;
+  if (answer === "disable") return progressOn(p) ? { progress: { ...p, on: false } } : null;
+  if ((answer !== "on" && answer !== "off") || !offerDue(p)) return null;
   return { progress: { ...p, on: answer === "on" } };
 }

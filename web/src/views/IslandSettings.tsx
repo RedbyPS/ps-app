@@ -14,6 +14,9 @@ import { createPortal } from "react-dom";
 import { PS, psPost, usePsSettings } from "../ps";
 import { sfx } from "../ui/sfx";
 import type { IslandPrefs } from "../core/island";
+import { feature } from "../core/features";
+import { PROGRESS_FEATURE } from "../core/islandprogress";
+import { ProgressBody, ProgressSwitch } from "./IslandProgressSettings";
 import { islandPicVars } from "../core/looksample";
 import { IslandHideRow } from "./IslandHide";
 import { IslandCardsRows, IslandFullScreenRow, IslandSoundsRow, IslandTickSideRow } from "./IslandCards";
@@ -30,15 +33,18 @@ export const ISLAND_MODES: { id: IslandPrefs["mode"]; label: string; hint: strin
   { id: "off", label: "Off", hint: "No island" },
 ];
 
-export type IslSection = "look" | "position" | "fullscreen" | "notify";
+export type IslSection = "look" | "position" | "fullscreen" | "notify" | "progress";
+const PROGRESS_SECTION_LABEL = "Progress check-ins";
 export const ISL_SECTIONS: { id: IslSection; name: string; line: string; mac: boolean }[] = [
   { id: "look", name: "Look", line: "Its shape, colours and tick circle", mac: false },
   { id: "position", name: "Position", line: "Where it sits and its hide line", mac: false },
   { id: "fullscreen", name: "Full screen", line: "The top bar over full screen apps", mac: true },
   { id: "notify", name: "Notifications", line: "Cards that come out of the island", mac: true },
+  { id: "progress", name: PROGRESS_SECTION_LABEL, line: "Check-ins while you work", mac: true },
 ];
-/** The sections this build shows: Full screen and Notifications only in the Mac app, as their rows always were. */
-export const islSections = (ps: boolean) => ISL_SECTIONS.filter((x) => ps || !x.mac);
+/** The main Settings tab already has a searchable progress row. Include it directly in the island's own window. */
+export const islSections = (ps: boolean, showProgress = false) =>
+  ISL_SECTIONS.filter((x) => (ps || !x.mac) && (x.id !== "progress" || showProgress));
 
 // ---------- the island away (right click > Disappear) ----------
 /** "3:40 PM" for an end time (ms). */
@@ -117,6 +123,15 @@ export function IslandSectionRows({ id, prefs, save, edit, setEdit }: { id: IslS
     {/* Over a full screen app: sit in the top bar, the black band beside the notch (V1.58 words). */}
     {PS && <IslandFullScreenRow prefs={prefs} save={full} />}
   </>);
+  if (id === "progress") return (
+    <>
+      <div className="tm-isl-pos">
+        <span className="tm-isl-l">{PROGRESS_SECTION_LABEL}</span>
+        <ProgressSwitch label={PROGRESS_SECTION_LABEL} />
+      </div>
+      <ProgressBody />
+    </>
+  );
   return (<>
     {/* V1.55: the Mac's notification cards come out of the island, and which kinds go to the top right instead. */}
     {PS && <IslandCardsRows prefs={prefs} save={full} />}
@@ -159,6 +174,7 @@ function IslandSectionIcon({ id }: { id: IslSection }) {
   if (id === "look") return <svg {...p}><rect x="3" y="8" width="18" height="8" rx="4" /><circle cx="16.5" cy="12" r="1.2" fill="currentColor" stroke="none" /></svg>;
   if (id === "position") return <svg {...p}><path d="M12 3v18M3 12h18" /><path d="M9 6l3-3 3 3M9 18l3 3 3-3M6 9l-3 3 3 3M18 9l3 3-3 3" /></svg>;
   if (id === "fullscreen") return <svg {...p}><rect x="3" y="4" width="18" height="16" rx="2.5" /><path d="M3 8.5h18" /><rect x="6" y="5.4" width="6" height="1.8" rx=".9" fill="currentColor" stroke="none" /></svg>;
+  if (id === "progress") return <svg {...p}><circle cx="12" cy="12" r="8" /><path d="M12 7v5l3 2" /></svg>;
   return <svg {...p}><rect x="4" y="5" width="16" height="6" rx="3" /><path d="M7 15h10M9 19h6" /></svg>;
 }
 
@@ -175,7 +191,7 @@ export function IslandSettingsWindow({ prefs, save }: { prefs: IslandPrefs; save
   const outTimer = useRef<number | undefined>(undefined);
   const open = wanted !== null;
   const on = prefs.mode !== "off";
-  const sections = islSections(PS);
+  const sections = islSections(PS, feature(PROGRESS_FEATURE));
   const shown = sections.some((x) => x.id === wanted) ? wanted! : "look";
   const pick = (id: IslSection) => { if (id === shown && !edit) return; sfx.click(); lastSection = id; setEdit(null); openIslandSettings(id); };
   // Closes with a short fade and shrink (none with reduce motion), then leaves the page.

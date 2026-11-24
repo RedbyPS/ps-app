@@ -236,14 +236,14 @@ final class TaskApi {
   private func serve(_ c: Int32) {
     let t0 = Date()
     var buf = Data()
-    var chunk = [UInt8](repeating: 0, count: 8192)
+    var chunk = [UInt8](repeating: 0, count: 65_536)
     var parsed: TaskApiCore.Parsed = .incomplete
     while case .incomplete = parsed {
       let n = recv(c, &chunk, chunk.count, 0)
       if n <= 0 { break }
       buf.append(contentsOf: chunk[0..<n])
       parsed = TaskApiCore.parse(buf)
-      if buf.count > TaskApiCore.maxHead + TaskApiCore.maxBody + 1024 { parsed = .bad(413, "too_large", "The request is too big."); break }
+      if buf.count > TaskApiCore.maxHead + TaskApiCore.maxCrmBody + 1024 { parsed = .bad(413, "too_large", "The request is too big."); break }
     }
     // Any thread: the socket work goes to the connection queue, never the main thread.
     let done = { (status: Int, json: Data, retry: Int?, what: String) in
@@ -274,23 +274,33 @@ final class TaskApi {
     let id = TaskApiCore.newId()
     DispatchQueue.main.async { [self] in
       guard on, running else { done(503, TaskApiCore.errorJSON("not_ready", "The AI task API is switched off in PS."), nil, r.what); return }
-      let fwd = TaskApiCore.forward(id: id, r, body: body, scopes: scopes)
-      guard let d = try? JSONSerialization.data(withJSONObject: fwd), let json = String(data: d, encoding: .utf8), let main = app?.main else {
-        done(503, TaskApiCore.errorJSON("not_ready", "PS is starting. Try again in a few seconds."), nil, r.what); return
-      }
+      let allowed = scopes
       pending[id] = (c, t0, r.what)
-      main.callAsyncJavaScript("if (!window.__ps) return false; window.__ps.apply(JSON.parse(m)); return true", arguments: ["m": json], in: nil, in: .page) { [weak self] res in
-        if case .success(let v) = res, (v as? Bool) == true { return }
-        self?.finish(id, 503, TaskApiCore.errorJSON("not_ready", "PS is starting. Try again in a few seconds."))
+      connQ.async { [self] in
+        let fwd = TaskApiCore.forward(id: id, r, body: body, scopes: allowed)
+        let json = (try? JSONSerialization.data(withJSONObject: fwd)).flatMap { String(data: $0, encoding: .utf8) }
+        DispatchQueue.main.async { [self] in
+          guard pending[id] != nil else { return }
+          guard let json, let main = app?.main else {
+            finish(id, 503, TaskApiCore.errorJSON("not_ready", "PS is starting. Try again in a few seconds."))
+            return
+          }
+          main.callAsyncJavaScript("if (!window.__ps) return false; window.__ps.apply(JSON.parse(m)); return true", arguments: ["m": json], in: nil, in: .page) { [weak self] res in
+            if case .success(let v) = res, (v as? Bool) == true { return }
+            self?.finish(id, 503, TaskApiCore.errorJSON("not_ready", "PS is starting. Try again in a few seconds."))
+          }
+        }
       }
       DispatchQueue.main.asyncAfter(deadline: .now() + TaskApiCore.answerWait(r)) { [weak self] in
-        self?.finish(id, 503, TaskApiCore.errorJSON("not_ready", "PS did not answer in time. Try again in a few seconds."))
+        self?.finish(id, 503, TaskApiCore.errorJSON("not_ready", "PS did not answer in time. Read the item before retrying."))
       }
     }
   }
   private func answer(_ msg: [String: Any]) {
-    guard let a = TaskApiCore.answer(msg) else { return }
-    finish(a.id, a.status, a.json)
+    connQ.async { [weak self] in
+      guard let a = TaskApiCore.answer(msg) else { return }
+      DispatchQueue.main.async { [weak self] in self?.finish(a.id, a.status, a.json) }
+    }
   }
   /// Main thread: the one answer for a request still waiting (later ones are ignored).
   private func finish(_ id: String, _ status: Int, _ json: Data) {

@@ -120,6 +120,7 @@ import { LocalLine } from "./LocalFirst";
 import { clearDuePatch, isOverdue, nextOverdueAt, overdueZone, splitOverdue } from "../core/overdue";
 import { overdueLookOf, type OverdueLook } from "../core/overduelook";
 import { OverdueFxLayer, useOverdueCard, useOverdueLook } from "./OverdueLook";
+import { PriorityPicker } from "./PriorityPicker";
 import { ClientTag } from "./ClientTag";
 import { BG_DESIGNS, LEVEL_GROUP_MIN, LV_PLAIN, P1_COLORS, P1_DESIGNS, bgDesign, colorHue, hueColor, isImageBg, isVideoBg, isP1, canDropOnto, dropOnto, levelAfterMove, levelMove, levelPick, lvLook, lvLookPatch, movedId, p1AfterMove, p1Color, p1Design, p1Tones, placeInLevel, prioNumbers, prioRuns, sortPrio, type LvLook } from "../core/prio";
 import { Storm, type StormKind } from "./Storm";
@@ -207,21 +208,6 @@ export function orderForPriority(list: Doc<Todo>[], p: number) {
   return 0;
 }
 
-// − P3 + : the priority LEVEL, the P number the list shows (PS 1.77, the developer 23 Nov 2026: two tasks on Priority 2 are one
-// Priority 2 group). Picking a number another task has joins it (core/prio.ts levelPick, placeInLevel, levelMove); one past
-// the last level makes a level of its own at the end. Priority 1 itself is a switch.
-function PriorityPicker({ value, max, onChange }: { value: number; max: number; onChange: (n: number) => void }) {
-  const set = (n: number) => { const v = Math.max(2, Math.min(max, n)); if (v !== value) { onChange(v); sfx.hover(); } };
-  return (
-    <span className="tm-prio-pick" title="Priority: the P number it shows. The same number as another task puts them together">
-      <span className="tm-prio-pick-l">Priority</span>
-      <button type="button" onClick={() => set(value - 1)} disabled={value <= 2} aria-label="Higher priority">−</button>
-      <span className="tm-prio-pick-v num">P<input type="number" min={2} max={max} value={value} aria-label="Priority number"
-        onChange={(e) => { const n = Number(e.target.value); if (Number.isFinite(n) && n >= 2) set(Math.round(n)); }} /></span>
-      <button type="button" onClick={() => set(value + 1)} disabled={value >= max} aria-label="Lower priority">+</button>
-    </span>
-  );
-}
 export const taskMapActions: {
   /** A tick: done true or false (V1.34, a repeat is harmless); with no done it toggles, as before. */
   tick: (id: string, done?: boolean) => Promise<unknown>; work: (id: string | null) => Promise<unknown>;
@@ -1364,6 +1350,7 @@ export function Overlay({ onClose, controls, docked, web, footer }: { onClose: (
     <div ref={root} className={`tm-overlay${docked ? " tm-docked" : ""}${web ? " tm-web" : ""}${hover && !docked ? " tm-hovermode" : ""}${floating && (hover || savedBackdrop < CLEAR_BELOW || calm) ? " tm-clear" : ""}${meet.length ? " has-meet" : ""}${shown ? "" : " tm-paused"}${calm ? " tm-calm" : ""}${editable ? " ed-able" : ""}${lightTheme ? " tm-light" : ""}${opaque ? " tm-see" : ""}${tones ? " p1c" : ""}${p1Fade ? " p1c-fade" : ""} ws-${workStyle}${OWN_WORK.has(workStyle) ? " ws-own" : ""}`}
       role={docked ? "region" : "dialog"} aria-modal={docked ? undefined : true} aria-label="Your to-do map" data-trail={trail.attr}
       style={{ ...trail.glow, ["--tm-z" as string]: scale / 100, ["--ck" as string]: 1, ["--tm-tint" as string]: look.tint, ["--tm-blur" as string]: look.blur, ["--tm-bgfade" as string]: layers.fade,
+        ...(colourCss && bgOn ? { ["--ps-crm-backdrop" as string]: colourCss } : {}),
         ...(coverAt(hover ? 0 : savedBackdrop) ? { ["--tm-cover" as string]: coverAt(hover ? 0 : savedBackdrop) } : {}),
         ...(tones ? { ["--p1col" as string]: tones.c, ["--p1acc" as string]: tones.accent, ["--p1txt" as string]: tones.text, ["--p1fg" as string]: tones.on, ["--p1glow" as string]: tones.rgb } : {}) }}
       onMouseMove={(e) => {

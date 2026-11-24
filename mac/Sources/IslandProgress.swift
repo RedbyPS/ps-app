@@ -146,7 +146,6 @@ final class BuzzModel: ObservableObject {
   @Published var shown = 0.0
   var islandSize = CGSize(width: 200, height: 34)
   var title = "", lines = IslandProgressCore.Lines(main: "", sub: nil, ask: nil)
-  var kind = IslandProgressCore.Kind.check
   var words = ProgressWords()
   var accent = Color(red: 0.93, green: 0.31, blue: 0.53)
   var progress: ProgressIn?
@@ -165,7 +164,7 @@ struct ShakeEffect: GeometryEffect {
 struct BuzzView: View {
   @ObservedObject var m: BuzzModel
   var body: some View {
-    let card = IslandProgressCore.cardSize(kind: m.kind)
+    let card = IslandProgressCore.cardSize(showsChoice: m.lines.ask != nil)
     ZStack {
       Color.clear
       ZStack(alignment: .topLeading) {
@@ -322,7 +321,7 @@ final class IslandProgress {
   }
   /** The window (the card's size plus a margin) centred on a point. */
   private func frame(centredOn c: CGPoint) -> NSRect {
-    let s = IslandProgressCore.cardSize(kind: m.kind)
+    let s = IslandProgressCore.cardSize(showsChoice: m.lines.ask != nil)
     return NSRect(x: c.x - (s.width + 48) / 2, y: c.y - (s.height + 48) / 2, width: s.width + 48, height: s.height + 48).integral
   }
   private func glide(_ p: NSWindow, to f: NSRect, _ d: Double, curve: [Float]) {
@@ -339,15 +338,15 @@ final class IslandProgress {
     cancelAll(); closing = false; isOpen = true; queueId = queue
     let reduce = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
     let plan = IslandProgressCore.plan(reduceMotion: reduce)
-    m.reduce = reduce; m.kind = b.kind; m.title = p.title; m.lines = IslandProgressCore.lines(p, b); m.words = p.words; m.progress = p
+    m.reduce = reduce; m.title = p.title; m.lines = IslandProgressCore.lines(p, b); m.words = p.words; m.progress = p
     m.accent = isl.model.st.notchLook.tinted ? isl.model.st.notchLook.accent : Color(red: 0.93, green: 0.31, blue: 0.53)
     m.answer = { [weak self] a in
-      Island.shared.onAction?("progressAsk", a)
+      Island.shared.onAction?("progressAsk", p.on && a == "off" ? "disable" : a)
       self?.close(fast: false)
     }
     m.close = { [weak self] in self?.close(fast: false) }
     if b.kind == .offer { UserDefaults.standard.set(Date().timeIntervalSince1970, forKey: offerKey) }
-    let card = IslandProgressCore.cardSize(kind: b.kind)
+    let card = IslandProgressCore.cardSize(showsChoice: p.ask)
     let screen = isl.timerAnchor()?.screen ?? NSScreen.main?.frame ?? shape
     let w = ensure()
     m.inside = false; m.shake = 0
@@ -383,8 +382,9 @@ final class IslandProgress {
       }
       after(plan.shake + plan.fly * 0.85 + plan.words) { [weak self] in withAnimation(.easeOut(duration: 0.25)) { self?.m.inside = true } }
     }
+    if p.on && p.ask { isl.onAction?("progressAsk", "on") }
     startEsc()
-    let hold = (b.kind == .offer ? IslandProgressCore.askShowFor : IslandProgressCore.showFor) + plan.shake + plan.fly + plan.open
+    let hold = (p.ask ? IslandProgressCore.askShowFor : IslandProgressCore.showFor) + plan.shake + plan.fly + plan.open
     after(hold) { [weak self] in self?.close(fast: false) }
   }
 

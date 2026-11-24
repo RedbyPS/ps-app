@@ -25,6 +25,16 @@ ok("then Stand up takes the middle", TimersCore.show(TimersIn(stand: st), T0 + 1
 let sid = TimersCore.standBackId(st, T0 + 12 * MIN)!
 ok("then the green tick, Back to work", TimersCore.show(TimersIn(stand: st), T0 + 12 * MIN).middle == .back(id: sid, words: "Back to work"))
 ok("then the task", TimersCore.show(TimersIn(stand: st), T0 + 12 * MIN + 100, seen: [sid]).middle == .task)
+let active = TimersCore.show(TimersIn(stand: st), st.at).middle
+ok("ignoring needs the exact phrase", TimersCore.confirmsStandIgnore("Yes, ignore", middle: active, at: st.at, now: st.at) &&
+   ["Yes", "yes, ignore", "Yes ignore", "Yes, ignore "].allSatisfy { !TimersCore.confirmsStandIgnore($0, middle: active, at: st.at, now: st.at) })
+ok("a stale confirmation cannot dismiss a different reminder", !TimersCore.confirmsStandIgnore("Yes, ignore", middle: active, at: st.at - MIN, now: st.at))
+ok("confirmation expires when the countdown ends", !TimersCore.confirmsStandIgnore("Yes, ignore", middle: active, at: st.at, now: st.at + st.len))
+ok("an ignored stand-up stays out of the island and skips its completion tick", [st.at, st.at + st.len].allSatisfy {
+  TimersCore.show(TimersIn(stand: st), $0, dropped: [st.at]) == .idle
+})
+var nextSt = st; nextSt.at += 30 * MIN
+ok("the next stand-up still shows", TimersCore.show(TimersIn(stand: nextSt), nextSt.at, dropped: [st.at]).middle.isStand)
 
 // Together
 let both = TimersIn(pomo: brk, stand: TStand(at: T0 + 27 * MIN, len: 2 * MIN, sound: true))

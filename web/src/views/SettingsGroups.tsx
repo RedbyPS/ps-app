@@ -14,6 +14,8 @@ import { editSfx, sfx } from "../ui/sfx";
 import { editSoundsOn } from "../core/editsounds";
 import { isRedAccount } from "../core/account";
 import { settingsData } from "../core/select";
+import { CRM_LOOKS, cleanCrmAppearance, isCrmLook } from "../core/crmdata";
+import { lookById } from "../core/looks";
 import { appName } from "../core/appname";
 import { TASK_ONLY_FEATURE, islandPrefs } from "../core/island";
 import { ChatFadeRow } from "./IslandCards";
@@ -305,6 +307,19 @@ export const CONTROLS: Controls = {
 
   // Appearance
   "look": looks("look"),
+  "crm-appearance": function CrmAppearanceRow({ e }) {
+    const v = useVault();
+    const appearance = cleanCrmAppearance(settingsData(v).crmAppearance);
+    return <SetRow e={e} right={
+      <select className="tm-pop-sel gs-sel" aria-label={e.name} value={appearance.look} disabled={v.status !== "unlocked" || v.role !== "owner"}
+        onChange={(event) => {
+          const look = event.target.value;
+          if (isCrmLook(look)) save({ crmAppearance: { look } });
+        }}>
+        {CRM_LOOKS.map((look) => <option key={look} value={look}>{look === "match" ? "Match PS" : lookById(look).label}</option>)}
+      </select>
+    } />;
+  },
   "accent": looks("accent"),
   "layout-text": looks("type"),
   "working-on": looks("work"),
@@ -441,7 +456,7 @@ export const CONTROLS: Controls = {
     const mine = cleanSwitches(settingsData(v).squadFeatures);
     return <SetRow e={e} right={<OnOff label={e.name} on={feature(TASK_ONLY_FEATURE)} ready={v.status === "unlocked"} set={(on) => save({ squadFeatures: { ...mine, [TASK_ONLY_FEATURE]: on } })} />} />;
   },
-  // PS 1.77 progress check-ins and task timers (core/islandprogress.ts, views/IslandProgressSettings.tsx): off until the person says yes.
+  // PS 1.77 progress check-ins and task timers (core/islandprogress.ts, views/IslandProgressSettings.tsx): on by default.
   "island-progress": function IslandProgressRow({ e }) {
     return feature(PROGRESS_FEATURE) ? <SetRow e={e} className="gs-has-switch" right={<ProgressSwitch label={e.name} />} body={<ProgressBody />} /> : null;
   },

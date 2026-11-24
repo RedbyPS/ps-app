@@ -4,8 +4,9 @@
 // next to "Today" (`at="line"`); taskmap.css shows one of the two.
 import type { Todo } from "../core/model";
 import type { Snapshot } from "../core/vault";
-import { allClients, clientTabs } from "../core/select";
+import { allClients, clientTabs, settingsData } from "../core/select";
 import { clientTags, tagOfTask, type ClientTag as Tag } from "../core/clienttag";
+import { cleanCrmAppearance } from "../core/crmdata";
 import { useVault } from "../ui/kit";
 
 const cache = new WeakMap<Snapshot, Map<string, Tag>>();
@@ -20,8 +21,9 @@ export function ClientTag({ t, at = "side" }: { t: Pick<Todo, "clientId">; at?: 
   if (!t.clientId) return null;
   const tag = tagOfTask(t, tagsOf(s));
   if (!tag) return null;
+  const colour = cleanCrmAppearance(settingsData(s).crmAppearance).showTaskColours ? tag.colour : null;
   return (
-    <span className={`tm-ctag ${at}${tag.colour ? "" : " plain"}`} style={tag.colour ? { ["--ctag" as string]: tag.colour } : undefined} title={`Client: ${tag.name}`}>
+    <span className={`tm-ctag ${at}${colour ? "" : " plain"}`} style={colour ? { ["--ctag" as string]: colour } : undefined} title={`Client: ${tag.name}`}>
       {tag.name}
     </span>
   );

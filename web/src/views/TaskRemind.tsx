@@ -56,7 +56,7 @@ export function TaskRemindHost() {
   const o = useOpen();
   const probe = useRef<HTMLSpanElement>(null);
   const mine = !!o && !!probe.current && probe.current.closest(".tm-overlay") === o.root;
-  return <><span ref={probe} hidden />{mine && o && <Pop key={o.key} task={o.task} />}</>;
+  return <><span ref={probe} hidden />{mine && o && <TaskReminderEditor key={o.key} task={o.task} />}</>;
 }
 
 /** Esc for a pop-up: a Test showing ends first (its own listener is newer), then the pop-up closes. Nothing behind it sees the key. */
@@ -117,7 +117,7 @@ function MakeDaily({ checked, disabled, onChange }: { checked: boolean; disabled
   );
 }
 
-function Pop({ task }: { task: string }) {
+export function TaskReminderEditor({ task, onClose, onMakeDaily }: { task: string; onClose?: () => void; onMakeDaily?: () => void }) {
   const s = useVault();
   const red = isRedAccount(s);
   const ready = s.status === "unlocked";
@@ -131,7 +131,8 @@ function Pop({ task }: { task: string }) {
   const [sure, setSure] = useState(false);
   const full = ready && onTasksOf(remindOrDefault(remindRec(s), red)).length >= REM_TASK_MAX;
   const r = saved ?? draft;
-  const close = () => { if (closing) return; setClosing(true); stopTest(); window.setTimeout(closeTaskRemind, 170); };
+  const close = () => { if (closing) return; setClosing(true); stopTest(); window.setTimeout(onClose ?? closeTaskRemind, 170); };
+  useBoundReminderClose(close, !!onClose);
   useEscClose(close);
   useEffect(() => { if (sure) { const x = window.setTimeout(() => setSure(false), 4000); return () => clearTimeout(x); } }, [sure]);
   // The task went (deleted on another device): nothing left to set.
@@ -147,7 +148,10 @@ function Pop({ task }: { task: string }) {
   };
   const once = t.type === "once";
   const repeats = repeatOf(r) !== "once";
-  const makeDaily = () => void taskMapActions.update(task, { type: "daily", repeat: null, due: null, p1: false });
+  const makeDaily = () => {
+    if (onMakeDaily) onMakeDaily();
+    else void taskMapActions.update(task, { type: "daily", repeat: null, due: null, p1: false });
+  };
   const add = () => {
     if (!draft || full) return;
     sfx.done();
@@ -200,18 +204,28 @@ function Pop({ task }: { task: string }) {
 // addDraftTaskReminder). Picked again before Add task, it changes that kept reminder as you go, and Remove reminder drops it.
 /** The task id a reminder carries while its task is still being typed (replaced by the real id when the task is added). */
 export const DRAFT_TASK = "new-task";
-let draftClose: (() => void) | null = null;
+let boundClose: (() => void) | null = null;
+function useBoundReminderClose(close: () => void, bound = true) {
+  const closeRef = useRef(close);
+  closeRef.current = close;
+  useEffect(() => {
+    if (!bound) return;
+    const f = () => closeRef.current();
+    boundClose = f;
+    return () => { if (boundClose === f) boundClose = null; };
+  }, [bound]);
+}
 /** Is a reminder pop-up open (a task's, or the Add a task window's)? The Add a task window leaves Esc to it then. */
-export const remindPopOpen = () => !!open || !!draftClose;
+export const remindPopOpen = () => !!open || !!boundClose;
 /** Close whichever reminder pop-up is open (the Mac's own Esc path); true when one was open. */
 export function closeRemindPop(): boolean {
-  if (draftClose) { draftClose(); return true; }
+  if (boundClose) { boundClose(); return true; }
   if (open) { closeTaskRemind(); return true; }
   return false;
 }
 
-export function DraftRemindPop({ title, once, value, onSave, onClose }: {
-  title: string; once: boolean; value: Reminder | null;
+export function DraftRemindPop({ title, once, value, onSave, onClose, startDate }: {
+  title: string; once: boolean; value: Reminder | null; startDate?: string | null;
   /** The reminder kept with the new task (null: removed). `daily`: make the new task an Every day task too. */
   onSave: (r: Reminder | null, daily?: boolean) => void;
   onClose: () => void;
@@ -219,14 +233,16 @@ export function DraftRemindPop({ title, once, value, onSave, onClose }: {
   const s = useVault();
   const red = isRedAccount(s);
   const ready = s.status === "unlocked";
-  const [r, setR] = useState<Reminder>(() => value ?? newTaskReminder(freshId(remindOrDefault(remindRec(s), red)), DRAFT_TASK, Date.now(), DEVICE_TZ));
+  const [r, setR] = useState<Reminder>(() => {
+    if (value) return value;
+    const draft = newTaskReminder(freshId(remindOrDefault(remindRec(s), red)), DRAFT_TASK, Date.now(), DEVICE_TZ);
+    return once && startDate && (!draft.date || startDate > draft.date) ? { ...draft, date: startDate } : draft;
+  });
   const [everyDay, setEveryDay] = useState(false);
   const [closing, setClosing] = useState(false);
   const full = !value && ready && onTasksOf(remindOrDefault(remindRec(s), red)).length >= REM_TASK_MAX;
   const close = () => { if (closing) return; setClosing(true); stopTest(); window.setTimeout(onClose, 170); };
-  const closeRef = useRef(close);
-  closeRef.current = close;
-  useEffect(() => { const f = () => closeRef.current(); draftClose = f; return () => { if (draftClose === f) draftClose = null; }; }, []);
+  useBoundReminderClose(close);
   useEscClose(close);
   const set = (patch: Partial<Reminder>) => {
     const next = cleanReminder({ ...r, ...patch }, Date.now()) ?? r;

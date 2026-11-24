@@ -34,7 +34,7 @@ enum EscRules {
   static func native(for w: NSWindow, panel: NSWindow?, signIn: NSWindow?) -> Native {
     if w === panel { return .list }
     if w === signIn { return .signIn }
-    if w is TorchLightWindow || w is SecondConfirmPanel || w is ReplyPanel || w is GuideCardPanel || w is AssistPanel { return .own }   // GuideCardPanel: the token guide card closes the guide (SetupGuide.swift)   // ReplyPanel: the page asks before throwing away a reply
+    if w is TorchLightWindow || w is SecondConfirmPanel || w is ReplyPanel || w is GuideCardPanel || w is AssistPanel || w is StandIgnorePanel { return .own }   // GuideCardPanel: the token guide card closes the guide (SetupGuide.swift)   // ReplyPanel: the page asks before throwing away a reply
     if w is AysPanel { return .ays }
     if w is FuPanel { return .reminder }
     if w is PosturePanel { return .posture }

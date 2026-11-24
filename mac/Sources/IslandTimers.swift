@@ -139,7 +139,7 @@ struct TimerMiddle: View {
           switch m.tshow.middle {
           case .back(_, let words): row { IslandTick(size: m.bigTimer ? 22 : 18); Text(words).font(.system(size: 13, weight: .bold)).foregroundColor(fg).lineLimit(1).fixedSize() }
           case .brk(let phase, let endsAt, let left, let ready): breakRow(phase, endsAt, left, ready)
-          case .stand(_, let endsAt): standFace(endsAt)
+          case .stand(let at, let endsAt): standFace(at, endsAt)
           case .task: Color.clear
           }
         }
@@ -176,7 +176,7 @@ struct TimerMiddle: View {
   /// V1.59 (the developer: "the island grows like Face ID on an iPhone: the content is much bigger and in the centre of the island,
   /// with small text at the top saying Stand up plus the time, and the little standing man"). The island itself grows to
   /// IslandTimerLayout.face; this is what fills it.
-  private func standFace(_ endsAt: Double) -> some View {
+  private func standFace(_ at: Double, _ endsAt: Double) -> some View {
     let calm = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
     return VStack(spacing: StandFaceLayout.textSpacing) {
       HStack(spacing: 6) {
@@ -195,11 +195,20 @@ struct TimerMiddle: View {
         StandMan(size: IslandTimerLayout.faceMan, color: green)
       }
       .frame(height: StandFaceLayout.manBox)
+      Button(action: { IslandTimers.shared.askToIgnoreStand(at) }) {
+        Text(TimersCore.wStandIgnore)
+          .font(.system(size: 11.5, weight: .semibold, design: .rounded))
+          .foregroundColor(fg)
+          .padding(.horizontal, 14).frame(height: StandFaceLayout.ignoreH)
+          .background(Capsule().fill(fg.opacity(0.12)))
+          .contentShape(Capsule())
+      }
+      .buttonStyle(.plain)
     }
     .padding(.top, StandFaceLayout.topPad(pill: m.pill))
     .frame(maxWidth: .infinity)
     .frame(height: m.pill ? IslandTimerLayout.faceH : IslandTimerLayout.faceBody, alignment: .top)
-    .accessibilityElement(children: .combine)
+    .accessibilityElement(children: .contain)
   }
   private func meetBig(_ mt: TMeet) -> some View {
     let f = DateFormatter(); f.timeStyle = .short; f.dateStyle = .none
@@ -254,6 +263,8 @@ final class IslandTimers {
   private(set) var input = TimersIn()
   private var seen = Set<String>()
   private var dropped = Set<Double>()
+  private static let ignoredStandsKey = "island.ignoredStands"
+  private lazy var ignoredStands = Set(test ? [] : (UserDefaults.standard.array(forKey: Self.ignoredStandsKey) as? [Double] ?? []))
   /// The green tick being shown, and until when.
   private var holding: (id: String, words: String, until: Date)?
   private var timer: DispatchWorkItem?
@@ -293,10 +304,11 @@ final class IslandTimers {
     let now = nowMs
     if let d = TimersCore.dropsStand(input, now) { dropped.insert(d) }
     if dropped.count > 50 { dropped = Set(dropped.sorted().suffix(20)) }
-    var s = TimersCore.show(input, now, seen: seen, dropped: dropped)
+    let skipped = dropped.union(ignoredStands)
+    var s = TimersCore.show(input, now, seen: seen, dropped: skipped)
     // The green tick holds its few seconds, once.
     if let h = holding {
-      if Date() < h.until { s.middle = .back(id: h.id, words: h.words); s.right = .none } else { holding = nil; s = TimersCore.show(input, now, seen: seen, dropped: dropped) }
+      if Date() < h.until { s.middle = .back(id: h.id, words: h.words); s.right = .none } else { holding = nil; s = TimersCore.show(input, now, seen: seen, dropped: skipped) }
     }
     if case .back(let id, let words) = s.middle, holding == nil {
       seen.insert(id)
@@ -307,6 +319,9 @@ final class IslandTimers {
     }
     apply(s)
     askIfDue(s)
+    if let at = StandIgnoreWindow.shared.occurrence, !TimersCore.activeStand(s.middle, at: at, now: now) {
+      StandIgnoreWindow.shared.close()
+    }
     // The next moment anything can change: the earliest boundary, or the tick's end.
     var next = TimersCore.nextChange(input, now).map { ($0 - now) / 1000 }
     if let h = holding { next = min(next ?? .infinity, h.until.timeIntervalSinceNow) }
@@ -367,16 +382,20 @@ final class IslandTimers {
     let a = Island.shared.timerAnchor()
     BubbleWindow.shared.sync(m.tshow.right, want: want, anchor: a, opacity: m.opacity)
     StandAskWindow.shared.follow(m.dragging ? nil : a)
+    let showIgnore = m.tshow.middle.isStand && m.meetOpen == nil && m.popping == nil && !m.inBar && !m.dragging && !Protected.front
+    StandIgnoreWindow.shared.follow(showIgnore ? a : nil)
   }
   /// Once in a person's life (their synced settings say whether): after the island has grown for a real stand-up, the
   /// question comes out of it. Seen as soon as it shows; it goes when answered, on Esc, or when the stand-up ends.
   private func askIfDue(_ s: TShow) {
     if StandAsk.over(middle: s.middle) { if StandAskWindow.shared.isOpen { StandAskWindow.shared.close() }; return }
-    guard StandAsk.due(input, middle: s.middle, onScreen: onScreen, askedThisRun: askedStand) else { return }
+    guard StandIgnoreWindow.shared.occurrence == nil,
+          StandAsk.due(input, middle: s.middle, onScreen: onScreen, askedThisRun: askedStand) else { return }
     askedStand = true
     DispatchQueue.main.asyncAfter(deadline: .now() + StandAsk.delay) { [weak self] in
       guard let self else { return }
-      guard self.model.tshow.middle.isStand, self.onScreen, let a = Island.shared.timerAnchor() else { self.askedStand = false; return }
+      guard StandIgnoreWindow.shared.occurrence == nil, self.model.tshow.middle.isStand,
+            self.onScreen, let a = Island.shared.timerAnchor() else { self.askedStand = false; return }
       StandAskWindow.shared.show(anchor: a)
       Island.shared.onAction?("standAsk", StandAsk.Answer.seen.rawValue)
       // The island lets the card drop out of it: a small swell and a spring back (as the cards do, V1.55).
@@ -395,6 +414,22 @@ final class IslandTimers {
         withAnimation(.spring(response: 0.14, dampingFraction: 0.9)) { self?.model.swell = 0.35 }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) { withAnimation(.spring(response: 0.45, dampingFraction: 0.5)) { self?.model.swell = 0 } }
       }
+    }
+  }
+
+  func askToIgnoreStand(_ at: Double) {
+    guard !test, !Protected.front, !MacState.locked(), TimersCore.activeStand(last.middle, at: at, now: nowMs),
+          let anchor = Island.shared.timerAnchor() else { return }
+    StandAskWindow.shared.close()
+    StandIgnoreWindow.shared.show(at: at, anchor: anchor) { [weak self] phrase in
+      guard let self, !Protected.front, !MacState.locked(),
+            TimersCore.confirmsStandIgnore(phrase, middle: self.last.middle, at: at, now: self.nowMs) else { return }
+      self.ignoredStands.insert(at)
+      // The timer's longest stand is one hour. Keep enough history to skip its back-to-work tick as well.
+      let oldest = self.nowMs - TimersCore.standMaxMs - TimersCore.backMs
+      self.ignoredStands = self.ignoredStands.filter { $0 > oldest }
+      UserDefaults.standard.set(self.ignoredStands.sorted(), forKey: Self.ignoredStandsKey)
+      self.check()
     }
   }
 

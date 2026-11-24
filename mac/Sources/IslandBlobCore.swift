@@ -129,7 +129,7 @@ enum StandFaceLayout {
   static let manBox: CGFloat = man + 8
   /// Clear space, at least, between the words and the highest point of the figure (his head, or his hands when raised).
   static let minClear: CGFloat = 8
-  static let bottomPad: CGFloat = 14
+  static let ignoreH: CGFloat = 24, bottomPad: CGFloat = 14
   /// How far the head and raised hands reach above the figure's box (StandMan.draw: the hands reach 2.28 units above its
   /// top, the head 2.2, a unit being a thirtieth of the man's size). Rounded up.
   static func overshoot(_ man: CGFloat) -> CGFloat { ceil(man * 2.3 / 30) }
@@ -137,9 +137,9 @@ enum StandFaceLayout {
   /// The empty space put between the words and the box, so the figure's highest point is `minClear` under the words.
   static var lift: CGFloat { minClear + overshoot(man) }
   /// The island's height for the stand-up: the whole pill, or the part below the notch.
-  static func height(pill: Bool) -> CGFloat { topPad(pill: pill) + textH + textSpacing + lift + textSpacing + manBox + bottomPad }
+  static func height(pill: Bool) -> CGFloat { topPad(pill: pill) + textH + textSpacing + lift + textSpacing + manBox + textSpacing + ignoreH + bottomPad }
   /// The distance from the bottom of the words to the figure's highest point.
   static func clearance() -> CGFloat { 2 * textSpacing + lift - overshoot(man) }
   /// The figure's lowest point (his feet) above the island's bottom edge.
-  static func feetClear(pill: Bool) -> CGFloat { bottomPad + 4 }
+  static func feetClear(pill: Bool) -> CGFloat { textSpacing + ignoreH + bottomPad + 4 }
 }

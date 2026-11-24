@@ -4,12 +4,17 @@
 // one small op, sent to the main window (ps.ts, "clientsOp"), checked again here and run there on the newest copy
 // (core/clientsact.ts runClientsOp). New records get their id in the Tab list, so the screen can pick them at once.
 // Pure: no vault, no window. Tested in tests/clients-tab.test.ts.
+import { CRM_ACTIVITY_KINDS, type CrmActivity } from "./crmdata.ts";
 import type { Deadline } from "./clientwork.ts";
 import type { Project, Todo } from "./model.ts";
+import { cleanCheckEvery } from "./islandprogress.ts";
+import { cleanReminder, type Reminder } from "./remind.ts";
+import { cleanEst } from "./timeest.ts";
 import { cleanRepeat } from "./repeat.ts";
 
 /** The task fields the Clients screen edits. */
-export type ClientTaskPatch = Partial<Pick<Todo, "title" | "type" | "repeat" | "due" | "p1" | "doOn" | "deadline" | "notes">>;
+export type ClientTaskPatch = Partial<Pick<Todo, "title" | "type" | "repeat" | "due" | "p1" | "doOn" | "deadline" | "notes" | "est" | "checkEvery">> & { priority?: number | null };
+export type ClientTaskInput = ClientTaskPatch & { title: string; type: Todo["type"]; reminder?: Reminder };
 export type StagePatch = { name?: string; start?: string | null; due?: string | null };
 
 export type ClientsOp =
@@ -33,7 +38,9 @@ export type ClientsOp =
   | { op: "checkTick"; id: string; item: string; done?: boolean }
   | { op: "checkRemove"; id: string; item: string }
   | { op: "notes"; id: string; text: string }
-  | { op: "addTodo"; id: string; clientId: string; projectId: string; task: ClientTaskPatch & { title: string; type: Todo["type"] } }
+  | { op: "addActivity"; id: string; activity: CrmActivity }
+  | { op: "removeActivity"; id: string; item: string }
+  | { op: "addTodo"; id: string; clientId: string; projectId: string; task: ClientTaskInput }
   | { op: "editTodo"; id: string; patch: ClientTaskPatch }
   | { op: "tickTodo"; id: string; done?: boolean }
   | { op: "removeTodo"; id: string }
@@ -73,6 +80,9 @@ export function cleanTaskPatch(v: unknown): ClientTaskPatch {
   if (typeof p.p1 === "boolean") o.p1 = p.p1;
   if (p.doOn === null || okDay(p.doOn)) o.doOn = (p.doOn as string | null) ?? null;
   if ("deadline" in p) { const d = cleanDeadline(p.deadline); if (d !== undefined) o.deadline = d; }
+  if (p.priority === null || (typeof p.priority === "number" && Number.isSafeInteger(p.priority) && p.priority >= 1)) o.priority = p.priority;
+  if ("est" in p) o.est = cleanEst(p.est);
+  if ("checkEvery" in p) o.checkEvery = cleanCheckEvery(p.checkEvery);
   if (p.notes === null || typeof p.notes === "string") o.notes = p.notes === null ? null : (p.notes as string).slice(0, 20_000);
   return o;
 }
@@ -110,11 +120,20 @@ export function cleanClientsOp(v: unknown): ClientsOp | null {
     case "checkAdd": { const t = text(v.text, 300); return id && t !== null && t.trim() ? { op: "checkAdd", id, text: t } : null; }
     case "checkTick": return id && okId(v.item) ? { op: "checkTick", id, item: v.item, ...(typeof v.done === "boolean" ? { done: v.done } : {}) } : null;
     case "checkRemove": return id && okId(v.item) ? { op: "checkRemove", id, item: v.item } : null;
+    case "addActivity": {
+      const a = v.activity;
+      if (!id || !isObj(a) || !okId(a.id) || !CRM_ACTIVITY_KINDS.includes(a.kind as CrmActivity["kind"])) return null;
+      const value = text(a.text, 20_000)?.trim();
+      if (!value || typeof a.at !== "string" || a.at.length > 36 || !Number.isFinite(Date.parse(a.at))) return null;
+      return { op: "addActivity", id, activity: { id: a.id, kind: a.kind as CrmActivity["kind"], text: value, at: a.at } };
+    }
+    case "removeActivity": return id && okId(v.item) ? { op: "removeActivity", id, item: v.item } : null;
     case "notes": { const t = text(v.text, 20_000); return id && t !== null ? { op: "notes", id, text: t } : null; }
     case "addTodo": {
       const t = cleanTaskPatch(v.task);
       if (!id || !okId(v.clientId) || !okId(v.projectId) || !t.title) return null;
-      return { op: "addTodo", id, clientId: v.clientId, projectId: v.projectId, task: { ...t, title: t.title, type: t.type ?? "once" } };
+      const reminder = isObj(v.task) ? cleanReminder(v.task.reminder, Date.now()) : null;
+      return { op: "addTodo", id, clientId: v.clientId, projectId: v.projectId, task: { ...t, title: t.title, type: t.type ?? "once", ...(reminder ? { reminder } : {}) } };
     }
     case "editTodo": { const patch = cleanTaskPatch(v.patch); return id && Object.keys(patch).length ? { op: "editTodo", id, patch } : null; }
     case "saveTemplate": {

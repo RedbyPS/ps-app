@@ -9,10 +9,8 @@ import CoreGraphics
 //  - Check-ins: every 30 minutes of work on a task (Settings, and per task), even with no time set on it, the island buzzes:
 //    it shakes, comes to the middle of the screen, opens into a card and goes back. NO sound, ever. Reduce motion: a calm card
 //    under the island, no flying and no shaking. Esc closes it at once.
-//  - Timers: a task with an expected time the person set gets one of four looks beside or under its name (ring, sand timer,
-//    the time left, a line) that runs down to nothing; when the time is up the island buzzes.
-//  - Opt in: off until the person says yes. The first would-be buzz is the question (Turn on, Not now), sent back to the page,
-//    which keeps the answer. Esc or no answer: asked again at a would-be buzz at least 20 hours later (UserDefaults, this Mac).
+//  - Timers: a set or learned expected time gets a countdown next to the task. The island buzzes when time is up.
+//  - Check-ins are on by default. The first card also offers Keep on or Turn off. The page remembers that it appeared.
 //  - Never while the island is off or away (Disappear for...), not on screen (a full screen app where it does not show, a
 //    protected app), during a meeting, in Do Not Disturb, with nobody at the Mac, or while another island moment or card holds it.
 //    A check-in missed by more than 5 minutes is skipped, never caught up.
@@ -23,9 +21,9 @@ struct ProgressWords: Equatable {
   var left = "{t} left"
   var up = "Time's up"
   var over = "{t} over"
-  var ask = "Want a check-in like this every {t}?"
-  var turnOn = "Turn on"
-  var notNow = "Not now"
+  var ask = "Progress check-ins are on."
+  var turnOn = "Keep on"
+  var notNow = "Turn off"
   var askNote = "You can change this any time in Settings, Dynamic Island."
 }
 
@@ -50,7 +48,7 @@ enum IslandProgressCore {
   static let looks = ["ring", "sand", "text", "line"]
   /** A check-in missed by more than this is skipped. */
   static let grace: Double = 5 * 60
-  /** The question again after Esc or no answer, at the soonest. */
+  /** Legacy V1.77 opt-in reminder interval for an older page. */
   static let offerAgain: Double = 20 * 3600
   /** Nobody at the Mac: no key or mouse for this long. */
   static let idle: Double = 5 * 60
@@ -155,7 +153,7 @@ enum IslandProgressCore {
     else if p.est > 0, let l = b.left {
       sub = l > 0 ? fill(w.left, durWords(Int((l / 60).rounded(.up)))) : fill(w.over, durWords(max(1, Int((-l / 60).rounded(.down)))))
     }
-    let ask = b.kind == .offer ? fill(w.ask, durWords(p.every > 0 ? p.every : 30)) : nil
+    let ask = p.ask ? fill(w.ask, durWords(p.every > 0 ? p.every : 30)) : nil
     return Lines(main: main, sub: sub, ask: ask)
   }
 
@@ -177,7 +175,7 @@ enum IslandProgressCore {
     return shakeAmp * CGFloat(sin(c * .pi * 2 * shakes) * (1 - c))
   }
   /** The card's size: wider and taller with the question. */
-  static func cardSize(kind: Kind) -> CGSize { kind == .offer ? CGSize(width: 400, height: 228) : CGSize(width: 380, height: 150) }
+  static func cardSize(showsChoice: Bool) -> CGSize { showsChoice ? CGSize(width: 400, height: 228) : CGSize(width: 380, height: 150) }
   /** Where the card opens: the middle of the island's screen, a little above the centre (where the eye rests). */
   static func middle(of screen: CGRect, size: CGSize) -> CGRect {
     CGRect(x: (screen.midX - size.width / 2).rounded(), y: (screen.midY - size.height / 2 + screen.height * 0.08).rounded(), width: size.width, height: size.height)

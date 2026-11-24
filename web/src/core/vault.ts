@@ -2216,6 +2216,35 @@ function stopRealtime() {
 let secondCh: ReturnType<typeof sb.channel> | null = null;
 let secondary = false;
 const pokeListeners = new Set<(k: string) => void>();
+const screenSignalListeners = new Set<(signal: unknown) => void>();
+export function onScreenSignal(fn: (signal: unknown) => void) {
+  screenSignalListeners.add(fn);
+  return () => screenSignalListeners.delete(fn);
+}
+
+function screenSignalContext() {
+  return meta?.role === "owner" && !meta.local && snap.status === "unlocked" && VK && secondCh
+    ? { key: VK, channel: secondCh, aad: "ps-screen-signal-v1:" + meta.userId }
+    : null;
+}
+
+/** Only the paired Macs' signed setup messages travel here, encrypted with the vault key. */
+export async function sendScreenSignal(signal: unknown) {
+  const ctx = screenSignalContext();
+  if (!ctx) return;
+  const cipher = await C.encryptJson(ctx.key, signal, ctx.aad);
+  if (cipher.length > 4096 || screenSignalContext()?.channel !== ctx.channel) return;
+  await ctx.channel.send({ type: "broadcast", event: "screen-signal", payload: { cipher } });
+}
+
+async function hearScreenSignal(source: typeof secondCh, payload: unknown) {
+  const ctx = screenSignalContext();
+  if (!ctx || ctx.channel !== source) return;
+  const cipher = (payload as { cipher?: unknown } | null)?.cipher;
+  if (typeof cipher !== "string" || cipher.length > 4096) return;
+  const signal = await C.decryptJson(ctx.key, cipher, ctx.aad);
+  if (screenSignalContext()?.channel === source) screenSignalListeners.forEach((fn) => fn(signal));
+}
 export function setSecondChannel(on: boolean, isSecondary = false) {
   secondary = on && isSecondary;
   if (!on || !meta || meta.local) {
@@ -2229,7 +2258,9 @@ export function setSecondChannel(on: boolean, isSecondary = false) {
   if (secondCh) return;
   // One channel per topic: the live poke listener (listenFitPoke) is replaced by this one, which pulls on every poke.
   if (fitCh) { void sb.removeChannel(fitCh); fitCh = null; }
-  secondCh = sb.channel(`second:${meta.userId}`, { config: { private: true, broadcast: { self: false } } })
+  const channel = sb.channel(`second:${meta.userId}`, { config: { private: true, broadcast: { self: false } } });
+  secondCh = channel
+    .on("broadcast", { event: "screen-signal" }, (m) => { void hearScreenSignal(channel, m.payload).catch(() => {}); })
     .on("broadcast", { event: "poke" }, (m) => {
       onRemoteChange();
       const k = String((m.payload as { k?: unknown } | undefined)?.k ?? "");

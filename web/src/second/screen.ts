@@ -1,4 +1,4 @@
-// The remote screen's state as the Mac tells it (ps-mac RemoteScreen.sendState): window.__psScreen({on, live, open, state}).
+// The remote screen's state as the Mac tells it (ps-mac RemoteScreen.sendState): window.__psRemoteScreen({on, live, open, state}).
 // Used by the Tab list's Remote screen switch (views/ScreenSwitch.tsx). PS on a Mac only; elsewhere it stays off.
 import { PS, psPost } from "../ps";
 
@@ -26,5 +26,5 @@ export function setScreenState(o: unknown): void {
   subs.forEach((f) => f());
 }
 
-declare global { interface Window { __psScreen?: (o: unknown) => void } }
-if (typeof window !== "undefined") window.__psScreen = setScreenState;
+declare global { interface Window { __psRemoteScreen?: (o: unknown) => void } }
+if (typeof window !== "undefined") window.__psRemoteScreen = setScreenState;

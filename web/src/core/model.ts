@@ -10,6 +10,7 @@ import type { GymPrefs } from "./gym";
 import type { SleepModePrefs } from "./sleepmode";
 import type { NotchLook, PillLook } from "./islandlook";
 import type { BgCrop } from "./bgcrop";
+import type { CrmActivity, CrmAppearance } from "./crmdata";
 
 export type Kind =
   | "client" | "pprivate" | "todo" | "meeting" | "draft" | "settings" | "reply" | "brief" | "calendar" | "iemail" | "ithread" | "agenda" | "journal" | "quote" | "note" | "daylog" | "screentime" | "stline" | "cstats" | "cpage" | "fup" | "irep" | "msender" | "fprog" | "fwork" | "fit" | "psnote" | "tzperson" | "tzzones" | "tablayout" | "remind" | "fsleep" | "squad" | "squadask" | "squadjoin" | "fact" | "phonelayout" | "phonedev" | "rout" | "wachat" | "srec" | "srkey" | "sqpast" | "bgdev"   // owner private (vault key); bgdev: a device that opened PS, for backgrounds per device (core/devicebg.ts, PS 1.65); sqpast: one G Squad Past boards month, the owner publishes it to the squad (core/squadpast.ts, PS 1.64); srkey: the key that seals uploaded screen recordings, kept in the vault so every device can open them (core/recordings.ts, PS 1.60); srec: one screen recording's small details, never the media (core/recordings.ts, PS 1.60);  f*: Fitness (core/fitness.ts, fsleep: core/sleep.ts, fact: core/activity.ts); psnote: the developer's private release notes (core/privatenotes.ts); tzperson: Time zones people (core/tzpeople.ts); tzzones: your list of clocks (core/tzzones.ts); tablayout: the Tab list's Edit mode places (core/tablayout.ts); remind: the Annoying 15 min reminders and their answers (core/remind.ts); squad: your G Squad keys (core/squadrec.ts); squadask: your request to join a listed squad (core/squaddir.ts, older PS); squadjoin: your automatic join into The G Squad (core/squadauto.ts); phonelayout: a phone kind's own layout (core/phonelayout.ts); phonedev: a phone that opened PS (core/phonedevices.ts); wachat: one WhatsApp conversation per number, owner private (core/whatsapp.ts, PS 1.60); rout: a reply typed in the email panel on its way to a Mac that sends it (core/inlinereply.ts, V1.59)
@@ -147,6 +148,7 @@ export interface ProjectPrivate {
   nextInvoiceDate?: string | null;
   notes?: string | null;
   history: { date: string; text: string }[];
+  activity?: CrmActivity[];       // Private CRM notes, DMs and agreement history
   checklist?: ChecklistItem[];   // Clients (PS 1.73): the project's checklist, owner only (the client never sees it)
 }
 export interface ChecklistItem { id: string; text: string; done: boolean; at: string | null }
@@ -413,6 +415,7 @@ export type AiNotes = "messages" | "plain" | "off";
 export interface TaskGroup { id: string; name: string }
 
 export interface Settings {
+  crmAppearance?: Partial<CrmAppearance>;
   squadShare?: import("./squadshare").ShareOpts;   // G Squad (V1.40): what you share, one switch per piece (missing = on, except Tasks: missing = off since V1.43)
   receipts?: boolean;   // Settings, "Receipts and Purchases": false = off (core/receipts.ts receiptsOn; missing = on, PS 1.65)
   receiptCur?: string;   // the currency a new receipt starts with (missing = GEL)

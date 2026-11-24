@@ -17,11 +17,13 @@ import { DEVICE_TZ } from "./core/tz";
 import { newGroupId } from "./core/groups";
 import { todayISO } from "./ui/kit";
 import { landDayNow } from "./clients/clientsday";
+import { crmStore } from "./core/crmstore";
 import { handleApi, API_PORT, cleanScopes, type ApiStore } from "./core/taskapi";
 import { aiConnect, aiGuide } from "./core/taskapidoc";
 import { startSentryForApi } from "./views/Sentry";
 
 const store: ApiStore = {
+  crm: crmStore,
   state: () => { const s = vaultStore.get(); return s.status === "unlocked" && s.role === "owner" ? "ok" : "locked"; },
   todos: () => todos(vaultStore.get()),
   settings: () => settingsData(vaultStore.get()),

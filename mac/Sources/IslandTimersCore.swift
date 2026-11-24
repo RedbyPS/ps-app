@@ -57,12 +57,14 @@ enum TimersCore {
   static let backMs: Double = 120_000          // a green tick only in the two minutes after the end (no old ones after a sleep)
   static let backShowMs: Double = 3_200        // how long the green tick shows
   static let standLeadMs: Double = 15_000      // the right tab counts down this long before a stand-up
+  static let standMaxMs: Double = 3_600_000
   static let joinMs: Double = 120_000          // the meeting bubble is a Join button in the last 2 minutes (with a link)
 
   // The words on the island (the page's copies: core/pomodoro.ts POMO_WORDS, core/standup.ts STAND_WORDS, core/meetbubble.ts).
   static let wBack = "Now back to work"
   static let wStandBack = "Back to work"
   static let wStandUp = "Stand up"
+  static let wStandIgnore = "Ignore", standIgnorePhrase = "Yes, ignore"
   static let wShort = "Short break", wLong = "Long break", wReady = "Break ready", wLongReady = "Long break ready", wStart = "Start"
   static let wJoin = "Join"
   static let wTimeShort = "Time for a short break", wTimeLong = "Time for a long break", wStandPop = "Time to stand up"
@@ -84,7 +86,7 @@ enum TimersCore {
                        clock: (p["clock"] as? Bool) == true, sound: (p["sound"] as? Bool) == true, back: back)
       }
     }
-    if let s = d["stand"] as? [String: Any], let at = num(s["at"]), let len = num(s["len"]), len > 0, len <= 3_600_000 {
+    if let s = d["stand"] as? [String: Any], let at = num(s["at"]), let len = num(s["len"]), len > 0, len <= standMaxMs {
       t.stand = TStand(at: at, len: len, sound: (s["sound"] as? Bool) == true, test: (s["test"] as? Bool) == true, ask: (s["ask"] as? Bool) == true)
     }
     if let m = d["meet"] as? [String: Any], let start = num(m["start"]), let end = num(m["end"]), let from = num(m["from"]), end > start {
@@ -135,6 +137,14 @@ enum TimersCore {
   static func dropsStand(_ t: TimersIn, _ now: Double) -> Double? {
     guard let s = t.stand, now >= s.at, now < s.at + s.len, breakNow(t.pomo, now) else { return nil }
     return s.at
+  }
+  /// The confirmation belongs to the one stand-up that opened it, while that stand-up is still showing.
+  static func activeStand(_ middle: TMiddle, at: Double, now: Double) -> Bool {
+    guard case .stand(let start, let end) = middle else { return false }
+    return start == at && now >= start && now < end
+  }
+  static func confirmsStandIgnore(_ phrase: String, middle: TMiddle, at: Double, now: Double) -> Bool {
+    phrase == standIgnorePhrase && activeStand(middle, at: at, now: now)
   }
   /// The next moment anything above can change (a one shot timer goes off then; nothing ticks in between).
   static func nextChange(_ t: TimersIn, _ now: Double) -> Double? {

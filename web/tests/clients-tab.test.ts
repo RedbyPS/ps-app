@@ -5,6 +5,7 @@
 // newest copy. FICTIONAL data only.
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { newTaskReminder } from "../src/core/remind.ts";
 import { OpLane, cleanClientsOp, cleanTaskPatch, type ClientsOp } from "../src/core/clientsop.ts";
 
 let n = 0;
@@ -34,6 +35,8 @@ const ops: ClientsOp[] = [
   { op: "checkTick", id: P, item: "a1b2c3d4e5f6" },
   { op: "checkRemove", id: P, item: "a1b2c3d4e5f6" },
   { op: "notes", id: P, text: "Call on Friday.\nBring the plan." },
+  { op: "addActivity", id: P, activity: { id: ID, kind: "dm", text: "Project approved.", at: "2026-11-24T08:00:00Z" } },
+  { op: "removeActivity", id: P, item: ID },
   { op: "addTodo", id: ID, clientId: ID, projectId: P, task: { title: "Prep for the call", type: "once", repeat: null, due: null, doOn: "2026-11-24",
     deadline: { date: "2026-11-25", time: "15:00", eventId: "ev1", title: "Kick off" } } },
   { op: "editTodo", id: ID, patch: { p1: true } },
@@ -85,6 +88,16 @@ ok("a task patch keeps only what the Clients screen edits (never done, order, cl
   assert.equal(p.repeat?.unit, "week");
   for (const k of ["done", "order", "clientId", "projectId"]) assert.equal(k in p, false, k);
 });
+ok("CRM Advanced options survive the same bridge the Mac's task form uses", () => {
+  const now = Date.parse("2026-11-24T08:00:00Z");
+  const reminder = newTaskReminder("r3", "new-task", now, "UTC");
+  const o: ClientsOp = { op: "addTodo", id: ID, clientId: ID, projectId: P, task: {
+    title: "Review design", type: "once", priority: 3, est: 20, checkEvery: 0, notes: "See the latest PDF.", reminder,
+  } };
+  assert.deepEqual(cleanClientsOp(travel(o)), o);
+  assert.deepEqual(cleanTaskPatch({ priority: null, checkEvery: 0, est: null }), { priority: null, checkEvery: 0, est: null });
+  assert.deepEqual(cleanTaskPatch({ priority: 2.5 }), {});
+});
 ok("ops run one after another in the order they came (a new client, then its rename)", async () => {
   const lane = new OpLane(), seen: string[] = [];
   const slow = (x: string, ms: number) => lane.run(async () => { await new Promise((r) => setTimeout(r, ms)); seen.push(x); });
@@ -110,7 +123,7 @@ ok("every Clients save asks the relay first (nothing in Clients reaches vault.ts
   const saves = ["newClient", "renameClient", "orderClients", "removeClient", "newProject", "renameProject", "setProjectStatus", "setNowLine",
     "stageDone", "stageAdd", "stageEdit", "stageMove", "stageRemove", "checkAdd", "checkTick", "checkRemove", "saveNotes", "addClientTodo",
     "editClientTodo", "tickClientTodo", "removeClientTodo", "saveTemplate", "projectFromTemplate", "removeTemplate",
-    "archiveClient", "unarchiveClient", "setClientSettings", "deleteClient"];   // PS 1.77: the tab menu
+    "archiveClient", "unarchiveClient", "setClientSettings", "deleteClient", "saveClientActivity", "removeClientActivity"];   // PS 1.77: the tab menu
   const exported = [...a.matchAll(/^export (?:const|function|async function) (\w+)/gm)].map((m) => m[1]);
   for (const s of saves) {
     assert.ok(exported.includes(s), s);

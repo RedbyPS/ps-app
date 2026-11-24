@@ -1227,7 +1227,10 @@ final class Island {
     // After PS 1.71 (IslandRejoinCore.swift): the lock screen is not a desktop, so the every desktop check rests while it is up,
     // and looks again a moment after the unlock and after the screens wake (where the island used to go missing).
     let dn = DistributedNotificationCenter.default()
-    dn.addObserver(forName: .init("com.apple.screenIsLocked"), object: nil, queue: .main) { [weak self] _ in self?.screenLocked = true }
+    dn.addObserver(forName: .init("com.apple.screenIsLocked"), object: nil, queue: .main) { [weak self] _ in
+      self?.screenLocked = true
+      StandIgnoreWindow.shared.close()
+    }
     dn.addObserver(forName: .init("com.apple.screenIsUnlocked"), object: nil, queue: .main) { [weak self] _ in
       self?.screenLocked = false; self?.followSpaceSoon("unlock")
     }
@@ -1408,7 +1411,11 @@ final class Island {
   }
   /// 1Password or Signal came to the front or went. Where the island shows over them (the G Squad build) nothing
   /// about it depends on that, so nothing runs at all: no window is looked at and no line is written at that moment.
-  func protectedChanged() { SquadIsland.shared.protectedChanged(); if !BuildRules.now.islandOverProtected { place(); BigIslandWindow.shared.protectedChanged() } }
+  func protectedChanged() {
+    if Protected.front { StandIgnoreWindow.shared.close() }
+    SquadIsland.shared.protectedChanged()
+    if !BuildRules.now.islandOverProtected { place(); BigIslandWindow.shared.protectedChanged() }
+  }
   /// Who is signed in changed (Owner.onChange): the rule over 1Password and Signal may be another one now.
   func rulesChanged() { place() }
   /// V1.58 island timers (IslandTimers.swift): something to show came or went.

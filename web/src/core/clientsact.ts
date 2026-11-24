@@ -6,9 +6,13 @@
 import type { ChecklistItem, ClientRec, Doc, Project, Stage, Todo } from "./model";
 import { uid } from "./model";
 import { NEEDS_SYNC, doc, docs, put, remove, vaultStore } from "./vault";
-import { addClient, addProject, addTodo, deleteTodo, privOf, setTodoDone, toggleTodo, updateClient, updatePrivate, updateProject, updateTodo } from "./actions";
+import { addClient, addProject, addTodo, deleteTodo, privOf, setLevelTag, setTodoDone, tabListsNow, toggleTodo, updateClient, updatePrivate, updateProject, updateTodo } from "./actions";
 import { addStage, cleanTpl, fromTemplate, moveStage, removeStage, setDone, templateOf, type ProjectTpl } from "./clientwork";
-import { OpLane, cleanClientSettings, cleanTaskPatch, clientProjects, stageAt, type ClientSettings, type ClientsOp } from "./clientsop";
+import { addCrmActivity, crmProjectDocs, removeCrmActivity, removeCrmDoc } from "./crmstore";
+import type { CrmActivity } from "./crmdata";
+import { addDraftReminder } from "./nlremind";
+import { levelMove, placeInLevel } from "./prio";
+import { OpLane, cleanClientSettings, cleanTaskPatch, clientProjects, stageAt, type ClientSettings, type ClientTaskInput, type ClientTaskPatch, type ClientsOp } from "./clientsop";
 
 const key = () => uid().replace(/-/g, "").slice(0, 12);
 
@@ -68,6 +72,7 @@ export async function deleteClient(id: string): Promise<void> {
   const c = doc<ClientRec>(id);
   if (!c || c.kind !== "client") return;
   for (const p of clientProjects(docs<Project>("project"), c.data.ws)) {
+    for (const file of crmProjectDocs(p.id)) await removeCrmDoc(p.id, file.id);
     const pr = privOf(p.id);
     if (pr) await remove(pr.id);
     await remove(p.id);
@@ -126,15 +131,62 @@ export const checkRemove = (projectId: string, id: string) => relay ? sent({ op:
 export const saveNotes = (projectId: string, notes: string) => relay ? sent({ op: "notes", id: projectId, text: notes.slice(0, 20_000) })
   : updatePrivate(projectId, { notes: notes.slice(0, 20_000) });
 
+export const saveClientActivity = (projectId: string, kind: CrmActivity["kind"], text: string) => {
+  const activity = { id: uid(), kind, text: text.trim().slice(0, 20_000), at: new Date().toISOString() };
+  return relay ? sent({ op: "addActivity", id: projectId, activity }) : addCrmActivity(projectId, activity);
+};
+export const removeClientActivity = (projectId: string, item: string) => relay ? sent({ op: "removeActivity", id: projectId, item }) : removeCrmActivity(projectId, item);
+
 // ---------- tasks (ordinary to-do tasks with the client on them) ----------
 
-export type TaskInput = Pick<Todo, "title" | "type"> & Partial<Pick<Todo, "repeat" | "due" | "p1" | "doOn" | "deadline">>;
-export function addClientTodo(clientId: string, projectId: string, t: TaskInput, id?: string): Promise<string> {
-  if (relay) { const nid = id ?? uid(); relay({ op: "addTodo", id: nid, clientId, projectId, task: { ...cleanTaskPatch(t), title: t.title, type: t.type } }); return Promise.resolve(nid); }
-  if (id && doc(id)) return Promise.resolve(id);
-  return addTodo({ ...t, title: t.title.trim().slice(0, 500), clientId, projectId, source: "project" }, id ? { id } : {});
+const taskLane = new OpLane();
+export type TaskInput = ClientTaskInput & { ai?: boolean };
+
+/** Use the same ranked list and priority levels as Advanced on the Tab list. */
+async function priorityPatch(priority: number | null | undefined, type: Todo["type"], id?: string): Promise<Partial<Todo>> {
+  if (priority === undefined) return {};
+  if (priority === 1) return { p1: true, unranked: false, prioGroup: null };
+  if (priority === null || type === "daily") return { p1: false, unranked: type !== "daily", prioGroup: null };
+  const ranked = tabListsNow().ranked.map((d) => ({ id: d.id, ...d.data }));
+  const place = id ? levelMove(ranked, id, priority) : placeInLevel(ranked, priority);
+  if (!place) return {};
+  if (place.pair) await setLevelTag(place.pair.id, place.pair.prioGroup);
+  return { p1: false, unranked: false, order: place.order, prioGroup: place.prioGroup };
 }
-export const editClientTodo = (id: string, patch: Partial<Todo>) => relay ? sent({ op: "editTodo", id, patch: cleanTaskPatch(patch) }) : updateTodo(id, patch);
+
+export function addClientTodo(clientId: string, projectId: string, t: TaskInput, id?: string): Promise<string> {
+  if (relay) {
+    const nid = id ?? uid();
+    relay({ op: "addTodo", id: nid, clientId, projectId, task: { ...cleanTaskPatch(t), title: t.title, type: t.type, ...(t.reminder ? { reminder: t.reminder } : {}) } });
+    return Promise.resolve(nid);
+  }
+  return taskLane.run(async () => {
+    const { priority, reminder, ...task } = t;
+    if (!t.title.trim()) throw new Error("Give the task a name.");
+    const client = doc<ClientRec>(clientId);
+    const project = doc<Project>(projectId);
+    if (!client || client.kind !== "client" || !project || project.kind !== "project" || (project.ws ?? project.data.clientWs) !== client.data.ws) {
+      throw new Error("Choose a project for this client.");
+    }
+    const previous = id ? doc<Todo>(id) : null;
+    if (previous && (previous.kind !== "todo" || previous.ws !== null || previous.data.clientId !== clientId || previous.data.projectId !== projectId)) {
+      throw new Error("That task ID is already in use.");
+    }
+    const made = previous?.id ?? await addTodo({ ...task, ...await priorityPatch(priority, t.type), title: t.title.trim().slice(0, 500), clientId, projectId, source: "project" }, id ? { id } : {});
+    if (reminder) await addDraftReminder(made, reminder);
+    return made;
+  });
+}
+export function editClientTodo(id: string, patch: ClientTaskPatch) {
+  if (relay) return sent({ op: "editTodo", id, patch: cleanTaskPatch(patch) });
+  return taskLane.run(async () => {
+    const before = doc<Todo>(id);
+    if (!before || before.kind !== "todo" || before.ws !== null || !before.data.clientId || !before.data.projectId) return;
+    const { priority, ...fields } = patch;
+    const normalized = fields.est === undefined ? fields : { ...fields, estBy: fields.est === null ? "off" as const : null };
+    await updateTodo(id, { ...normalized, ...await priorityPatch(priority, fields.type ?? before.data.type, id) });
+  });
+}
 /** The tick on a client task (the same tick as the list's). */
 export const tickClientTodo = (id: string, done?: boolean) => relay ? sent({ op: "tickTodo", id, ...(done === undefined ? {} : { done }) })
   : done === undefined ? toggleTodo(id) : setTodoDone(id, done);
@@ -179,7 +231,7 @@ export function runClientsOp(o: ClientsOp): Promise<unknown> {
     // Each op only ever touches its own kind of record.
     const kind = (id: string) => doc(id)?.kind;
     const CLIENT = new Set(["renameClient", "removeClient", "unarchiveClient", "deleteClient", "clientSettings"]), PROJECT = new Set(["renameProject", "projectStatus", "nowLine", "stageDone", "stageAdd",
-      "stageEdit", "stageMove", "stageRemove", "checkAdd", "checkTick", "checkRemove", "notes", "saveTemplate"]);
+      "stageEdit", "stageMove", "stageRemove", "checkAdd", "checkTick", "checkRemove", "notes", "addActivity", "removeActivity", "saveTemplate"]);
     const oid = "id" in o ? o.id : "";
     if (CLIENT.has(o.op) && kind(oid) !== "client") return;
     if (PROJECT.has(o.op) && kind(oid) !== "project") return;
@@ -208,6 +260,8 @@ export function runClientsOp(o: ClientsOp): Promise<unknown> {
       case "checkTick": return checkTick(o.id, o.item, o.done);
       case "checkRemove": return checkRemove(o.id, o.item);
       case "notes": return saveNotes(o.id, o.text);
+      case "addActivity": return addCrmActivity(o.id, o.activity);
+      case "removeActivity": return removeClientActivity(o.id, o.item);
       case "addTodo": return addClientTodo(o.clientId, o.projectId, o.task, o.id);
       case "editTodo": return doc<Todo>(o.id)?.kind === "todo" ? editClientTodo(o.id, o.patch) : undefined;
       case "tickTodo": return doc<Todo>(o.id)?.kind === "todo" ? tickClientTodo(o.id, o.done) : undefined;

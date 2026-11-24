@@ -14,11 +14,12 @@ const src = (p: string) => readFileSync(p, "utf8");
 const tm = src("src/views/TaskMap.tsx"), css = src("src/views/islandsettings.css"), fn = src("src/views/IslandSettings.tsx");
 const X = await import("../src/core/settingsindex.ts");
 
-ok("four sections, Look and Position everywhere, Full screen and Notifications on the Mac", () => {
+ok("Look and Position everywhere, Mac controls in the island window", () => {
   for (const [id, name] of [["look", "Look"], ["position", "Position"], ["fullscreen", "Full screen"], ["notify", "Notifications"]]) {
     assert.match(fn, new RegExp(`\\{ id: "${id}", name: "${name}", line: "[^"]+", mac: (true|false) \\}`), name);
   }
-  assert.match(fn, /ISL_SECTIONS\.filter\(\(x\) => ps \|\| !x\.mac\)/);
+  assert.match(fn, /const sections = islSections\(PS, feature\(PROGRESS_FEATURE\)\)/);
+  assert.match(fn, /if \(id === "progress"\)[\s\S]*<ProgressSwitch[\s\S]*<ProgressBody/);
 });
 ok("every row the old menu had is still in it, saved the same way", () => {
   for (const r of [/ISLAND_MODES\.map/, /<LookEditButton kind=\{m\.id\} onEdit=\{setEdit\} \/>/, /<IslandLookEditor key=\{edit\}/, /\{PS && <IslandTickSideRow /,
